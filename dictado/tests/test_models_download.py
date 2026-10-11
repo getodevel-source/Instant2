@@ -168,6 +168,48 @@ class ModelDownloadTests(unittest.TestCase):
             self._target("parakeet-v3-int8", "encoder.int8.onnx")))
         self.assertEqual(self.server.ranges, [])
 
+    def test_preflight_reports_required_and_free_space_before_network(self):
+        class _Usage:
+            free = 1024
+
+        seen = []
+        with patch("shutil.disk_usage", return_value=_Usage()):
+            with self.assertRaises(models.ModelIntegrityError):
+                models.download_models(
+                    self.data_dir, progress=lambda *a: None,
+                    preflight=seen.append)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0]["free_bytes"], 1024)
+        self.assertGreater(seen[0]["required_bytes"], 1024)
+        self.assertFalse(seen[0]["enough"])
+        self.assertEqual(self.server.ranges, [])
+
+    def test_cancel_keeps_partial_file_and_next_run_resumes_it(self):
+        from threading import Event
+
+        cancel = Event()
+
+        def stop_after_first_chunk(_step, done, _total):
+            if done:
+                cancel.set()
+
+        encoder = self._target("parakeet-v3-int8", "encoder.int8.onnx")
+        with patch.object(models, "CHUNK", 64):
+            with self.assertRaises(models.DownloadCancelled):
+                models.download_models(
+                    self.data_dir, progress=stop_after_first_chunk,
+                    cancel_event=cancel)
+        part = encoder + ".part"
+        self.assertTrue(os.path.isfile(part))
+        partial_size = os.path.getsize(part)
+        self.assertGreater(partial_size, 0)
+        self.assertLess(partial_size, len(BODY))
+        self.assertFalse(os.path.isfile(encoder))
+
+        models.download_models(self.data_dir, progress=lambda *a: None)
+        self.assertTrue(all(models.check(self.data_dir).values()))
+        self.assertIn(f"bytes={partial_size}-", self.server.ranges)
+
     def test_space_check_counts_only_bytes_missing_from_resumable_parts(self):
         from instant_app.paths import PARAKEET_SUBDIR, VAD_SUBDIR
 

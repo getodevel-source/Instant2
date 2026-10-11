@@ -59,6 +59,10 @@ class ModelIntegrityError(RuntimeError):
     """El archivo descargado no coincide con el hash esperado."""
 
 
+class DownloadCancelled(RuntimeError):
+    """El usuario canceló una descarga sin descartar los datos parciales."""
+
+
 def _names():
     # En disco sherpa espera encoder.int8.onnx etc; engine mapea esos nombres.
     return {"encoder.int8.onnx": "encoder.int8.onnx",
@@ -121,23 +125,44 @@ def _ten_vad_step():
             [(TEN_VAD_URL, "ten_vad.onnx", TEN_VAD_SHA256)])
 
 
-def _space_check(pending_bytes, destination_dir):
-    """Frena antes de empezar si no hay disco: no se baja 670 MB al vacío."""
+def _space_info(pending_bytes, destination_dir):
+    """Espacio libre y requerido para descargar y verificar los archivos."""
     try:
         free = shutil.disk_usage(destination_dir).free
     except OSError:
-        return
-    if pending_bytes + DISK_MARGIN > free:
+        free = None
+    required = pending_bytes + DISK_MARGIN if pending_bytes else 0
+    return {
+        "pending_bytes": max(0, int(pending_bytes)),
+        "required_bytes": required,
+        "free_bytes": free,
+        "enough": free is None or free >= required,
+    }
+
+
+def _space_check(pending_bytes, destination_dir):
+    """Frena antes de empezar si no hay disco y devuelve el preflight."""
+    info = _space_info(pending_bytes, destination_dir)
+    if not info["enough"]:
+        required = info["required_bytes"]
+        free = info["free_bytes"]
         raise ModelIntegrityError(
-            "no hay espacio para los modelos: hacen falta ~"
-            f"{(pending_bytes + DISK_MARGIN) / 1e9:.1f} GB libres en "
-            f"{destination_dir} y hay {free / 1e9:.1f} GB.")
+            "no hay espacio para los modelos: hacen falta "
+            f"{required / 1e6:.0f} MB libres en {destination_dir}, "
+            f"pero hay {free / 1e6:.0f} MB. Liberá espacio y reintentá.")
+    return info
 
 
-def _fetch_once(url, part, size, report):
+def _check_cancelled(cancel_event):
+    if cancel_event is not None and cancel_event.is_set():
+        raise DownloadCancelled("descarga cancelada por el usuario")
+
+
+def _fetch_once(url, part, size, report, cancel_event=None):
     """Un intento HTTP: reanuda desde `.part` con Range y reporta bytes."""
     import urllib.request
 
+    _check_cancelled(cancel_event)
     offset = os.path.getsize(part) if os.path.isfile(part) else 0
     if offset >= size:
         return  # ya está completo en disco; lo decide la verificación
@@ -154,6 +179,7 @@ def _fetch_once(url, part, size, report):
             done = offset
             report(done, size)
             while True:
+                _check_cancelled(cancel_event)
                 chunk = response.read(CHUNK)
                 if not chunk:
                     break
@@ -162,7 +188,8 @@ def _fetch_once(url, part, size, report):
                 report(min(done, size), size)
 
 
-def _fetch(url, destination, expected, report, attempts=None):
+def _fetch(url, destination, expected, report, attempts=None,
+           cancel_event=None):
     """Baja `url` a `destination`: reanudable, con reintentos y SHA-256.
 
     Escribe en `destination + '.part'` y publica con os.replace recién cuando
@@ -177,13 +204,17 @@ def _fetch(url, destination, expected, report, attempts=None):
     last_error = None
     for attempt in range(1, attempts + 1):
         try:
-            _fetch_once(url, part, size, report)
+            _check_cancelled(cancel_event)
+            _fetch_once(url, part, size, report, cancel_event=cancel_event)
+            _check_cancelled(cancel_event)
             ok, reason = verify_file(part, expected)
             if not ok:
                 raise ModelIntegrityError(
                     f"{os.path.basename(destination)} {reason}")
             os.replace(part, destination)
             return
+        except DownloadCancelled:
+            raise
         except ModelIntegrityError as error:
             last_error = error
             log.warning("descarga de %s no verifica (intento %d/%d): %s",
@@ -195,19 +226,30 @@ def _fetch(url, destination, expected, report, attempts=None):
                 except OSError:
                     pass
             if attempt < attempts:
-                time.sleep(2 * attempt)
+                if cancel_event is not None:
+                    if cancel_event.wait(2 * attempt):
+                        raise DownloadCancelled(
+                            "descarga cancelada por el usuario") from error
+                else:
+                    time.sleep(2 * attempt)
         except Exception as error:  # red o disco: el .part queda para reanudar
             last_error = error
             log.warning("descarga de %s falló (intento %d/%d): %s",
                         os.path.basename(destination), attempt, attempts, error)
             if attempt < attempts:
-                time.sleep(2 * attempt)
+                if cancel_event is not None:
+                    if cancel_event.wait(2 * attempt):
+                        raise DownloadCancelled(
+                            "descarga cancelada por el usuario") from error
+                else:
+                    time.sleep(2 * attempt)
     raise ModelIntegrityError(
         f"no se pudo descargar {os.path.basename(destination)} tras "
         f"{attempts} intentos: {last_error}")
 
 
-def download_models(data_dir, progress=None, include_ten_vad=False):
+def download_models(data_dir, progress=None, include_ten_vad=False,
+                    cancel_event=None, preflight=None):
     """Baja VoxCore int8 (~670MB) + Silero VAD (~1MB).
 
     Con `include_ten_vad=True` suma TEN-VAD int8 (~126 KB, VAD alternativo
@@ -266,7 +308,11 @@ def download_models(data_dir, progress=None, include_ten_vad=False):
     if not steps:
         return data_dir
 
+    space = _space_info(pending_bytes, data_dir)
+    if preflight is not None:
+        preflight(space)
     _space_check(pending_bytes, data_dir)
+    _check_cancelled(cancel_event)
     # Solo el host del espejo, nunca la URL completa: la URL lleva repo/ruta
     # y el log no necesita más para diagnosticar.
     try:
@@ -287,7 +333,7 @@ def download_models(data_dir, progress=None, include_ten_vad=False):
                        _total=total):
                 _report(_step, min(_base + file_done, _total), _total)
 
-            _fetch(url, target, expected, report)
+            _fetch(url, target, expected, report, cancel_event=cancel_event)
             done += expected[0]
         if progress is None:
             if printed["progress"]:

@@ -653,6 +653,9 @@ class PanelLogic:
         self.meter = {"percent": 0, "text": "La prueba no guarda audio."}
         self.model_status = ""
         self.model_progress = {"visible": False, "percent": 0}
+        self._model_download_pending = False
+        self._model_canceling = False
+        self._model_cancel_event = None
         self.update_button = "Buscar actualizaciones"
         self.settings_status = ""
         self._autostart_enabled = False
@@ -737,9 +740,12 @@ class PanelLogic:
                 "ready": bool(self.model_ready),
                 "status": self.model_status,
                 "progress": dict(self.model_progress),
+                "downloading": bool(self._model_download_pending),
+                "canceling": bool(self._model_canceling),
                 "button": ("Reintentar descarga"
                            if not self.model_ready
-                           and self.model_status.startswith("No se pudo")
+                           and (self.model_status.startswith("No se pudo")
+                                or self.model_status.startswith("Descarga cancelada"))
                            else "Descargar modelo"),
             },
             "vocab": {
@@ -1025,6 +1031,9 @@ class PanelLogic:
 
     def _op_download_models(self, _message):
         self.download_models()
+
+    def _op_cancel_model_download(self, _message):
+        self.cancel_model_download()
 
     def _op_check_updates(self, _message):
         self.check_updates()
@@ -1692,18 +1701,37 @@ class PanelLogic:
             self.model_progress = {"visible": False, "percent": 0}
 
     def download_models(self):
-        if self.model_ready:
+        if self.model_ready or self._model_download_pending:
             return
-        self.model_status = "Descargando el modelo…"
+        cancel_event = threading.Event()
+        self._model_cancel_event = cancel_event
+        self._model_download_pending = True
+        self._model_canceling = False
+        self.model_status = "Revisando espacio en disco…"
         self.model_progress = {"visible": True, "percent": 0}
         self.push_state()
 
         def download(emit):
             return models.download_models(
-                self.data_dir, progress=lambda *args: emit(args))
+                self.data_dir, progress=lambda *args: emit(args),
+                cancel_event=cancel_event,
+                preflight=lambda info: emit(("preflight", info)))
 
         def progress(event):
             if not event:
+                return
+            if event[0] == "preflight":
+                info = event[1]
+                if info["free_bytes"] is None:
+                    self.model_status = (
+                        "No pude consultar el espacio libre; voy a intentar "
+                        "la descarga y verificaré antes de escribir.")
+                else:
+                    self.model_status = (
+                        f"Espacio libre: {info['free_bytes'] / 1e9:.1f} GB. "
+                        f"Se requieren {info['required_bytes'] / 1e9:.1f} GB "
+                        "incluido el margen de seguridad.")
+                self.emit("progress", {"percent": 0, "text": self.model_status})
                 return
             step, done, total = event
             if not total:
@@ -1717,20 +1745,40 @@ class PanelLogic:
                                    "text": self.model_status})
 
         def done(_value):
+            self._model_download_pending = False
+            self._model_canceling = False
+            self._model_cancel_event = None
             if self._closed:
                 return
             self._update_model_status()
             self.push_state()
 
         def failed(error):
+            self._model_download_pending = False
+            self._model_canceling = False
+            self._model_cancel_event = None
             if self._closed:
                 return
             self.model_progress = {"visible": False, "percent": 0}
+            if isinstance(error, models.DownloadCancelled):
+                self.model_status = (
+                    "Descarga cancelada. El progreso parcial se conserva; "
+                    "puedes reanudarla al reintentar.")
+                self.push_state()
+                return
             self.model_status = "No se pudo descargar el modelo."
             self.push_state()
             _toast_error(self, "Descarga fallida", error)
 
         self.tasks.submit(download, done, failed, progress)
+
+    def cancel_model_download(self):
+        if not self._model_download_pending or self._model_cancel_event is None:
+            return
+        self._model_canceling = True
+        self.model_status = "Cancelando…"
+        self._model_cancel_event.set()
+        self.push_state()
 
     # ----------------------------------------------------------- diagnóstico
 
@@ -2207,6 +2255,8 @@ class PanelLogic:
         if self._closed:
             return
         self._closed = True
+        if self._model_cancel_event is not None:
+            self._model_cancel_event.set()
         self.tasks.close()
         self.emit("close", {})
 

@@ -76,7 +76,10 @@ class PanelPageContractTests(unittest.TestCase):
         for expected in ('role="status" aria-live="polite"',
                          'aria-describedby="maxSegmentHelp maxSegmentError"',
                          'aria-describedby="llmUrlHelp llmUrlError"',
-                         'aria-valuenow', 'prefers-reduced-motion: reduce'):
+                         'aria-valuenow', 'prefers-reduced-motion: reduce',
+                         'prefers-contrast: more', 'forced-colors: active',
+                         'id="uiScaleSelect"', 'document.documentElement.style.zoom',
+                         'id="uiScaleStatus"', 'min-height: 44px'):
             self.assertIn(expected, source)
 
     def test_javascript_element_references_exist_and_ids_are_unique(self):
@@ -133,8 +136,8 @@ class HostContractTests(unittest.TestCase):
             if name == "panel_web_host.qml":
                 self.assertIn("width: 1100", source)
                 self.assertIn("height: 600", source)
-                self.assertIn("minimumWidth: 900", source)
-                self.assertIn("minimumHeight: 520", source)
+                self.assertIn("minimumWidth: 760", source)
+                self.assertIn("minimumHeight: 480", source)
 
     def test_pages_ship_with_the_package(self):
         self.assertTrue(os.path.isfile(PANEL_PAGE))

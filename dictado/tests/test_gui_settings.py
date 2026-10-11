@@ -7,6 +7,7 @@ micrófono, captura de tecla y vocabulario.
 """
 import os
 import sys
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -465,6 +466,27 @@ class LogicSettingsTests(unittest.TestCase):
         toast = next(payload for kind, payload in emitted if kind == "toast")
         self.assertIn("Detalle:", toast["message"])
         self.assertNotEqual(toast["message"].strip(), "sin red")
+
+    def test_cancelled_model_download_is_recoverable(self):
+        logic, _emitted = make_logic()
+        logic.model_ready = False
+        with patch("instant_app.gui.models.download_models",
+                   side_effect=gui.models.DownloadCancelled("cancelada")):
+            logic.download_models()
+        self.assertFalse(logic.state_payload()["model"]["downloading"])
+        self.assertFalse(logic.state_payload()["model"]["canceling"])
+        self.assertIn("progreso parcial se conserva", logic.model_status)
+        self.assertEqual(logic.state_payload()["model"]["button"],
+                         "Reintentar descarga")
+
+    def test_model_download_cancel_sets_event_and_announces_state(self):
+        logic, _emitted = make_logic()
+        logic._model_download_pending = True
+        logic._model_cancel_event = threading.Event()
+        logic.cancel_model_download()
+        self.assertTrue(logic._model_cancel_event.is_set())
+        self.assertTrue(logic.state_payload()["model"]["canceling"])
+        self.assertEqual(logic.model_status, "Cancelando…")
 
 
 class SetupConsoleTests(unittest.TestCase):

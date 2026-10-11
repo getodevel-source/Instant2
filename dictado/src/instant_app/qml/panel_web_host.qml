@@ -12,8 +12,8 @@ Window {
     title: "Instant"
     width: 1100
     height: 600
-    minimumWidth: 900
-    minimumHeight: 520
+    minimumWidth: 760
+    minimumHeight: 480
     visible: false
 
     property url pageUrl
