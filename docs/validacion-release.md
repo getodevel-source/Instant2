@@ -1,0 +1,87 @@
+# Lista de validación de una release instalada
+
+Esta lista acompaña a los smokes de CI. CI verifica la suite, el empaquetado y
+la apertura del panel congelado; esta hoja registra los pasos que dependen de
+instalar la aplicación en un escritorio real.
+
+## Registro de ejecución
+
+- Tag probado:
+- Fecha y persona que probó:
+- Equipo, versión del sistema y tipo de sesión:
+- Versión instalada previamente (si corresponde):
+- Artefacto y SHA256 descargados:
+- Resultado general: pendiente / aprobado / fallido
+- Incidencias y enlaces:
+
+## Matriz de plataformas
+
+| Plataforma | Artefacto | Cobertura automatizada actual | Validación de escritorio pendiente |
+|---|---|---|---|
+| Windows | `Instant-Setup.exe` y `Instant.exe` | Suite Windows; smoke del portable congelado. El instalador se construye en CI. | Instalación limpia, actualización, rollback, firma si está activa y desinstalación. |
+| macOS | `instant-macos`; `Instant-macos.dmg` si la firma está activa | Suite macOS; smoke del binario congelado. | Permiso de micrófono, Accesibilidad, Gatekeeper/notarización si está activa, actualización y desinstalación. |
+| Linux X11 | `instant-linux` | Suite Ubuntu; smoke del panel congelado en runner. | Instalación limpia, dependencias, X11, autostart, actualización y desinstalación. |
+| Arch/Omarchy Wayland | `instant-linux` | Pruebas unitarias de selección de backend, dependencias y pegado. | Portal de atajos de Hyprland, aplicaciones nativas Wayland, XWayland y pegado real. |
+
+## Instalación limpia
+
+- [ ] Descargar el artefacto de la plataforma y comprobar su SHA256 contra el
+  sidecar publicado.
+- [ ] Instalar o ejecutar como usuario normal, sin elevar permisos salvo que el
+  instalador del sistema lo solicite para instalar la aplicación.
+- [ ] Abrir Instant y completar los permisos de micrófono/accesibilidad que
+  correspondan.
+- [ ] Confirmar que el diagnóstico detecta dependencias faltantes y propone
+  comandos adecuados para el sistema.
+- [ ] Iniciar una descarga del modelo; verificar espacio libre/requerido,
+  progreso, cancelación y reanudación tras cancelar o cortar la red.
+- [ ] Completar un dictado en una aplicación de texto y confirmar el resultado.
+- [ ] Cerrar y volver a abrir: comprobar que configuración, modelos y
+  preferencia de inicio se conservaron.
+
+## Actualización y recuperación
+
+Preparar una instalación de la release anterior y guardar una copia de su
+configuración y lista de modelos antes de probar.
+
+- [ ] Actualizar desde la release anterior a la nueva y confirmar que la
+  configuración y los modelos quedan intactos.
+- [ ] Confirmar que un hash incorrecto o sidecar inválido impide aplicar la
+  descarga.
+- [ ] Simular un reemplazo fallido en una copia desechable de la instalación;
+  comprobar que el ejecutable anterior sigue disponible y puede iniciarse.
+- [ ] Confirmar que no se interrumpe una sesión de dictado sin aviso.
+- [ ] Desinstalar y confirmar que configuración/modelos se conservan por
+  defecto; probar la opción de borrado explícito solo en datos desechables.
+
+## Casos específicos
+
+### Windows
+
+- [ ] Probar instalador y portable por separado.
+- [ ] Verificar que abrir el panel y dictar no requiere permisos de
+  administrador.
+- [ ] Si la release se firmó, revisar el publicador en Propiedades → Firmas
+  digitales y comprobar el artefacto con `signtool verify /pa /v`.
+
+### macOS
+
+- [ ] Autorizar micrófono y Accesibilidad.
+- [ ] Si se publica el DMG notarizado, abrirlo con Gatekeeper y confirmar la
+  evaluación local con `spctl --assess --type open --verbose Instant.app`.
+- [ ] Probar dictado en una aplicación nativa y pegar caracteres con acentos.
+
+### Linux X11 y Arch/Omarchy Wayland
+
+- [ ] Probar el hotkey de mantener y soltar, el portapapeles previo y el pegado.
+- [ ] En Hyprland, confirmar que el portal queda registrado y asociar
+  `push-to-talk` siguiendo la [guía Linux](../dictado/README.md#hyprland-y-omarchy).
+- [ ] Probar una aplicación Wayland nativa y otra XWayland por separado; anotar
+  las diferencias.
+- [ ] Probar paquetes/dependencias con `apt` en Debian/Ubuntu y `pacman` en
+  Arch/Omarchy.
+
+No se debe marcar esta lista como ejecutada basándose solo en mocks, suite,
+render fuera de pantalla o build. Completar una copia por sistema y adjuntar el
+log de diagnóstico sin incluir audio, transcripciones, tokens ni datos
+personales.

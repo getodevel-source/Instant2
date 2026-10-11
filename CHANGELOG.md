@@ -3,6 +3,23 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 El proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
+## [0.5.1] - 2026-10-11
+
+### Agregado
+- Soporte experimental de atajo global en Wayland mediante el portal de
+  accesos directos, incluido Hyprland en distribuciones como Omarchy.
+- Evaluador opcional de audio real que informa resultados sin guardar ni
+  publicar grabaciones privadas.
+- Guías de accesibilidad, precisión y validación del release.
+
+### Mejorado
+- Panel adaptable a escalas de pantalla habituales, con controles más grandes
+  y mejor contraste.
+- Descargas del modelo con reanudación, cancelación, reintentos y revisión del
+  espacio disponible antes de empezar.
+- Flujo de release con firma opcional para los binarios, cuando el repositorio
+  tiene configuradas las credenciales correspondientes.
+
 ## [0.5.0] - 2026-10-10
 
 ### Agregado (producción)

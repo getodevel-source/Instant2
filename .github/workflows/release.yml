@@ -141,15 +141,65 @@ jobs:
             "/DIconFile=$ICON_PATH" installer/instant.iss
           ls -la dist/Instant-Setup.exe
 
+      - name: Prepare macOS signing identity (optional)
+        if: runner.os == 'macOS' && vars.ENABLE_CODE_SIGNING == 'true'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY; do
+            if [ -z "${!name}" ]; then
+              echo "ENABLE_CODE_SIGNING=true requiere configurar el secreto $name." >&2
+              exit 1
+            fi
+          done
+          CERT_PATH="$RUNNER_TEMP/instant-developer-id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/instant-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          export CERT_PATH
+          python3 -c 'import base64,os; open(os.environ["CERT_PATH"],"wb").write(base64.b64decode(os.environ["APPLE_CERTIFICATE_BASE64"]))'
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" |
+            grep -F "$APPLE_SIGNING_IDENTITY"
+          rm -f "$CERT_PATH"
+          echo "INSTANT_SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
       - name: Build Unix executable (daemon + panel)
         if: runner.os != 'Windows'
         shell: bash
+        env:
+          ENABLE_CODE_SIGNING: ${{ vars.ENABLE_CODE_SIGNING }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
         run: |
+          WAYLAND_HOTKEY=()
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            WAYLAND_HOTKEY+=(--hidden-import instant_app.wayland_hotkey)
+          fi
+          MAC_CODESIGN=()
+          if [ "${{ matrix.platform }}" = "macos" ] && [ "${ENABLE_CODE_SIGNING:-}" = "true" ]; then
+            if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
+              echo "ENABLE_CODE_SIGNING=true requiere APPLE_DEVELOPER_IDENTITY." >&2
+              exit 1
+            fi
+            MAC_CODESIGN+=(--codesign-identity "$APPLE_SIGNING_IDENTITY")
+          fi
           # El panel y el overlay web son la UI de los tres sistemas: el
           # binario de Linux y macOS lleva PySide6 (QtWebEngine, red del canal
           # de instancia única y módulos QML de los hosts), las páginas web y
           # Pillow para los iconos, además del daemon/CLI de siempre.
           pyinstaller --onefile --name "${{ matrix.binary_name }}" \
+            "${WAYLAND_HOTKEY[@]}" \
+            "${MAC_CODESIGN[@]}" \
             --hidden-import sherpa_onnx \
             --hidden-import sounddevice \
             --hidden-import instant_app.gui \
@@ -253,6 +303,102 @@ jobs:
           }
           echo "panel congelado OK"
 
+      - name: Sign Windows binaries (optional)
+        if: runner.os == 'Windows' && vars.ENABLE_CODE_SIGNING == 'true'
+        shell: pwsh
+        env:
+          SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_PFX_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:SIGNING_PFX_PASSWORD)) {
+            throw "ENABLE_CODE_SIGNING=true requiere el PFX y su password en Actions secrets."
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP "instant-signing.pfx"
+          try {
+            [System.IO.File]::WriteAllBytes(
+              $pfx, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
+            $sdk = Join-Path ([Environment]::GetEnvironmentVariable("ProgramFiles(x86)")) `
+              "Windows Kits/10/bin"
+            $signtool = Get-ChildItem -LiteralPath $sdk -Filter signtool.exe -Recurse |
+              Where-Object { $_.FullName -match "\\x64\\signtool.exe$" } |
+              Sort-Object FullName -Descending | Select-Object -First 1
+            if (-not $signtool) { throw "No se encontró SignTool en Windows SDK." }
+            foreach ($file in @("dist/Instant.exe", "dist/Instant-Setup.exe")) {
+              & $signtool.FullName sign /fd SHA256 /f $pfx `
+                /p $env:SIGNING_PFX_PASSWORD /tr https://timestamp.digicert.com `
+                /td SHA256 $file
+              if ($LASTEXITCODE -ne 0) { throw "Falló la firma de $file." }
+              & $signtool.FullName verify /pa /v $file
+              if ($LASTEXITCODE -ne 0) { throw "No se pudo verificar la firma de $file." }
+            }
+          } finally {
+            Remove-Item -LiteralPath $pfx -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Sign, notarize and staple macOS app (optional)
+        if: runner.os == 'macOS' && vars.ENABLE_CODE_SIGNING == 'true'
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_APP_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              echo "ENABLE_CODE_SIGNING=true requiere configurar el secreto $name." >&2
+              exit 1
+            fi
+          done
+          PROFILE="instant-notary-$GITHUB_RUN_ID"
+          KEYCHAIN_PATH="$INSTANT_SIGNING_KEYCHAIN"
+
+          codesign --force --options runtime --timestamp \
+            --sign "$APPLE_SIGNING_IDENTITY" dist/instant-macos
+          APP="dist/Instant.app"
+          mkdir -p "$APP/Contents/MacOS"
+          cp dist/instant-macos "$APP/Contents/MacOS/instant-macos"
+          VERSION="$(python3 -c 'import sys; sys.path.insert(0, "dictado/src"); from instant_app import __version__; print(__version__)')"
+          cat > "$APP/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleExecutable</key><string>instant-macos</string>
+            <key>CFBundleIdentifier</key><string>com.instant.dictado</string>
+            <key>CFBundleName</key><string>Instant</string>
+            <key>CFBundleDisplayName</key><string>Instant</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>$VERSION</string>
+            <key>CFBundleVersion</key><string>$VERSION</string>
+            <key>NSMicrophoneUsageDescription</key><string>Instant usa el micrófono para transcribir dictados localmente.</string>
+          </dict></plist>
+          PLIST
+          codesign --force --deep --options runtime --timestamp \
+            --sign "$APPLE_SIGNING_IDENTITY" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          hdiutil create -volname Instant -srcfolder "$APP" -ov -format UDZO \
+            dist/Instant-macos.dmg
+          codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" \
+            dist/Instant-macos.dmg
+          xcrun notarytool store-credentials "$PROFILE" \
+            --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" --keychain "$KEYCHAIN_PATH"
+          xcrun notarytool submit dist/Instant-macos.dmg \
+            --keychain-profile "$PROFILE" --keychain "$KEYCHAIN_PATH" --wait
+          xcrun stapler staple dist/Instant-macos.dmg
+          xcrun stapler validate dist/Instant-macos.dmg
+          spctl --assess --type execute --verbose=2 "$APP"
+          spctl --assess --type open --context context:primary-signature \
+            --verbose=2 dist/Instant-macos.dmg
+
+      - name: Hash notarized macOS disk image
+        if: runner.os == 'macOS' && vars.ENABLE_CODE_SIGNING == 'true'
+        shell: bash
+        run: |
+          python3 -c "import hashlib; name='Instant-macos.dmg'; data=open('dist/'+name,'rb').read(); open('dist/'+name+'.sha256','w').write(f'{hashlib.sha256(data).hexdigest()}  {name}\\n')"
+
       # SHA256 != firma: el sidecar solo detecta descargas corruptas, no un
       # release comprometido. La prueba criptográfica la da la atestación
       # SLSA del job `provenance` (OIDC de GitHub, sin secretos).
@@ -283,6 +429,23 @@ jobs:
           path: |
             dist/Instant-Setup.exe
             dist/Instant-Setup.exe.sha256
+
+      - name: Upload notarized macOS disk image
+        if: runner.os == 'macOS' && vars.ENABLE_CODE_SIGNING == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: instant-macos-dmg
+          path: |
+            dist/Instant-macos.dmg
+            dist/Instant-macos.dmg.sha256
+
+      - name: Remove temporary macOS signing keychain
+        if: always() && runner.os == 'macOS' && vars.ENABLE_CODE_SIGNING == 'true'
+        shell: bash
+        run: |
+          if [ -n "${INSTANT_SIGNING_KEYCHAIN:-}" ]; then
+            security delete-keychain "$INSTANT_SIGNING_KEYCHAIN" || true
+          fi
 
   sbom:
     needs: build

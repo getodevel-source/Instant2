@@ -1,5 +1,13 @@
 # Plan de mejora integral de Instant
 
+> **Documento histórico.** Esta auditoría conserva sus puntajes, ejemplos y
+> estado de trabajo como una foto anterior a `v0.5.0`; menciones como “el
+> actualizador no inicia la descarga” describen ese momento y no el estado
+> actual del producto. Para pendientes vigentes y evidencia posterior, usar
+> el [informe de mejoras actualizado](informe-mejoras.md), la
+> [lista de validación de releases](validacion-release.md) y el registro de
+> [accesibilidad](accesibilidad.md).
+
 Este plan convierte la auditoría del repositorio en cambios revisables. La primera meta es que el panel y el overlay de voz se sientan claros, fluidos y confiables; después se corrige cada proceso del producto, empezando por la actualización que hoy detecta versiones pero no inicia sola la descarga.
 
 ## Ruta de trabajo
