@@ -53,7 +53,39 @@ transducer sin contexto izquierdo en cortes, sin AGC (mitigado con
 
 ## Lo que queda
 
+Para evaluar voces y micrófonos nuevos sin enviar datos fuera del equipo,
+está disponible [`bench_real_audio.py`](../dictado/bench/bench_real_audio.py).
+Requiere consentimiento afirmativo por clip y genera únicamente métricas
+agregadas; el esquema del manifiesto, las reglas de privacidad y los límites
+del benchmark están en la sección “Evaluación privada de voz real” de este
+documento. Todavía no hay un baseline nuevo: el corpus debe ser aportado y
+consentido antes de medirlo.
+
 Modelo: los técnicos seguros-erróneos ("Will" conf alta) y alucinaciones
 ("compara Git") no los arregla texto. Vía: fine-tune LoRA del decoder
 ([`plan-finetune.md`](plan-finetune.md)). Rescoring KenLM medido y
 descartado (el sobremuestreo premia "commit" hasta sobre "comer": peligro FP).
+
+## Evaluación privada de voz real
+
+Desde `dictado/`, crear localmente `bench/private-real-audio.csv` con estas
+columnas: `path,reference,condition,microphone,speaker_id,consent`. Cada fila
+debe identificar un clip WAV PCM de 16 bits y 16 kHz (mono o estéreo), una
+referencia revisada, categorías generales de condición/micrófono y un
+identificador pseudónimo de hablante. `consent` debe ser `yes`, `si`, `sí`,
+`true` o `1`. La ruta puede ser absoluta o relativa al CSV.
+
+Ejecutar con los modelos de Instant ya descargados:
+
+```bash
+python bench/bench_real_audio.py --manifest bench/private-real-audio.csv
+```
+
+El resultado muestra WER agrupado, sustituciones, borrados, inserciones,
+fragmentos vacíos y cambios/regresiones del corrector. Opcionalmente,
+`--json bench/private-real-audio-summary.json` guarda solo esas métricas. No
+se imprimen referencias, audio, rutas ni IDs de hablante. El manifiesto y los
+WAV quedan excluidos de Git por defecto. No agregar audio real al repositorio,
+al CI o a servicios externos; pedir autorización a cada hablante y permitir
+que retire su clip. La herramienta no crea consentimiento: solo verifica que
+la persona responsable haya marcado afirmativamente cada fila.
