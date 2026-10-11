@@ -870,6 +870,14 @@ class Daemon:
                 log.exception("no pude iniciar el icono de bandeja")
             key = hotkey.key_label(self.cfg.get("key", "f9"))
             log.info("listo. Manten %s para dictar (60-120s), suelta para transcribir. Ctrl+C sale.", key)
+            set_hotkey_error = getattr(self.hk, "set_error_callback", None)
+            if set_hotkey_error is not None:
+                set_hotkey_error(lambda message: self.overlay.show_error_for(
+                    0, message, "#f87171", 10000))
+            set_hotkey_ready = getattr(self.hk, "set_ready_callback", None)
+            if set_hotkey_ready is not None:
+                set_hotkey_ready(lambda message: self.overlay.show_notice_for(
+                    0, message, "#fbbf24", 10000))
             self.hk.start(self.on_press, self.on_release)
             if not self.overlay.run_event_loop(
                     self._shutdown, lambda: log.info("vivo, esperando %s...", key)):

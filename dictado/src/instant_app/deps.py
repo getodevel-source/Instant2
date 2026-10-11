@@ -7,9 +7,10 @@ tabla y `--fix-deps` instala lo que el SO permite sin intervencion.
 Matriz auto / no-auto:
 - Windows: Python>=3.12, pip y paquetes por pip (auto=si). Sin
   dependencias del sistema (entrada "sistema": ok=True con nota).
-- Linux: portaudio (libportaudio2), xclip/xsel y xdotool por apt
+- Linux X11: portaudio, xclip/xsel y xdotool por apt o pacman
   (auto=si solo con sudo sin password o root; nunca pide password).
-  En Wayland xdotool no anda (ok=False, auto=False).
+- Linux Wayland: dbus-fast por pip; wl-clipboard y wtype por apt/pacman
+  (auto=si solo con sudo sin password o root).
 - macOS: portaudio por brew (auto=si solo si brew existe).
 - Sin red no se instala nada: queda [FALTA] con hint, sin traceback.
 """
@@ -32,6 +33,7 @@ _PIP = {
     "sherpa_onnx": "sherpa-onnx",
     "keyboard": "keyboard",
     "pynput": "pynput",
+    "dbus_fast": "dbus-fast",
     "pyperclip": "pyperclip",
     "pystray": "pystray",
     "PIL": "Pillow",
@@ -42,6 +44,20 @@ _APT = {
     "portaudio": "libportaudio2",
     "xclip/xsel": "xclip",
     "xdotool": "xdotool",
+    "wl-clipboard": "wl-clipboard",
+    "wtype": "wtype",
+    "xdg-desktop-portal": "xdg-desktop-portal",
+    "xdg-desktop-portal-hyprland": "xdg-desktop-portal-hyprland",
+}
+
+_PACMAN = {
+    "portaudio": "portaudio",
+    "xclip/xsel": "xclip",
+    "xdotool": "xdotool",
+    "wl-clipboard": "wl-clipboard",
+    "wtype": "wtype",
+    "xdg-desktop-portal": "xdg-desktop-portal",
+    "xdg-desktop-portal-hyprland": "xdg-desktop-portal-hyprland",
 }
 
 
@@ -70,6 +86,52 @@ def _can_apt():
         return r.returncode == 0
     except Exception:
         return False
+
+
+def _arch_based():
+    """Detect Arch and Arch-derived systems without assuming their name."""
+    try:
+        values = {}
+        with open("/etc/os-release", encoding="utf-8") as handle:
+            for line in handle:
+                key, separator, value = line.partition("=")
+                if separator and key in ("ID", "ID_LIKE"):
+                    values[key] = value.strip().strip('"').lower()
+        family = " ".join(values.values()).split()
+        return bool({"arch", "omarchy"}.intersection(family)) and \
+            shutil.which("pacman") is not None
+    except OSError:
+        return False
+
+
+def _can_pacman():
+    if shutil.which("pacman") is None:
+        return False
+    try:
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            return True
+        return shutil.which("sudo") is not None and \
+            _run(["sudo", "-n", "true"], timeout=10).returncode == 0
+    except Exception:
+        return False
+
+
+def _portal_component_present(name):
+    """Portal executables live under libexec/lib, not always in PATH."""
+    if shutil.which(name) is not None:
+        return True
+    paths = {
+        "xdg-desktop-portal": (
+            "/usr/lib/xdg-desktop-portal",
+            "/usr/libexec/xdg-desktop-portal",
+        ),
+        "xdg-desktop-portal-hyprland": (
+            "/usr/lib/xdg-desktop-portal-hyprland",
+            "/usr/libexec/xdg-desktop-portal-hyprland",
+            "/usr/share/xdg-desktop-portal/portals/hyprland.portal",
+        ),
+    }
+    return any(os.path.isfile(path) for path in paths.get(name, ()))
 
 
 def _lib_present(name):
@@ -141,7 +203,15 @@ def check():
 
     pkgs = ["numpy", "sounddevice", "sherpa_onnx", "pyperclip",
             "PySide6", "PIL"]
-    pkgs.append("keyboard" if plat == "win32" else "pynput")
+    wayland = (plat.startswith("linux") and (
+        bool(os.environ.get("WAYLAND_DISPLAY"))
+        or os.environ.get("XDG_SESSION_TYPE", "").strip().lower() == "wayland"))
+    if plat == "win32":
+        pkgs.append("keyboard")
+    elif wayland:
+        pkgs.append("dbus_fast")
+    else:
+        pkgs.append("pynput")
     if plat == "win32":
         pkgs.append("pystray")
     for mod in pkgs:
@@ -179,26 +249,59 @@ def check():
         return out
 
     # Linux.
-    can_apt = _can_apt()
+    arch = _arch_based()
+    can_system_install = _can_pacman() if arch else _can_apt()
     ok_pa = _lib_present("portaudio") or _dpkg_ok("libportaudio2")
     out["portaudio"] = _entry(
         ok_pa, "libportaudio2 presente." if ok_pa
-        else "sudo apt install libportaudio2.", auto=can_apt)
-    ok_cb = shutil.which("xclip") is not None or shutil.which("xsel") is not None
-    out["xclip/xsel"] = _entry(
-        ok_cb, "portapapeles presente (xclip/xsel)." if ok_cb
-        else "sudo apt install xclip.", auto=can_apt)
-    wayland = bool(os.environ.get("WAYLAND_DISPLAY")) or \
-        os.environ.get("XDG_SESSION_TYPE") == "wayland"
+        else ("pacman -S portaudio." if arch
+              else "sudo apt install libportaudio2."), auto=can_system_install)
     if wayland:
+        out["xclip/xsel"] = _entry(
+            True, "no se necesita en Wayland; se usa wl-clipboard.", auto=False)
         out["xdotool"] = _entry(
-            False, "En Wayland xdotool no anda: usa sesion X11 o wtype manual.",
-            auto=False)
+            True, "no se necesita en Wayland; se usa wtype.", auto=False)
+        portal_ok = _portal_component_present("xdg-desktop-portal")
+        out["xdg-desktop-portal"] = _entry(
+            portal_ok, "portal de escritorio presente." if portal_ok else
+            ("pacman -S xdg-desktop-portal." if arch else
+             "instala y activa xdg-desktop-portal para registrar el atajo."),
+            auto=can_system_install)
+        desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
+        hyprland = ("hyprland" in desktop
+                    or bool(os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")))
+        if hyprland:
+            portal_backend_ok = _portal_component_present(
+                "xdg-desktop-portal-hyprland")
+            out["xdg-desktop-portal-hyprland"] = _entry(
+                portal_backend_ok,
+                "backend del portal Hyprland presente." if portal_backend_ok else
+                ("pacman -S xdg-desktop-portal-hyprland." if arch else
+                 "instala xdg-desktop-portal-hyprland y reinicia el portal."),
+                auto=can_system_install)
+        ok_wl = (shutil.which("wl-copy") is not None
+                 and shutil.which("wl-paste") is not None)
+        out["wl-clipboard"] = _entry(
+            ok_wl, "wl-clipboard presente." if ok_wl else
+            ("pacman -S wl-clipboard." if arch
+             else "instala wl-clipboard para gestionar el portapapeles Wayland."),
+            auto=can_system_install)
+        ok_wtype = shutil.which("wtype") is not None
+        out["wtype"] = _entry(
+            ok_wtype, "wtype presente (pegado Wayland)." if ok_wtype else
+            ("pacman -S wtype." if arch else "sudo apt install wtype."),
+            auto=can_system_install)
     else:
+        ok_cb = shutil.which("xclip") is not None or shutil.which("xsel") is not None
+        out["xclip/xsel"] = _entry(
+            ok_cb, "portapapeles presente (xclip/xsel)." if ok_cb
+            else ("pacman -S xclip." if arch else "sudo apt install xclip."),
+            auto=can_system_install)
         ok_xd = shutil.which("xdotool") is not None
         out["xdotool"] = _entry(
             ok_xd, "xdotool presente (X11)." if ok_xd
-            else "sudo apt install xdotool.", auto=can_apt)
+            else ("pacman -S xdotool." if arch
+                  else "sudo apt install xdotool."), auto=can_system_install)
     return out
 
 
@@ -227,15 +330,25 @@ def _install_one(name):
                        stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
                        timeout=300, check=True)
         return
-    if sys.platform.startswith("linux") and name in _APT:
-        pkg = _APT[name]
-        cmd = ["apt-get", "install", "-y", pkg]
-        if not (hasattr(os, "geteuid") and os.geteuid() == 0):
-            cmd = ["sudo", "-n"] + cmd  # nunca pide password
-        print(f"  instalando {pkg} con apt...")
-        subprocess.run(cmd, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.STDOUT, timeout=300, check=True)
-        return
+    if sys.platform.startswith("linux"):
+        if name in _APT:
+            if _arch_based():
+                pkg = _PACMAN.get(name)
+                if not pkg:
+                    raise RuntimeError(f"no hay paquete Arch configurado para {name}")
+                cmd = ["pacman", "-S", "--needed", "--noconfirm", pkg]
+                if not (hasattr(os, "geteuid") and os.geteuid() == 0):
+                    cmd = ["sudo", "-n"] + cmd  # nunca pide password
+                print(f"  instalando {pkg} con pacman...")
+            else:
+                pkg = _APT[name]
+                cmd = ["apt-get", "install", "-y", pkg]
+                if not (hasattr(os, "geteuid") and os.geteuid() == 0):
+                    cmd = ["sudo", "-n"] + cmd  # nunca pide password
+                print(f"  instalando {pkg} con apt...")
+            subprocess.run(cmd, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.STDOUT, timeout=300, check=True)
+            return
     if sys.platform == "darwin" and name == "portaudio":
         print("  instalando portaudio con brew...")
         subprocess.run(["brew", "install", "portaudio"],

@@ -25,6 +25,9 @@ dependencies = [
     "sherpa-onnx==1.13.8",
     "keyboard==0.13.5; sys_platform == 'win32'",
     "pynput; sys_platform != 'win32'",
+    # Wayland no permite leer teclas globales desde pynput. El atajo PTT se
+    # registra con el portal GlobalShortcuts en Linux/Hyprland.
+    "dbus-fast==5.2.0; sys_platform == 'linux'",
     # La bandeja (pystray) es lo único exclusivo de Windows; el panel Qt y
     # Pillow (icono de ventana) son iguales en los tres sistemas.
     "pystray==0.19.5; sys_platform == 'win32'",

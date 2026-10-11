@@ -1,10 +1,10 @@
 """Pegado por SO. Windows: clipboard + Ctrl+V (probado, respeta ñ/á).
-Linux: xclip/xsel + xdotool Ctrl+V (X11). macOS: pbcopy + pynput Cmd+V.
+Linux: xclip/xsel + xdotool en X11; wl-clipboard + wtype en Wayland.
+macOS: pbcopy + pynput Cmd+V.
 
 El clipboard previo se guarda y restaura (el dictado no debe comerse lo
-que el usuario tenia copiado). En Wayland/XWayland no hay inyeccion de teclas:
-se avisa ANTES de pisar el clipboard (texto ya en el portapapeles,
-pegar con Ctrl+V manual). `paste("")` es no-op.
+que el usuario tenia copiado) cuando las herramientas del escritorio lo
+permiten. `paste("")` es no-op.
 """
 import logging
 import time
@@ -73,34 +73,28 @@ def _paste_linux(text):
     import os
     import shutil
     import subprocess
-    # Wayland/XWayland no inyecta teclas con xdotool: chequear ANTES de
-    # pisar el clipboard, para no comer lo copiado a cambio de nada. El
-    # texto ya queda en el portapapeles; el usuario pega con Ctrl+V manual.
-    # Sin colapsar vars con `or`: en XWayland XDG_SESSION_TYPE es "x11"
-    # pero WAYLAND_DISPLAY sigue seteado y xdotool tampoco inyecta.
+    # Wayland/XWayland usa wl-clipboard y wtype. Sin colapsar vars con `or`:
+    # en XWayland XDG_SESSION_TYPE puede ser "x11" pero WAYLAND_DISPLAY sigue
+    # seteado y xdotool no puede inyectar teclas en superficies Wayland.
     session_type = (os.environ.get("XDG_SESSION_TYPE") or "").strip().lower()
     wayland_display = (os.environ.get("WAYLAND_DISPLAY") or "").strip()
     is_wayland = (session_type == "wayland" or "wayland" in session_type
                   or bool(wayland_display))
     if is_wayland:
-        tool = shutil.which("xclip") or shutil.which("xsel") \
-            or shutil.which("wl-copy")
-        if tool is None:
+        wl_copy = shutil.which("wl-copy")
+        wl_paste = shutil.which("wl-paste")
+        wtype = shutil.which("wtype")
+        if wl_copy is None or wl_paste is None:
             raise RuntimeError(
-                "en Wayland no hay inyeccion de teclas (xdotool es solo X11): "
-                "instala xclip o wl-clipboard y pega con Ctrl+V manual; "
-                "no se piso el clipboard")
-        if tool.endswith("wl-copy"):
-            subprocess.run([tool], input=text.encode("utf-8"),
-                           check=True, timeout=10)
-        elif tool.endswith("xclip"):
-            subprocess.run([tool, "-selection", "clipboard"],
-                           input=text.encode("utf-8"), check=True, timeout=10)
-        else:
-            subprocess.run([tool, "--clipboard", "--input"],
-                           input=text.encode("utf-8"), check=True, timeout=10)
-        log.warning("Wayland: texto en el portapapeles; "
-                    "pega con Ctrl+V manual (sin inyeccion de teclas).")
+                "Wayland necesita wl-clipboard para preservar el portapapeles "
+                "(instalá wl-clipboard; en Arch/Omarchy: "
+                "sudo pacman -S wl-clipboard). No se modificó el portapapeles.")
+        if wtype is None:
+            raise RuntimeError(
+                "Wayland necesita wtype para pegar con Ctrl+V "
+                "(en Arch/Omarchy: sudo pacman -S wtype). "
+                "No se modificó el portapapeles.")
+        _paste_wayland(text, wl_copy, wl_paste, wtype, subprocess)
         return
     tool = shutil.which("xclip") or shutil.which("xsel")
     if tool is None:
@@ -138,6 +132,41 @@ def _paste_linux(text):
                                    input=prev, check=True, timeout=10)
             except Exception:
                 pass
+
+
+def _paste_wayland(text, wl_copy, wl_paste, wtype, subprocess):
+    """Usa el portapapeles Wayland y su teclado virtual, sin leer /dev/input."""
+    try:
+        previous = subprocess.run(
+            [wl_paste, "--no-newline", "--type", "text/plain"],
+            capture_output=True, timeout=10)
+        prev = previous.stdout if previous.returncode == 0 else None
+    except Exception:
+        prev = None
+
+    subprocess.run([wl_copy, "--type", "text/plain"],
+                   input=text.encode("utf-8"), check=True, timeout=10)
+    _wait_paste_ready()
+    pasted = False
+    try:
+        subprocess.run([wtype, "-M", "ctrl", "v", "-m", "ctrl"],
+                       check=True, timeout=10)
+        pasted = True
+    except Exception as exc:
+        # Dejar el dictado disponible para un Ctrl+V manual da una salida
+        # recuperable si el compositor rechaza el teclado virtual.
+        raise RuntimeError(
+            "No pude enviar Ctrl+V en Wayland; el texto quedó en el "
+            "portapapeles para pegarlo manualmente.") from exc
+    finally:
+        if pasted and prev is not None:
+            _wait_paste_ready()
+            try:
+                subprocess.run([wl_copy, "--type", "text/plain"],
+                               input=prev, check=True, timeout=10)
+            except Exception:
+                log.warning("no pude restaurar el portapapeles previo en Wayland",
+                            exc_info=True)
 
 
 def _paste_macos(text):

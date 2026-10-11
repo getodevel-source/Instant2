@@ -18,15 +18,32 @@ fi
 case "$OS" in
   Linux)
     echo "[Instant] Instalando dependencias del sistema..."
-    sudo apt-get update
-    sudo apt-get install -y python3-venv libportaudio2 xclip xdotool
-    # Libs que el wheel de PySide6 no trae y el panel/overlay web necesita para
-    # abrir: xcb del panel y el stack de QtWebEngine del overlay (NSS, X11
-    # extendido, ALSA, GBM). Si alguna no existe en esta distro, no aborta la
-    # instalación: el setup lo reporta y sugiere el paquete exacto.
-    sudo apt-get install -y libxcb-cursor0 libegl1 libgl1 libxkbcommon0 \
-      libnss3 libxcomposite1 libxdamage1 libxrandr2 libxtst6 libcups2 \
-      libatk-bridge2.0-0 libgbm1 libasound2 || true
+    if command -v pacman >/dev/null 2>&1; then
+      # Omarchy y otras distros Arch usan Hyprland/Wayland con frecuencia.
+      # Instalar en un sistema Arch ya actualizado evita forzar un upgrade
+      # completo del sistema desde el instalador de Instant.
+      sudo pacman -S --needed --noconfirm \
+        python python-pip portaudio xclip xdotool wl-clipboard wtype \
+        xdg-desktop-portal xdg-desktop-portal-hyprland \
+        xcb-util-cursor libxkbcommon mesa nss libxcomposite libxdamage \
+        libxrandr libxtst cups atk alsa-lib qt6-wayland
+    elif command -v apt-get >/dev/null 2>&1; then
+      sudo apt-get update
+      sudo apt-get install -y python3-venv libportaudio2 xclip xdotool wl-clipboard
+      # wtype es solo para Wayland. Algunas instalaciones mínimas de Ubuntu
+      # no tienen habilitado Universe, así que su ausencia no bloquea X11.
+      sudo apt-get install -y wtype || true
+      # Libs que el wheel de PySide6 no trae y el panel/overlay web necesita para
+      # abrir: xcb del panel y el stack de QtWebEngine del overlay (NSS, X11
+      # extendido, ALSA, GBM). Si alguna no existe en esta distro, no aborta la
+      # instalación: el setup lo reporta y sugiere el paquete exacto.
+      sudo apt-get install -y libxcb-cursor0 libegl1 libgl1 libxkbcommon0 \
+        libnss3 libxcomposite1 libxdamage1 libxrandr2 libxtst6 libcups2 \
+        libatk-bridge2.0-0 libgbm1 libasound2 || true
+    else
+      echo "[Instant] Linux necesita apt o pacman; instala las dependencias manualmente." >&2
+      exit 1
+    fi
     ;;
   Darwin)
     echo "[Instant] Instalando PortAudio..."

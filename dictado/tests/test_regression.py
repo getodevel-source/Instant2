@@ -470,30 +470,42 @@ with patch.object(_sys, "platform", "linux"), \
 with patch.object(_sys, "platform", "linux"), \
         patch.dict("os.environ", {"XDG_SESSION_TYPE": "wayland"}, clear=False), \
         patch.object(_shutil, "which",
-                     side_effect=lambda n: "/usr/bin/wl-copy" if n == "wl-copy" else None), \
+                     side_effect=lambda n: {
+                         "wl-copy": "/usr/bin/wl-copy",
+                         "wl-paste": "/usr/bin/wl-paste",
+                         "wtype": "/usr/bin/wtype",
+                     }.get(n)), \
         patch.object(_subp, "run") as _run:
     _paste.paste("texto wayland")
-    _check("paste wayland usa wl-copy sin xdotool",
-           _run.called and "wl-copy" in str(_run.call_args_list[0][0]))
+    _check("paste wayland preserva clipboard y usa wtype",
+           _run.call_count == 3 and "wtype" in str(_run.call_args_list[2][0]))
 # Paste: XWayland (x11 con WAYLAND_DISPLAY) tambien va por ruta segura.
 with patch.object(_sys, "platform", "linux"), \
         patch.dict("os.environ", {"XDG_SESSION_TYPE": "x11",
                                   "WAYLAND_DISPLAY": "wayland-0"}, clear=False), \
         patch.object(_shutil, "which",
-                     side_effect=lambda n: "/usr/bin/wl-copy" if n == "wl-copy" else None), \
+                     side_effect=lambda n: {
+                         "wl-copy": "/usr/bin/wl-copy",
+                         "wl-paste": "/usr/bin/wl-paste",
+                         "wtype": "/usr/bin/wtype",
+                     }.get(n)), \
         patch.object(_subp, "run") as _run:
     _paste.paste("texto xwayland")
-    _check("paste xwayland usa wl-copy sin xdotool",
-           _run.called and "wl-copy" in str(_run.call_args_list[0][0]))
+    _check("paste xwayland elige la ruta Wayland completa",
+           _run.call_count == 3 and "wtype" in str(_run.call_args_list[2][0]))
 with patch.object(_sys, "platform", "linux"), \
         patch.dict("os.environ", {"XDG_SESSION_TYPE": "",
                                   "WAYLAND_DISPLAY": "wayland-0"}, clear=False), \
         patch.object(_shutil, "which",
-                     side_effect=lambda n: "/usr/bin/wl-copy" if n == "wl-copy" else None), \
+                     side_effect=lambda n: {
+                         "wl-copy": "/usr/bin/wl-copy",
+                         "wl-paste": "/usr/bin/wl-paste",
+                         "wtype": "/usr/bin/wtype",
+                     }.get(n)), \
         patch.object(_subp, "run") as _run:
     _paste.paste("texto wayland-display")
-    _check("paste solo WAYLAND_DISPLAY va por ruta segura",
-           _run.called and "wl-copy" in str(_run.call_args_list[0][0]))
+    _check("paste solo WAYLAND_DISPLAY completa pegado y preservacion",
+           _run.call_count == 3 and "wtype" in str(_run.call_args_list[2][0]))
 
 # Bias: conf invalida sigue a _strong_spot (Regla C siempre, como docstring)
 # y alinea con llm.maybe_polish (invalida = take seguro 1.0).

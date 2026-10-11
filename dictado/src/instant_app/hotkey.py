@@ -1,6 +1,6 @@
 """Hotkey hold-to-talk por SO.
-Windows: polling GetAsyncKeyState (probado; sin hook, sin admin, Deskflow no lo roba).
-Linux/macOS: pynput (listener press/release). Sin backend -> error claro.
+Windows: polling GetAsyncKeyState. Linux Wayland: portal GlobalShortcuts.
+Linux X11/macOS: pynput (listener press/release). Sin backend -> error claro.
 """
 import logging
 import threading
@@ -338,7 +338,15 @@ class PynputHotkey:
 
 
 def create(key_name):
+    import os
     import sys
     if sys.platform == "win32":
         return WindowsPolling(key_name)
+    if (sys.platform.startswith("linux")
+            and (os.environ.get("XDG_SESSION_TYPE", "").strip().lower()
+                 == "wayland"
+                 or bool(os.environ.get("WAYLAND_DISPLAY")))):
+        import importlib
+        portal = importlib.import_module("instant_app.wayland_hotkey")
+        return portal.PortalHotkey(key_name)
     return PynputHotkey(key_name)

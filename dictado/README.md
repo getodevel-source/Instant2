@@ -54,7 +54,9 @@ ventana existente o abre una nueva, sin duplicar ventanas. Clic derecho ofrece
 Windows puede ubicar el icono bajo la flecha de iconos ocultos; su visibilidad
 fija se configura en la barra de tareas.
 
-### Linux (solo X11)
+### Linux (X11 y Wayland)
+
+X11 se instala con Debian/Ubuntu:
 
 ```bash
 sudo apt install python3-venv libportaudio2 xclip xdotool libxcb-cursor0 libegl1 libgl1 libxkbcommon0
@@ -62,7 +64,46 @@ sudo apt install python3-venv libportaudio2 xclip xdotool libxcb-cursor0 libegl1
 
 El panel web necesita las libs xcb/GL de Qt y el stack de QtWebEngine
 (NSS, GBM, ALSA; el wheel de PySide6 no las trae);
-`install.sh` las intenta instalar solo. [Wayland no está soportado](https://github.com/getodevel-source/Instant/issues): el pegado con `xdotool` no funciona y el hotkey con `pynput` requiere X; usá sesión X11 o `wtype` manual.
+`scripts/install.sh` instala estas dependencias en Debian/Ubuntu y Arch.
+
+En Arch/Omarchy, mantené el sistema actualizado y ejecutá:
+
+```bash
+sudo pacman -S --needed python python-pip portaudio wl-clipboard wtype \
+  xdg-desktop-portal xdg-desktop-portal-hyprland xcb-util-cursor \
+  libxkbcommon mesa nss libxcomposite libxdamage libxrandr libxtst \
+  cups atk alsa-lib qt6-wayland
+```
+
+Instant detecta Wayland automáticamente. El pegado usa `wl-clipboard` y
+`wtype`; si el compositor rechaza el teclado virtual, la transcripción queda
+en el portapapeles para pegarla manualmente. Las superficies nativas de
+Wayland son el objetivo inicial; XWayland puede comportarse distinto.
+
+#### Hyprland y Omarchy
+
+El hotkey usa el portal XDG de atajos globales. Iniciá Instant una vez y
+consultá los atajos registrados:
+
+```bash
+hyprctl globalshortcuts
+```
+
+Buscá la entrada cuya descripción dice `Instant: mantener para dictar` y
+copiá su identificador completo (el formato es `aplicación:push-to-talk`).
+Asocialo a la tecla configurada en Instant en tu archivo de bindings de
+Hyprland. En la configuración Lua de Omarchy, por ejemplo:
+
+```lua
+hl.bind("F9", hl.dsp.global("ID-DE-INSTANT:push-to-talk"))
+```
+
+Reemplazá `F9` por la tecla configurada y `ID-DE-INSTANT:push-to-talk` por el
+identificador completo que devolvió `hyprctl`. Recargá Hyprland y reiniciá
+Instant. Mantené la tecla para grabar y
+soltala para detener el dictado. El portal necesita el backend
+`xdg-desktop-portal-hyprland` activo. Este soporte es experimental y requiere
+verificación en la sesión concreta de Omarchy.
 
 ### macOS
 
@@ -173,16 +214,20 @@ instant setup --fix-deps
 | numpy, sounddevice, sherpa-onnx, pyperclip | `importlib` | sí (`pip install`) | `pip install <paquete>` |
 | PySide6 (panel, los tres sistemas) | `importlib` | sí (`pip install`) | `pip install PySide6` |
 | Pillow (icono de ventana) | `importlib` | sí (`pip install`) | `pip install Pillow` |
-| keyboard (win) / pynput (linux/mac) | `importlib` | sí (`pip install`) | `pip install <paquete>` |
+| keyboard (Windows) / pynput (Linux X11 y macOS) | `importlib` | sí (`pip install`) | `pip install <paquete>` |
+| dbus-fast (Linux Wayland) | `importlib` | sí (`pip install`) | `pip install dbus-fast` |
+| xdg-desktop-portal / backend Hyprland | `xdg-desktop-portal` en PATH; backend de Hyprland instalado | sí (`apt`/`pacman`) sin pedir password al sistema | `sudo apt install xdg-desktop-portal xdg-desktop-portal-hyprland` / `sudo pacman -S xdg-desktop-portal xdg-desktop-portal-hyprland` |
 | pystray (Windows) | icono de bandeja | sí (`pip install`) | `pip install pystray` |
-| portaudio linux (`libportaudio2`) | lib/ldconfig/dpkg | sí (`apt`) solo con sudo sin password o root | `sudo apt install libportaudio2` |
+| PortAudio Linux (`libportaudio2` / `portaudio`) | lib/ldconfig/dpkg | sí (`apt`/`pacman`) solo con sudo sin password o root | `sudo apt install libportaudio2` / `sudo pacman -S portaudio` |
 | libs Qt linux (`libxcb-cursor0`, GL) | — (la pista la da el panel) | `install.sh` intenta `apt` | `sudo apt install libxcb-cursor0 libegl1 libgl1 libxkbcommon0` |
-| xclip/xsel linux | PATH | sí (`apt`) solo con sudo sin password o root | `sudo apt install xclip` |
-| xdotool linux (X11) | PATH | sí (`apt`) solo con sudo sin password o root | `sudo apt install xdotool` |
+| xclip/xsel Linux X11 | PATH | sí (`apt`/`pacman`) solo con sudo sin password o root | `sudo apt install xclip` / `sudo pacman -S xclip` |
+| xdotool Linux X11 | PATH | sí (`apt`/`pacman`) solo con sudo sin password o root | `sudo apt install xdotool` / `sudo pacman -S xdotool` |
+| wl-clipboard Linux Wayland | `wl-copy` y `wl-paste` en PATH | sí (`apt`/`pacman`) solo con sudo sin password o root | `sudo apt install wl-clipboard` / `sudo pacman -S wl-clipboard` |
+| wtype Linux Wayland | PATH | sí (`apt`/`pacman`) solo con sudo sin password o root | `sudo apt install wtype` / `sudo pacman -S wtype` |
 | portaudio mac | `brew --prefix portaudio` | sí (`brew`) solo si tenés brew | `brew install portaudio` |
 | Windows: nada del sistema | — | — | no hace falta nada |
 
-En Wayland no hay soporte (usá sesión X11 o `wtype` manual; ver [Linux](#linux-solo-x11)). Sin red no se instalan paquetes ni modelos; el setup informa qué falta. Para evitar preguntas en instalaciones automatizadas, definí `INSTANT_UNATTENDED=1` antes de correr el instalador del repositorio.
+En Wayland, el hotkey depende del portal global del compositor; ver [Hyprland y Omarchy](#hyprland-y-omarchy). Sin red no se instalan paquetes ni modelos; el setup informa qué falta. Para evitar preguntas en instalaciones automatizadas, definí `INSTANT_UNATTENDED=1` antes de correr el instalador del repositorio.
 
 ## De dónde saca los modelos (DICTADO_DATA)
 
@@ -356,7 +401,7 @@ ausencia).
 
 ## Binarios por SO
 
-Los binarios salen de las [releases de GitHub](https://github.com/getodevel-source/Instant/releases/latest): `Instant-Setup.exe` (instalador de Windows), `Instant.exe` (portable de Windows), `instant-linux` y `instant-macos`. Cada asset trae un sidecar `.sha256` y el actualizador rechaza cualquier descarga sin sidecar válido o con hash distinto. Están **sin firmar** por ahora (ver la nota en [Instalación](#instalación)).
+Los binarios salen de las [releases de GitHub](https://github.com/getodevel-source/Instant/releases/latest): `Instant-Setup.exe` (instalador de Windows), `Instant.exe` (portable de Windows), `instant-linux` y `instant-macos`. Cada asset trae un sidecar `.sha256` y el actualizador rechaza cualquier descarga sin sidecar válido o con hash distinto. Actualmente salen **sin firma de sistema operativo** (ver la nota en [Instalación](#instalación)); el workflow tiene una ruta optativa de firma y notarización que se activa solo cuando el repositorio configura certificados. Si se activa, también publica `Instant-macos.dmg`. El proceso está en la [guía de firma](../docs/firma-releases.md).
 
 Verificá un asset a mano antes de instalarlo:
 

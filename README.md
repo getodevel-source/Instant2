@@ -29,15 +29,20 @@
 | Sistema | Descarga |
 |---|---|
 | Windows | `Instant-Setup.exe` (instalador) o `Instant.exe` (portable) |
-| Linux (X11) | `instant-linux` |
+| Linux (X11; Wayland/Hyprland experimental) | `instant-linux` |
 | macOS | `instant-macos` |
 
 > **Antes de dictar.** Tu sistema te pide permiso para usar el micrófono:
 > aceptalo, si no Instant no escucha. Los binarios están **sin firmar**
 > por ahora: SmartScreen (Windows) y Gatekeeper (macOS) avisan la primera
-> vez, es esperable. En Linux usá sesión **X11** (en Wayland el pegado y
-> la tecla global están limitados). En macOS autorizá además
+> vez, es esperable. Linux X11 funciona directamente; Wayland está en fase
+> experimental y requiere registrar el atajo de Hyprland como explica la
+> [guía detallada](dictado/README.md#linux-x11-y-wayland). En macOS autorizá además
 > **Accesibilidad** en Ajustes del Sistema (pegar con el teclado lo exige).
+
+Los releases actuales siguen sin firma de sistema operativo; el workflow ya
+permite habilitar firma Windows y notarización macOS al configurar certificados.
+Ver [cómo se configura](docs/firma-releases.md).
 
 ## Pantallas
 
