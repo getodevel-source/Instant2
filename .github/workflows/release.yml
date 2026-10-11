@@ -77,7 +77,7 @@ jobs:
         shell: bash
         run: |
           ICON_PATH="$(python -c 'import os; print(os.path.abspath("dictado/build/instant.ico"))')"
-          # The custom QtQml hook collects only the overlay's QML modules.
+          # Custom hooks restrict QML, QtWebEngine, and Pillow to what Instant uses.
           pyinstaller --onefile --windowed --name "${{ matrix.binary_name }}" \
             --icon "$ICON_PATH" \
             --hidden-import instant_app.gui \
@@ -94,10 +94,10 @@ jobs:
             --hidden-import PySide6.QtWebEngineQuick \
             --hidden-import PySide6.QtWebEngineCore \
             --hidden-import PySide6.QtWebChannel \
+            --hidden-import PIL.Image \
+            --hidden-import PIL.ImageDraw \
             --collect-all sherpa_onnx \
-            --collect-all sounddevice \
             --collect-all pystray \
-            --collect-all PIL \
             dictado/src/instant_app/__main__.py
 
       - name: Build Windows installer (onedir + Inno Setup)
@@ -121,10 +121,10 @@ jobs:
             --hidden-import PySide6.QtWebEngineQuick \
             --hidden-import PySide6.QtWebEngineCore \
             --hidden-import PySide6.QtWebChannel \
+            --hidden-import PIL.Image \
+            --hidden-import PIL.ImageDraw \
             --collect-all sherpa_onnx \
-            --collect-all sounddevice \
             --collect-all pystray \
-            --collect-all PIL \
             dictado/src/instant_app/__main__.py
           VERSION="$(python -c 'import sys; sys.path.insert(0, "dictado/src"); from instant_app import __version__; print(__version__)')"
           SOURCE="$(python -c 'import os; print(os.path.abspath("dist/Instant"))')"
@@ -217,7 +217,6 @@ jobs:
             --hidden-import PySide6.QtWebEngineCore \
             --hidden-import PySide6.QtWebChannel \
             --collect-all sherpa_onnx \
-            --collect-all sounddevice \
             dictado/src/instant_app/__main__.py
 
       - name: Smoke del portable Windows congelado
