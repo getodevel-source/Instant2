@@ -3,6 +3,21 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 El proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
+## [0.5.2] - 2026-10-12
+
+### Mejorado
+- Reduce memoria temporal durante el procesamiento de audio y libera los
+  modelos tras cinco minutos sin dictados. El primer dictado posterior puede
+  tardar un poco más mientras se vuelven a cargar.
+- Reduce recursos opcionales incluidos en los paquetes congelados.
+
+### Corregido
+- Hace más fiable el envío de Ctrl+V en Windows y el indicador ahora confirma
+  que el texto está copiado, sin afirmar que la aplicación de destino lo pegó.
+
+### Documentación
+- Añade una evaluación de tecnologías y modelos LLM locales.
+
 ## [0.5.1] - 2026-10-11
 
 ### Agregado
