@@ -447,6 +447,11 @@ class StreamKeeper:
 
 
 class Daemon:
+    # Se liberan los modelos tras cinco minutos sin actividad. El siguiente
+    # dictado se captura completo antes de volver a cargar el motor.
+    MODEL_IDLE_UNLOAD_SECONDS = 300.0
+    MODEL_IDLE_RETRY_SECONDS = 30.0
+
     def __init__(self, cfg, data_dir=None):
         self.cfg = cfg
         self.engine = Engine(data_dir,
@@ -472,6 +477,49 @@ class Daemon:
         self._shutdown = threading.Event()
         self.tray = TrayIcon(self._shutdown)
         self.keeper = None
+        self._model_idle_unload_seconds = self.MODEL_IDLE_UNLOAD_SECONDS
+        self._model_idle_timer = None
+        self._model_idle_generation = 0
+
+    def _schedule_model_idle_unload_locked(self, delay=None):
+        """Arma el unload; caller holds `self.lock`."""
+        if not hasattr(self, "_model_idle_unload_seconds"):
+            return
+        if self._shutdown.is_set():
+            return
+        timer = self._model_idle_timer
+        if timer is not None:
+            timer.cancel()
+        self._model_idle_generation += 1
+        generation = self._model_idle_generation
+        wait = (self._model_idle_unload_seconds if delay is None else delay)
+        timer = threading.Timer(
+            wait, self._unload_models_if_idle, args=(generation,))
+        timer.daemon = True
+        self._model_idle_timer = timer
+        timer.start()
+
+    def _schedule_model_idle_unload(self):
+        with self.lock:
+            self._schedule_model_idle_unload_locked()
+
+    def _unload_models_if_idle(self, generation=None):
+        with self.lock:
+            if (generation is not None
+                    and generation != self._model_idle_generation):
+                return
+            self._model_idle_timer = None
+            if self._shutdown.is_set():
+                return
+            if self.rec["grabando"] or self.rec["busy"]:
+                self._schedule_model_idle_unload_locked(
+                    self.MODEL_IDLE_RETRY_SECONDS)
+                return
+            if not self.engine.has_loaded_models():
+                return
+            self.engine.unload()
+        log.info("modelos liberados tras %.0fs sin dictados.",
+                 self._model_idle_unload_seconds)
 
     def beep(self, freq=880, ms=120):
         if not self.cfg.get("sound"):
@@ -768,6 +816,7 @@ class Daemon:
         finally:
             with self.lock:
                 self.rec["busy"] = False
+                self._schedule_model_idle_unload_locked()
             self.beep(freq=440)
 
     def on_press(self):
@@ -868,6 +917,7 @@ class Daemon:
                 self.tray.start()
             except Exception:
                 log.exception("no pude iniciar el icono de bandeja")
+            self._schedule_model_idle_unload()
             key = hotkey.key_label(self.cfg.get("key", "f9"))
             log.info("listo. Manten %s para dictar (60-120s), suelta para transcribir. Ctrl+C sale.", key)
             set_hotkey_error = getattr(self.hk, "set_error_callback", None)
@@ -887,6 +937,11 @@ class Daemon:
             log.info("chau.")
         finally:
             self._shutdown.set()
+            with self.lock:
+                timer, self._model_idle_timer = self._model_idle_timer, None
+                self._model_idle_generation += 1
+                if timer is not None:
+                    timer.cancel()
             keeper, self.keeper = getattr(self, "keeper", None), None
             if keeper is not None:
                 try:

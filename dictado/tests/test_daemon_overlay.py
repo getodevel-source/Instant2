@@ -157,6 +157,37 @@ _check("frontend detecta saturacion", _clip > 0.02)
 _out, _dc, _clip = frontend(_np.zeros(100, dtype=_np.float32))
 _check("frontend silencio intacto", _dc == 0.0 and _clip == 0.0)
 
+# El recorte FFT optimizado debe entregar exactamente la señal anterior al
+# reconocedor, incluyendo cortes al borde de un bin y tomas de 120 segundos.
+def _legacy_frontend(wav):
+    w = _np.ascontiguousarray(_np.asarray(wav).flatten(), dtype=_np.float32)
+    if w.size == 0:
+        return w, 0.0, 0.0
+    dc = float(_np.mean(w, dtype=_np.float64))
+    w = (w - dc).astype(_np.float32)
+    x = w.astype(_np.float64)
+    spec = _np.fft.rfft(x)
+    freqs = _np.fft.rfftfreq(x.size, 1.0 / float(_sr))
+    spec[freqs < 80.0] = 0.0
+    y = _np.ascontiguousarray(_np.fft.irfft(spec, n=x.size), dtype=_np.float32)
+    clip = float(_np.mean(_np.abs(y) >= 0.999)) if y.size else 0.0
+    return y, dc, clip
+
+
+_rng = _np.random.default_rng(9173)
+_frontend_equal = True
+for _size in (15999, 16000, 16001, 44100, 1920000):
+    _sample = _rng.normal(0.0, 0.1, _size).astype(_np.float32)
+    _actual, _actual_dc, _actual_clip = frontend(_sample)
+    _expected, _expected_dc, _expected_clip = _legacy_frontend(_sample)
+    _frontend_equal &= (
+        _np.array_equal(_actual, _expected)
+        and _actual_dc == _expected_dc
+        and _actual_clip == _expected_clip
+    )
+_check("frontend FFT optimizado conserva audio idéntico",
+       _frontend_equal)
+
 # join_texts: une, cose overlap, pega puntuacion, colapsa espacios.
 _check("join vacios", join_texts(["", "  ", ""]) == "")
 _check("join puntuacion", join_texts(["hola mundo", ", ¿ como estas ?"]) == "hola mundo, ¿como estas?")

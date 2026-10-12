@@ -42,7 +42,8 @@ class TranscriptLogPrivacyTests(unittest.TestCase):
             engine=SimpleNamespace(min_dur=0.01,
                                    transcribe=Mock(return_value=secret)),
             cfg={"key": "f9"}, overlay=overlay, lock=threading.Lock(),
-            rec={"busy": True}, beep=Mock())
+            rec={"busy": True}, beep=Mock(),
+            _schedule_model_idle_unload_locked=Mock())
         with patch("instant_app.llm.maybe_polish", return_value=secret), \
                 patch("instant_app.paste.paste") as paste, \
                 self.assertLogs("instant", level="INFO") as captured:

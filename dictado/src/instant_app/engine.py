@@ -108,8 +108,11 @@ def frontend(wav):
     # 60-120 s tarda ms.
     x = w.astype(np.float64)
     spec = np.fft.rfft(x)
-    freqs = np.fft.rfftfreq(x.size, 1.0 / float(SAMPLE_RATE))
-    spec[freqs < 80.0] = 0.0
+    # `freqs` ocupa otros ~8 MB en una toma de 120 s. El mismo corte
+    # estricto (<80 Hz) equivale a anular ceil(80*N/SR) bins; aritmética
+    # entera conserva exactamente el conjunto de bins y evita esa matriz.
+    cutoff_bins = (80 * x.size + SAMPLE_RATE - 1) // SAMPLE_RATE
+    spec[:cutoff_bins] = 0.0
     y = np.ascontiguousarray(np.fft.irfft(spec, n=x.size), dtype=np.float32)
     clip = float(np.mean(np.abs(y) >= 0.999)) if y.size else 0.0
     return y, dc, clip
@@ -271,6 +274,10 @@ class Engine:
         with self._lock:
             self._rec = None
             self._vad = None
+
+    def has_loaded_models(self):
+        """Consulta sin bloquear si hay algún modelo residente."""
+        return self._rec is not None or self._vad is not None
 
     def recognizer(self):
         with self._lock:

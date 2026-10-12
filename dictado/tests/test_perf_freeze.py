@@ -7,7 +7,7 @@ import threading
 import time
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 
@@ -62,6 +62,25 @@ def _fake_sherpa(calls):
             create=lambda _c: (calls.__setitem__("n", calls["n"] + 1),
                                _FakeVad())[1]),
     )
+
+
+class _ManualTimer:
+    instances = []
+
+    def __init__(self, interval, function, args=(), kwargs=None):
+        self.interval = interval
+        self.function = function
+        self.args = args
+        self.kwargs = kwargs or {}
+        self.daemon = False
+        self.cancelled = False
+        self.instances.append(self)
+
+    def start(self):
+        pass
+
+    def cancel(self):
+        self.cancelled = True
 
 
 class PerfFreezeTests(unittest.TestCase):
@@ -125,6 +144,55 @@ class PerfFreezeTests(unittest.TestCase):
             v3 = eng3.vad()
             self.assertEqual(calls["n"], 2)
             self.assertIsNot(v3, v1)
+
+    def test_idle_model_unload_waits_for_recording_and_transcription(self):
+        _ManualTimer.instances.clear()
+        d = daemon_module.Daemon.__new__(daemon_module.Daemon)
+        d.lock = threading.Lock()
+        d._shutdown = threading.Event()
+        d._model_idle_unload_seconds = 300.0
+        d._model_idle_timer = None
+        d._model_idle_generation = 0
+        d.rec = {"grabando": True, "busy": False}
+        d.engine = Mock()
+        d.engine.has_loaded_models.return_value = True
+        with patch.object(daemon_module.threading, "Timer", _ManualTimer):
+            d._unload_models_if_idle()
+            self.assertEqual(d.engine.unload.call_count, 0)
+            self.assertEqual(_ManualTimer.instances[-1].interval, 30.0)
+
+            d.rec["grabando"] = False
+            d.rec["busy"] = True
+            d._unload_models_if_idle()
+            self.assertEqual(d.engine.unload.call_count, 0)
+
+            d.rec["busy"] = False
+            d._unload_models_if_idle()
+            self.assertEqual(d.engine.unload.call_count, 1)
+
+    def test_stale_model_idle_timer_cannot_unload_after_reschedule(self):
+        _ManualTimer.instances.clear()
+        d = daemon_module.Daemon.__new__(daemon_module.Daemon)
+        d.lock = threading.Lock()
+        d._shutdown = threading.Event()
+        d._model_idle_unload_seconds = 300.0
+        d._model_idle_timer = None
+        d._model_idle_generation = 0
+        d.rec = {"grabando": False, "busy": False}
+        d.engine = Mock()
+        d.engine.has_loaded_models.return_value = True
+        with patch.object(daemon_module.threading, "Timer", _ManualTimer):
+            d._schedule_model_idle_unload()
+            stale = _ManualTimer.instances[-1]
+            d._schedule_model_idle_unload()
+            current = _ManualTimer.instances[-1]
+            self.assertTrue(stale.cancelled)
+            self.assertNotEqual(stale.args, current.args)
+
+            stale.function(*stale.args, **stale.kwargs)
+            self.assertEqual(d.engine.unload.call_count, 0)
+            current.function(*current.args, **current.kwargs)
+            self.assertEqual(d.engine.unload.call_count, 1)
 
     def test_on_release_returns_fast(self):
         d = daemon_module.Daemon.__new__(daemon_module.Daemon)
