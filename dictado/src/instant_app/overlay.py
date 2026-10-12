@@ -341,7 +341,7 @@ class _TkOverlay:
                 elif state == "processing":
                     self._show_state("transcribing")
                 else:
-                    self._show_feedback("Listo" if state == "success" else text, color)
+                    self._show_feedback("Copiado" if state == "success" else text, color)
                 # Posición fija abajo al centro, como en Qt: mismo lugar siempre.
                 width, height = (430, 68) if self.state == "feedback" else (184, 58)
                 sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()

@@ -14,26 +14,32 @@ log = logging.getLogger("instant")
 # Espera de pegado: el Ctrl+V necesita que el clipboard ya este escrito.
 # Poll corto con tope (hasta ~200 ms) en vez de sleep fijo ciego.
 _PASTE_WAIT_S = 0.2
+_WINDOWS_KEY_SETTLE_S = 0.04
+_WINDOWS_PASTE_SETTLE_S = 0.2
 
 
 def _wait_paste_ready(check=None):
     """Espera robusta del pegado: poll con tope, no sleep fijo ciego.
 
     `check`: vuelve a leer el clipboard y devuelve True cuando ya tiene
-    el texto (solo donde se puede leer). Sin `check`, pausa minima de
-    20 ms para ceder el turno al SO. Nunca supera `_PASTE_WAIT_S`.
+    el texto (solo donde se puede leer). Devuelve False si vence el plazo.
+    Sin `check`, pausa minima de 20 ms para ceder el turno al SO.
+    Nunca supera `_PASTE_WAIT_S`.
     """
     if check is None:
         time.sleep(0.02)
-        return
+        return True
     deadline = time.monotonic() + _PASTE_WAIT_S
     while time.monotonic() < deadline:
         try:
             if check():
-                return
+                return True
         except Exception:
-            return
+            # El clipboard de Windows puede estar ocupado momentaneamente;
+            # seguir esperando permite recuperarse dentro del plazo.
+            pass
         time.sleep(0.02)
+    return False
 
 
 def paste(text):
@@ -57,12 +63,31 @@ def _paste_windows(text):
     except Exception:
         prev = None
     pyperclip.copy(text)
-    _wait_paste_ready(lambda: pyperclip.paste() == text)
+    if not _wait_paste_ready(lambda: pyperclip.paste() == text):
+        raise RuntimeError(
+            "No pude confirmar que el dictado estuviera en el portapapeles. "
+            "Probá Ctrl+V manualmente.")
+    sent = False
     try:
-        keyboard.press_and_release("ctrl+v")
+        # keyboard.press_and_release() emite Ctrl/V down/up casi sin pausa.
+        # Algunos campos de navegador no procesan bien esa ráfaga sintética;
+        # dejar que cada transición llegue al sistema mejora la entrega.
+        keyboard.press("ctrl")
+        try:
+            time.sleep(_WINDOWS_KEY_SETTLE_S)
+            keyboard.press("v")
+            try:
+                time.sleep(_WINDOWS_KEY_SETTLE_S)
+            finally:
+                keyboard.release("v")
+        finally:
+            keyboard.release("ctrl")
+        sent = True
     finally:
-        if prev is not None:
-            _wait_paste_ready()
+        if sent and prev is not None:
+            # El navegador procesa WM_PASTE después de recibir Ctrl+V. Darle
+            # margen antes de restaurar evita que lea el clipboard anterior.
+            time.sleep(_WINDOWS_PASTE_SETTLE_S)
             try:
                 pyperclip.copy(prev)
             except Exception:

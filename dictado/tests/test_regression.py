@@ -448,14 +448,19 @@ from instant_app import paste as _paste
 _paste.paste("")
 _check("paste vacio no-op", True)
 _fake_pyper = _MagicMock()
-_fake_pyper.paste.return_value = "previo"
+_fake_clipboard = {"value": "previo"}
+_fake_pyper.paste.side_effect = lambda: _fake_clipboard["value"]
+_fake_pyper.copy.side_effect = lambda value: _fake_clipboard.update(value=value)
 _fake_kb = _MagicMock()
 with patch.dict(_sys.modules, {"pyperclip": _fake_pyper, "keyboard": _fake_kb}):
     with patch.object(_sys, "platform", "win32"):
         _paste.paste("hola")
 _check("paste restaura clipboard previo",
        _fake_pyper.copy.call_args_list[-1][0][0] == "previo")
-_check("paste pego con ctrl+v", _fake_kb.press_and_release.called)
+_check("paste envia ctrl+v con pulsaciones espaciadas",
+       [args[0][0] for args in _fake_kb.press.call_args_list] == ["ctrl", "v"]
+       and [args[0][0] for args in _fake_kb.release.call_args_list]
+       == ["v", "ctrl"])
 import shutil as _shutil
 import subprocess as _subp
 with patch.object(_sys, "platform", "linux"), \
