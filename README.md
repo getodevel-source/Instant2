@@ -69,6 +69,10 @@ Ver [cómo se configura](docs/firma-releases.md).
 
 El audio no se envía a la nube. Si activás el pulido opcional, el servidor que elijas recibe el texto reconocido y el vocabulario activo, nunca el audio. Instant verifica cada actualización y espera tu confirmación antes de instalarla.
 
+## Plan de Instant2
+
+Consulta el [plan de producto y los flujos gráficos](docs/plan-instant2-flujos.md) para la prioridad de entrega confiable, el modo Prompt y la integración opcional de un LLM local. Es una propuesta de diseño; esas funciones todavía no están implementadas.
+
 ## Más información
 
 [Instalación y uso detallados](dictado/README.md) · [Precisión y motores](docs/precision.md) · [Historial de versiones](CHANGELOG.md) · [Licencia MIT](LICENSE)
