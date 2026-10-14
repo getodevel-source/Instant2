@@ -1,0 +1,306 @@
+"""Config JSON por usuario + override por env INSTANT2_*."""
+import json
+import logging
+import os
+import sys
+import tempfile
+
+from instant2_app.paths import config_dir
+
+log = logging.getLogger("instant2")
+
+DEFAULTS = {
+    "mic_hint": "",
+    "mic_index": None,
+    "key": "f9",
+    "lang": "es",
+    "threads": 4,
+    "sound": False,
+    "max_seg": 20.0,
+    "vad_model": "silero",
+    "blank_penalty": 0.0,
+    "llm_url": "",
+    "llm_token": "",
+    "llm_model": "",
+    # Local model lifecycle is managed by Instant2 by default once configured.
+    "llm_managed_enabled": True,
+    "llm_server_path": "",
+    "llm_model_path": "",
+    # Set once when the Windows offline bundle supplies the default local LLM.
+    "llm_bundle_initialized": False,
+    "llm_acceleration": "auto",
+    "llm_normal_enabled": True,
+    "resource_mode": "balanced",
+    "active_context": "General",
+    "context_profiles": {"General": []},
+    "autostart": False,
+    "overlay_style": "orbital",
+    "update_mode": "notify",
+    "update_last_check": 0,
+}
+
+INT_KEYS = ("threads",)
+FLOAT_KEYS = ("max_seg", "blank_penalty")
+
+
+def _read_json(path):
+    with open(path, encoding="utf-8") as f:
+        value = json.load(f)
+    if not isinstance(value, dict):
+        raise ValueError("la raíz de la config no es un objeto JSON")
+    return value
+
+
+def _write_temp_json(path, value):
+    directory = os.path.dirname(path) or "."
+    fd, temp_path = tempfile.mkstemp(prefix=".config-", suffix=".tmp",
+                                     dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(value, f, indent=2, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        return temp_path
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _replace_json_atomically(path, value):
+    temp_path = _write_temp_json(path, value)
+    try:
+        os.replace(temp_path, path)
+        temp_path = None
+    finally:
+        if temp_path is not None:
+            try:
+                os.unlink(temp_path)
+            except FileNotFoundError:
+                pass
+
+
+def config_path():
+    return os.path.join(config_dir(), "config.json")
+
+
+def load():
+    cfg = dict(DEFAULTS)
+    path = config_path()
+    try:
+        disk = _read_json(path)
+    except FileNotFoundError:
+        disk = {}
+    except Exception:
+        log.exception("config corrupta; intento recuperar el respaldo")
+        try:
+            disk = _read_json(path + ".bak")
+        except FileNotFoundError:
+            disk = {}
+        except Exception:
+            log.exception("respaldo de config ausente o corrupto; uso defaults")
+            disk = {}
+        else:
+            try:
+                _replace_json_atomically(path, disk)
+                log.warning("config recuperada desde el respaldo")
+            except OSError:
+                log.exception("leí el respaldo, pero no pude reparar la config")
+    for k in DEFAULTS:
+        if k in disk:
+            v = disk[k]
+            if k in INT_KEYS and isinstance(v, bool):
+                continue
+            if k in INT_KEYS and not isinstance(v, int):
+                try:
+                    v = int(v)
+                except (TypeError, ValueError):
+                    log.warning("ignoro %s=%r de la config (no es int)", k, disk[k])
+                    continue
+            if k in FLOAT_KEYS and isinstance(v, bool):
+                continue
+            if k in FLOAT_KEYS and not isinstance(v, (int, float)):
+                try:
+                    v = float(v)
+                except (TypeError, ValueError):
+                    log.warning("ignoro %s=%r de la config (no es float)", k, disk[k])
+                    continue
+                v = float(v)
+            cfg[k] = v
+    # Env pisa archivo.
+    env_map = {"INSTANT2_MIC": "mic_hint", "INSTANT2_KEY": "key",
+               "INSTANT2_THREADS": "threads", "INSTANT2_SOUND": "sound",
+               "INSTANT2_MAX_SEG": "max_seg", "INSTANT2_VAD": "vad_model",
+               "INSTANT2_BLANK": "blank_penalty",
+               "INSTANT2_LLM_URL": "llm_url",
+               "INSTANT2_LLM_TOKEN": "llm_token",
+               "INSTANT2_LLM_MODEL": "llm_model",
+               "INSTANT2_LLM_SERVER": "llm_server_path",
+               "INSTANT2_LLM_MODEL_PATH": "llm_model_path",
+               "INSTANT2_LLM_NORMAL": "llm_normal_enabled",
+               "INSTANT2_UPDATE": "update_mode",
+               "INSTANT2_CONTEXT": "active_context",
+               "INSTANT2_AUTOSTART": "autostart",
+               "INSTANT2_OVERLAY": "overlay_style"}
+    for env, k in env_map.items():
+        v = os.environ.get(env)
+        if v is None or v == "":
+            continue
+        if k in INT_KEYS:
+            try:
+                value = int(v)
+            except ValueError:
+                log.warning("ignoro %s=%r (no es int)", env, v)
+                continue
+            if k == "threads":
+                try:
+                    cpu = os.cpu_count() or 4
+                except Exception:
+                    cpu = 4
+                value = max(1, min(8, min(value, cpu)))
+            cfg[k] = value
+        elif k in FLOAT_KEYS:
+            try:
+                cfg[k] = float(v)
+            except ValueError:
+                log.warning("ignoro %s=%r (no es float)", env, v)
+        elif k == "sound":
+            cfg[k] = v.strip().lower() in ("1", "true", "yes", "y", "on", "si", "s")
+        elif k == "llm_normal_enabled":
+            cfg[k] = v.strip().lower() in ("1", "true", "yes", "y", "on", "si", "s")
+        elif k == "autostart":
+            cfg[k] = v.strip().lower() in ("1", "true", "yes", "y", "s", "si", "on")
+        elif k == "mic_hint" and v.lstrip("-").isdigit():
+            cfg["mic_index"] = int(v)
+            cfg["mic_hint"] = ""
+        elif k == "vad_model":
+            v = v.strip().lower()
+            cfg[k] = v if v in ("silero", "ten") else "silero"
+        else:
+            cfg[k] = v.lower() if k == "key" else v
+    if cfg.get("update_mode") not in ("notify", "auto", "off"):
+        cfg["update_mode"] = "notify"
+    tok = cfg.get("llm_token", "")
+    cfg["llm_token"] = tok if isinstance(tok, str) else ""
+    model = cfg.get("llm_model", "")
+    cfg["llm_model"] = model.strip()[:200] if isinstance(model, str) else ""
+    for key in ("llm_server_path", "llm_model_path"):
+        value = cfg.get(key, "")
+        cfg[key] = value.strip()[:2048] if isinstance(value, str) else ""
+    cfg["llm_managed_enabled"] = cfg.get("llm_managed_enabled") is True
+    cfg["llm_bundle_initialized"] = cfg.get("llm_bundle_initialized") is True
+    if cfg.get("llm_acceleration") not in ("auto", "cpu"):
+        cfg["llm_acceleration"] = "auto"
+    cfg["llm_normal_enabled"] = cfg.get("llm_normal_enabled") is not False
+    if cfg.get("resource_mode") not in ("speed", "balanced", "memory"):
+        cfg["resource_mode"] = "balanced"
+    normal_key = str(cfg.get("key", "f9") or "f9").strip().lower()
+    cfg["key"] = normal_key
+    if (os.environ.get("INSTANT2_NO_UPDATE") or "").strip().lower() in (
+            "1", "true", "yes", "y", "on", "si", "s"):
+        cfg["update_mode"] = "off"
+    try:
+        cfg["blank_penalty"] = max(0.0, min(1.0, float(cfg.get("blank_penalty", 0.0))))
+    except (TypeError, ValueError):
+        cfg["blank_penalty"] = 0.0
+    if _initialize_bundled_llm(cfg):
+        save(cfg)
+    cfg["llm_bundle_initialized"] = cfg.get("llm_bundle_initialized") is True
+    return cfg
+
+
+def save(cfg):
+    from instant2_app.paths import ensure_private_dir, restrict_file
+
+    path = config_path()
+    directory = os.path.dirname(path) or "."
+    ensure_private_dir(directory)
+    temp_path = None
+    slim = {k: cfg.get(k, DEFAULTS[k]) for k in DEFAULTS}
+    try:
+        temp_path = _write_temp_json(path, slim)
+
+        # Nota: config.json guarda `llm_url` en claro (URL sin token: el token
+        # va en `INSTANT2_LLM_TOKEN`/env o config `llm_token`, nunca en la URL).
+        # Preserve the last valid config only after the replacement content
+        # has been serialized successfully. El .bak se escribe atomico con
+        if os.path.isfile(path):
+            try:
+                bak_tmp = _write_temp_json(path + ".bak", _read_json(path))
+                os.replace(bak_tmp, path + ".bak")
+                try:
+                    fd = os.open(os.path.dirname(path) or ".", os.O_RDONLY)
+                except OSError:
+                    pass
+                else:
+                    try:
+                        os.fsync(fd)
+                    finally:
+                        os.close(fd)
+            except Exception:
+                log.warning("no pude respaldar la config anterior", exc_info=True)
+        os.replace(temp_path, path)
+        temp_path = None
+        # Best-effort (no rompe Windows): solo el usuario lee la config.
+        restrict_file(path + ".bak")
+        restrict_file(path)
+    finally:
+        if temp_path is not None:
+            try:
+                os.unlink(temp_path)
+            except FileNotFoundError:
+                pass
+    log.info("config guardada en %s", path)
+    return path
+
+
+def _initialize_bundled_llm(cfg):
+    """Fill local LLM defaults once when an offline Windows bundle is present.
+
+    User-selected endpoints and file paths always win. The marker lets a user
+    deliberately clear or replace the bundled defaults without having them
+    silently reappear at the next launch.
+    """
+    if cfg.get("llm_bundle_initialized") is True:
+        return False
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return False
+
+    from instant2_app.paths import resolve_data_dir
+
+    app_dir = os.path.dirname(os.path.abspath(sys.executable))
+    server = os.path.join(app_dir, "llm-runtime", "llama-server.exe")
+    model = os.path.join(resolve_data_dir(), "llm",
+                         "Qwen_Qwen3.5-4B-Q4_K_M.gguf")
+    if not (os.path.isfile(server) and os.path.isfile(model)):
+        return False
+
+    configured = any(str(cfg.get(key) or "").strip() for key in (
+        "llm_url", "llm_token", "llm_model", "llm_server_path",
+        "llm_model_path"))
+    if not configured:
+        cfg["llm_url"] = "http://127.0.0.1:8080/v1"
+        cfg["llm_model"] = "qwen3.5:4b-q4_K_M"
+        cfg["llm_server_path"] = server
+        cfg["llm_model_path"] = model
+    else:
+        old_server = str(cfg.get("llm_server_path") or "").strip()
+        normalized_server = os.path.normcase(old_server.replace("/", "\\"))
+        if normalized_server.endswith(
+                os.path.normcase("\\llm-runtime\\llama\\llama-server.exe")):
+            cfg["llm_server_path"] = server
+            if not str(cfg.get("llm_url") or "").strip():
+                cfg["llm_url"] = "http://127.0.0.1:8080/v1"
+            if not str(cfg.get("llm_model") or "").strip():
+                cfg["llm_model"] = "qwen3.5:4b-q4_K_M"
+        old_model = str(cfg.get("llm_model_path") or "").strip()
+        if os.path.basename(old_model).casefold() == os.path.basename(model).casefold():
+            cfg["llm_model_path"] = model
+    cfg["llm_bundle_initialized"] = True
+    return True

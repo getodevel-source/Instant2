@@ -7,12 +7,12 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import __main__ as entry
+from instant2_app import __main__ as entry
 
 
 class AppLifecycleTests(unittest.TestCase):
     def test_frozen_child_environment_resets_onefile_extraction(self):
-        from instant_app import launch
+        from instant2_app import launch
         with patch.object(launch.sys, "frozen", True, create=True), \
                 patch.dict(os.environ, {"PYINSTALLER_RESET_ENVIRONMENT": "0"}):
             env = launch.app_environment()
@@ -25,17 +25,17 @@ class AppLifecycleTests(unittest.TestCase):
         daemon = Mock(return_value=instance)
         with patch.object(entry, "_log_setup"), \
                 patch.object(entry.logging, "getLogger"), \
-                patch("instant_app.config.load", return_value={}), \
-                patch("instant_app.daemon_lifecycle.acquire_daemon_mutex", return_value=handle), \
-                patch("instant_app.daemon_lifecycle.release_daemon_mutex") as release, \
-                patch.dict(sys.modules, {"instant_app.daemon": SimpleNamespace(Daemon=daemon)}):
+                patch("instant2_app.config.load", return_value={}), \
+                patch("instant2_app.daemon_lifecycle.acquire_daemon_mutex", return_value=handle), \
+                patch("instant2_app.daemon_lifecycle.release_daemon_mutex") as release, \
+                patch.dict(sys.modules, {"instant2_app.daemon": SimpleNamespace(Daemon=daemon)}):
             self.assertEqual(entry.main(["run"]), 2)
         daemon.assert_called_once_with({})
         instance.run.assert_called_once_with()
         release.assert_called_once_with(handle)
 
     def test_existing_gui_receives_start_setup_and_close_actions(self):
-        from instant_app import gui_lifecycle
+        from instant2_app import gui_lifecycle
         hwnd = 0x1234
         user32 = SimpleNamespace(
             FindWindowW=Mock(return_value=hwnd),
@@ -43,8 +43,8 @@ class AppLifecycleTests(unittest.TestCase):
             SetForegroundWindow=Mock(),
             PostMessageW=Mock(return_value=1),
         )
-        with patch("instant_app.gui_lifecycle.os.name", "nt"), \
-                patch("instant_app.gui_lifecycle._user32", return_value=user32):
+        with patch("instant2_app.gui_lifecycle.os.name", "nt"), \
+                patch("instant2_app.gui_lifecycle._user32", return_value=user32):
             self.assertTrue(gui_lifecycle.focus_existing_gui(request_daemon_start=True))
             user32.PostMessageW.assert_called_once_with(
                 hwnd, gui_lifecycle._GUI_ACTION_MESSAGE,
@@ -60,7 +60,7 @@ class AppLifecycleTests(unittest.TestCase):
                 hwnd, gui_lifecycle._WM_CLOSE, 0, 0)
 
     def test_terminate_existing_gui_prefers_graceful_close(self):
-        from instant_app import gui_lifecycle
+        from instant2_app import gui_lifecycle
 
         hwnd = 0x1234
         user32 = SimpleNamespace(
@@ -68,9 +68,9 @@ class AppLifecycleTests(unittest.TestCase):
             ShowWindow=Mock(), SetForegroundWindow=Mock(),
             PostMessageW=Mock(return_value=1),
         )
-        with patch("instant_app.gui_lifecycle.os.name", "nt"), \
-                patch("instant_app.gui_lifecycle._user32", return_value=user32), \
-                patch("instant_app.gui_lifecycle.time.sleep"):
+        with patch("instant2_app.gui_lifecycle.os.name", "nt"), \
+                patch("instant2_app.gui_lifecycle._user32", return_value=user32), \
+                patch("instant2_app.gui_lifecycle.time.sleep"):
             self.assertTrue(gui_lifecycle.terminate_existing_gui())
         # Cierre limpio: WM_CLOSE y la ventana desaparece; no se mata nada.
         user32.PostMessageW.assert_called_once_with(
@@ -78,7 +78,7 @@ class AppLifecycleTests(unittest.TestCase):
 
     def test_terminate_existing_gui_forces_when_close_is_ignored(self):
         import ctypes as ctypes_module
-        from instant_app import gui_lifecycle
+        from instant2_app import gui_lifecycle
 
         hwnd = 0x1234
         handle = 0x55
@@ -99,14 +99,14 @@ class AppLifecycleTests(unittest.TestCase):
             obj.value = 4321
             return real_byref(obj)
 
-        with patch("instant_app.gui_lifecycle.os.name", "nt"), \
-                patch("instant_app.gui_lifecycle._user32", return_value=user32), \
-                patch("instant_app.gui_lifecycle.ctypes.WinDLL",
+        with patch("instant2_app.gui_lifecycle.os.name", "nt"), \
+                patch("instant2_app.gui_lifecycle._user32", return_value=user32), \
+                patch("instant2_app.gui_lifecycle.ctypes.WinDLL",
                       return_value=kernel32, create=True), \
-                patch("instant_app.gui_lifecycle.ctypes.byref",
+                patch("instant2_app.gui_lifecycle.ctypes.byref",
                       side_effect=byref_with_pid), \
-                patch("instant_app.gui_lifecycle.time.sleep"), \
-                patch("instant_app.gui_lifecycle.time.monotonic",
+                patch("instant2_app.gui_lifecycle.time.sleep"), \
+                patch("instant2_app.gui_lifecycle.time.monotonic",
                       side_effect=[0, 100, 100]):
             self.assertTrue(gui_lifecycle.terminate_existing_gui(graceful_ms=1))
         user32.GetWindowThreadProcessId.assert_called_once()
@@ -115,7 +115,7 @@ class AppLifecycleTests(unittest.TestCase):
         kernel32.CloseHandle.assert_called_once_with(handle)
 
     def test_terminate_existing_gui_refuses_alien_window_class(self):
-        from instant_app import gui_lifecycle
+        from instant2_app import gui_lifecycle
         hwnd = 0x9999
         user32 = SimpleNamespace(
             FindWindowW=Mock(return_value=hwnd),
@@ -124,43 +124,43 @@ class AppLifecycleTests(unittest.TestCase):
             PostMessageW=Mock(return_value=1),
             GetWindowThreadProcessId=Mock(),
         )
-        with patch("instant_app.gui_lifecycle.os.name", "nt"), \
-                patch("instant_app.gui_lifecycle._user32", return_value=user32):
+        with patch("instant2_app.gui_lifecycle.os.name", "nt"), \
+                patch("instant2_app.gui_lifecycle._user32", return_value=user32):
             self.assertFalse(gui_lifecycle.terminate_existing_gui())
         user32.PostMessageW.assert_not_called()
 
     def test_posix_daemon_mutex_uses_pidfile_and_flock(self):
         import tempfile
-        from instant_app import daemon_lifecycle
+        from instant2_app import daemon_lifecycle
         with tempfile.TemporaryDirectory() as d:
-            with patch("instant_app.daemon_lifecycle.os.name", "posix"), \
-                    patch("instant_app.paths.config_dir", return_value=d):
+            with patch("instant2_app.daemon_lifecycle.os.name", "posix"), \
+                    patch("instant2_app.paths.config_dir", return_value=d):
                 h1 = daemon_lifecycle.acquire_daemon_mutex()
                 self.assertIsNotNone(h1)
-                self.assertTrue(os.path.isfile(os.path.join(d, "instant.pid")))
+                self.assertTrue(os.path.isfile(os.path.join(d, "instant2.pid")))
                 # Segunda instancia en el mismo proceso/thread con lock ya tomado
                 daemon_lifecycle.release_daemon_mutex(h1)
                 self.assertIsNone(daemon_lifecycle._lock_file)
     def test_write_pid_keeps_inode_when_lock_is_ours(self):
         import tempfile
-        from instant_app import daemon, daemon_lifecycle
+        from instant2_app import daemon, daemon_lifecycle
         with tempfile.TemporaryDirectory() as d:
-            with patch("instant_app.daemon_lifecycle.os.name", "posix"), \
-                    patch("instant_app.paths.config_dir", return_value=d):
+            with patch("instant2_app.daemon_lifecycle.os.name", "posix"), \
+                    patch("instant2_app.paths.config_dir", return_value=d):
                 if os.name == "nt" or not hasattr(os, "stat"):
                     self.skipTest("requiere inodos POSIX")
                 try:
-                    import fcntl  # noqa: F401
+                    __import__("fcntl")
                 except ImportError:
                     self.skipTest("requiere flock POSIX")
                 handle = daemon_lifecycle.acquire_daemon_mutex()
                 self.assertIsNotNone(handle)
                 try:
-                    before = os.stat(os.path.join(d, "instant.pid")).st_ino
+                    before = os.stat(os.path.join(d, "instant2.pid")).st_ino
                     daemon.write_pid()
-                    after = os.stat(os.path.join(d, "instant.pid")).st_ino
+                    after = os.stat(os.path.join(d, "instant2.pid")).st_ino
                     self.assertEqual(before, after)
-                    with open(os.path.join(d, "instant.pid"), encoding="utf-8") as f:
+                    with open(os.path.join(d, "instant2.pid"), encoding="utf-8") as f:
                         self.assertEqual(f.read().strip(), str(os.getpid()))
                 finally:
                     daemon_lifecycle.release_daemon_mutex(handle)
@@ -168,12 +168,12 @@ class AppLifecycleTests(unittest.TestCase):
     def test_write_pid_after_replace_still_holds_lock(self):
         """Segunda instancia tras un replace ajeno no evade el flock (G1)."""
         import tempfile
-        from instant_app import daemon_lifecycle
+        from instant2_app import daemon_lifecycle
         with tempfile.TemporaryDirectory() as d:
-            with patch("instant_app.daemon_lifecycle.os.name", "posix"), \
-                    patch("instant_app.paths.config_dir", return_value=d):
+            with patch("instant2_app.daemon_lifecycle.os.name", "posix"), \
+                    patch("instant2_app.paths.config_dir", return_value=d):
                 try:
-                    import fcntl  # noqa: F401
+                    import fcntl
                 except ImportError:
                     self.skipTest("requiere flock POSIX")
                 if os.name == "nt":
@@ -183,12 +183,11 @@ class AppLifecycleTests(unittest.TestCase):
                 old_file = daemon_lifecycle._lock_file
                 try:
                     # Un escritor ajeno reemplaza el path (inodo nuevo).
-                    with open(os.path.join(d, "instant.pid"), "w", encoding="utf-8") as f:
+                    with open(os.path.join(d, "instant2.pid"), "w", encoding="utf-8") as f:
                         f.write("999999")
                     # El dueño sigue lockeando el inodo viejo: reabrir el path
                     # nuevo NO debe poder tomar el lock mientras el dueño vive.
-                    import fcntl
-                    probe = open(os.path.join(d, "instant.pid"), "a+b")
+                    probe = open(os.path.join(d, "instant2.pid"), "a+b")
                     try:
                         with self.assertRaises(OSError):
                             fcntl.flock(probe.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -200,9 +199,9 @@ class AppLifecycleTests(unittest.TestCase):
     def test_write_pid_uses_owned_lock_fd_without_replace(self):
         """Con lock propio, write_pid escribe en el fd (no replace) (G1)."""
         import tempfile
-        from instant_app import daemon, daemon_lifecycle
+        from instant2_app import daemon, daemon_lifecycle
         with tempfile.TemporaryDirectory() as d:
-            pidfile = os.path.join(d, "instant.pid")
+            pidfile = os.path.join(d, "instant2.pid")
             with open(pidfile, "w", encoding="utf-8") as f:
                 f.write("viejo")
             fd = open(pidfile, "r+b")
@@ -219,11 +218,11 @@ class AppLifecycleTests(unittest.TestCase):
 
 
     def test_gui_mutex_failure_reports_unavailable(self):
-        from instant_app import gui
+        from instant2_app import gui
         with patch.object(gui.sys, "platform", "win32"), \
-                patch("instant_app.gui_lifecycle.acquire_gui_mutex",
+                patch("instant2_app.gui_lifecycle.acquire_gui_mutex",
                       side_effect=OSError("mutex unavailable")), \
-                self.assertLogs("instant", level="ERROR") as errors:
+                self.assertLogs("instant2", level="ERROR") as errors:
             self.assertEqual(gui.run_gui(), 2)
         self.assertIn("interfaz gráfica no disponible", errors.output[0])
 
@@ -262,8 +261,8 @@ class AppLifecycleTests(unittest.TestCase):
     def test_diagnostics_falls_back_to_console_without_panel(self):
         with patch.object(entry, "_log_setup"), \
                 patch.object(entry, "_run_gui", return_value=2), \
-                patch("instant_app.daemon.cmd_check", return_value=0) as check, \
-                patch("instant_app.config.load", return_value={}), \
+                patch("instant2_app.daemon.cmd_check", return_value=0) as check, \
+                patch("instant2_app.config.load", return_value={}), \
                 patch.object(entry.sys, "platform", "linux"):
             self.assertEqual(entry.main(["diagnostics"]), 0)
         check.assert_called_once_with({})
@@ -272,15 +271,15 @@ class AppLifecycleTests(unittest.TestCase):
         import io
         from contextlib import redirect_stdout
 
-        for stopped, panel, expected in ((True, False, "Instant detenido."),
-                                         (False, True, "Instant detenido."),
+        for stopped, panel, expected in ((True, False, "Instant2 detenido."),
+                                         (False, True, "Instant2 detenido."),
                                          (False, False, "No había nada corriendo.")):
             buffer = io.StringIO()
             with self.subTest(stopped=stopped, panel=panel), \
                     patch.object(entry, "_log_setup"), \
-                    patch("instant_app.gui.stop_daemon",
+                    patch("instant2_app.gui.stop_daemon",
                           return_value=stopped) as stop, \
-                    patch("instant_app.gui_lifecycle.terminate_existing_gui",
+                    patch("instant2_app.gui_lifecycle.terminate_existing_gui",
                           return_value=panel) as close_panel, \
                     redirect_stdout(buffer):
                 self.assertEqual(entry.main(["stop"]), 0)
@@ -291,7 +290,7 @@ class AppLifecycleTests(unittest.TestCase):
     def test_setup_flags_keep_terminal_wizard(self):
         with patch.object(entry, "_log_setup"), \
                 patch.object(entry, "_run_gui", return_value=0) as run_gui, \
-                patch("instant_app.setup.cmd_setup", return_value=0) as cmd, \
+                patch("instant2_app.setup.cmd_setup", return_value=0) as cmd, \
                 patch.object(entry.sys, "platform", "darwin"):
             self.assertEqual(entry.main(["setup", "--yes"]), 0)
         run_gui.assert_not_called()
@@ -300,7 +299,7 @@ class AppLifecycleTests(unittest.TestCase):
     def test_setup_tui_flag_forces_terminal_wizard(self):
         with patch.object(entry, "_log_setup"), \
                 patch.object(entry, "_run_gui", return_value=0) as run_gui, \
-                patch("instant_app.setup.cmd_setup", return_value=0) as cmd, \
+                patch("instant2_app.setup.cmd_setup", return_value=0) as cmd, \
                 patch.object(entry.sys, "platform", "linux"):
             self.assertEqual(entry.main(["setup", "--tui"]), 0)
         run_gui.assert_not_called()
@@ -310,7 +309,7 @@ class AppLifecycleTests(unittest.TestCase):
     def test_setup_voice_flags_are_declared_and_forwarded(self):
         with patch.object(entry, "_log_setup"), \
                 patch.object(entry, "_run_gui", return_value=0) as run_gui, \
-                patch("instant_app.setup.cmd_setup", return_value=0) as cmd, \
+                patch("instant2_app.setup.cmd_setup", return_value=0) as cmd, \
                 patch.object(entry.sys, "platform", "linux"):
             self.assertEqual(entry.main(
                 ["setup", "--vad-model", "ten",
@@ -325,9 +324,9 @@ class AppLifecycleTests(unittest.TestCase):
     def test_existing_daemon_mutex_skips_second_daemon_construction(self):
         daemon = Mock()
         with patch.object(entry, "_log_setup"), \
-                patch("instant_app.config.load", return_value={}), \
-                patch("instant_app.daemon_lifecycle.acquire_daemon_mutex", return_value=None), \
-                patch.dict(sys.modules, {"instant_app.daemon": SimpleNamespace(Daemon=daemon)}):
+                patch("instant2_app.config.load", return_value={}), \
+                patch("instant2_app.daemon_lifecycle.acquire_daemon_mutex", return_value=None), \
+                patch.dict(sys.modules, {"instant2_app.daemon": SimpleNamespace(Daemon=daemon)}):
             self.assertEqual(entry.main(["run"]), 0)
         daemon.assert_not_called()
 
@@ -338,7 +337,7 @@ class WebEngineHelperPathTests(unittest.TestCase):
 
     def test_sets_process_path_from_the_extracted_tree(self):
         import tempfile
-        from instant_app import launch
+        from instant2_app import launch
 
         with tempfile.TemporaryDirectory() as root:
             helper = os.path.join(root, "PySide6", "QtWebEngineProcess.app",
@@ -357,7 +356,7 @@ class WebEngineHelperPathTests(unittest.TestCase):
 
     def test_untouched_when_not_frozen_or_already_set(self):
         import tempfile
-        from instant_app import launch
+        from instant2_app import launch
 
         with tempfile.TemporaryDirectory() as root:
             os.environ.pop("QTWEBENGINEPROCESS_PATH", None)

@@ -5,7 +5,7 @@ import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import autostart as a
+from instant2_app import autostart as a
 
 
 def _check(name, cond):
@@ -18,7 +18,7 @@ def _redir(base):
     """Redirige HOME/APPDATA/XDG a un tmp; devuelve dict para restaurar."""
     saved = {}
     for k in ("APPDATA", "HOME", "USERPROFILE", "XDG_CONFIG_HOME",
-              "INSTANT_AUTOSTART_PLATFORM"):
+              "INSTANT2_AUTOSTART_PLATFORM"):
         saved[k] = os.environ.get(k)
     os.environ["APPDATA"] = base
     os.environ["HOME"] = base
@@ -37,7 +37,7 @@ def _restore(saved):
 
 def _cycle(platform, target_fn, alien_fn):
     import unittest.mock as _mock
-    os.environ["INSTANT_AUTOSTART_PLATFORM"] = platform
+    os.environ["INSTANT2_AUTOSTART_PLATFORM"] = platform
     # launchctl no existe en runners Linux/Windows ni funciona en el sandbox
     # de macOS: el ciclo de mac se prueba a nivel plist, sin tocar el SO.
     with _mock.patch.object(a, "_mac_launchctl", return_value=(0, "")):
@@ -63,7 +63,7 @@ def _cycle(platform, target_fn, alien_fn):
 
 
 def _plat_paths():
-    from instant_app.autostart import (
+    from instant2_app.autostart import (
         _desktop_file, _link_path, _plist_path)
     return _desktop_file, _link_path, _plist_path
 
@@ -98,21 +98,21 @@ with tempfile.TemporaryDirectory() as d:
                           side_effect=FileNotFoundError("powershell")):
             _cycle("win32", link_fn, _alien_lnk)
 
-        frozen_exe = os.path.join(d, "Instant.exe")
+        frozen_exe = os.path.join(d, "Instant2.exe")
         with patch.object(a.sys, "frozen", True, create=True), \
                 patch.object(a.sys, "executable", frozen_exe):
             _check("binario arranca la instancia de bandeja",
                    a._resolve_win_launch() == (frozen_exe, "run", d))
 
-        frozen_posix = os.path.join(d, "instant-linux")
+        frozen_posix = os.path.join(d, "instant2-linux")
         with patch.object(a.sys, "frozen", True, create=True), \
                 patch.object(a.sys, "executable", frozen_posix):
             _check("portable POSIX usa su binario para autostart",
                    a._resolve_posix_argv() == [frozen_posix, "run"])
 
-        # Windows: acceso ajeno que solo contenga "instant" como argumento de otra app no se toma por nuestro
-        alien_lnk_strict = os.path.join(d, "Instant Dictado.lnk")
-        with patch.object(a, "_read_win_target", return_value=("C:\\OtherApp\\other.exe", "--instant-flag")):
+        # Windows: acceso ajeno que solo contenga "instant2" como argumento de otra app no se toma por nuestro
+        alien_lnk_strict = os.path.join(d, "Instant2 Dictado.lnk")
+        with patch.object(a, "_read_win_target", return_value=("C:\\OtherApp\\other.exe", "--instant2-flag")):
             _check("match estricto no adopta app ajena", a._is_ours_win(alien_lnk_strict) is False)
 
         os.environ["HOME"] = os.path.join(d, "no-existe-definitivamente")

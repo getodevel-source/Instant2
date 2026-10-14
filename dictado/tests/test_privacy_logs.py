@@ -8,26 +8,43 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import bias, context, llm
-from instant_app.daemon import Daemon
-from instant_app.engine import Engine, SAMPLE_RATE
+from instant2_app import bias, context, llm
+from instant2_app.daemon import Daemon
+from instant2_app.engine import Engine, SAMPLE_RATE
 
 
 class TranscriptLogPrivacyTests(unittest.TestCase):
+    def test_meaning_gate_failure_does_not_log_transcript_or_exception_text(self):
+        secret = "Frase privada llegada a las ocho"
+        cfg = {"llm_url": "http://127.0.0.1:8080", "llm_model": "local"}
+        with patch("instant2_app.llm.correct_locally", return_value=secret), \
+                patch("instant2_app.context.correction_context", return_value=""), \
+                patch("instant2_app.bias.terms_for_correction", return_value=""), \
+                patch("instant2_app.llm.polish_candidate", return_value="Frase privada llegue"), \
+                patch("instant2_app.llm.candidate_preserves_meaning",
+                      side_effect=RuntimeError(secret)), \
+                self.assertLogs("instant2", level="WARNING") as captured:
+            result = llm.maybe_polish(secret, cfg)
+
+        log_text = "\n".join(captured.output)
+        self.assertEqual(result, secret)
+        self.assertNotIn(secret, log_text)
+        self.assertNotIn("frase privada", log_text.lower())
+
     def test_glossary_correction_does_not_log_before_or_after_text(self):
         cfg = {"context_profiles": {"General": [
-            {"term": "Instant", "aliases": ["instante"]}]}}
+            {"term": "Instant2", "aliases": ["instante"]}]}}
         with patch.object(context.log, "info") as info, \
                 patch.object(context.log, "debug") as debug:
             result = context.correct_aliases("instante privado", cfg)
-        self.assertEqual(result, "Instant privado")
+        self.assertEqual(result, "Instant2 privado")
         info.assert_not_called()
         debug.assert_called_once_with("vocab: se aplicaron correcciones locales")
 
     def test_bias_correction_does_not_log_dictated_word(self):
         secret = "quemet confidencial z9x8"
         text = f"subi el {secret} al repo push"
-        with self.assertLogs("instant", level="DEBUG") as captured:
+        with self.assertLogs("instant2", level="DEBUG") as captured:
             bias.correct_biased(text, conf=0.5)
         log_text = "\n".join(captured.output)
         self.assertNotIn(secret, log_text)
@@ -44,14 +61,14 @@ class TranscriptLogPrivacyTests(unittest.TestCase):
             cfg={"key": "f9"}, overlay=overlay, lock=threading.Lock(),
             rec={"busy": True}, beep=Mock(),
             _schedule_model_idle_unload_locked=Mock())
-        with patch("instant_app.llm.maybe_polish", return_value=secret), \
-                patch("instant_app.paste.paste") as paste, \
-                self.assertLogs("instant", level="INFO") as captured:
+        with patch("instant2_app.llm.maybe_polish", return_value=secret), \
+                patch("instant2_app.paste.paste") as paste, \
+                self.assertLogs("instant2", level="INFO") as captured:
             Daemon._job(fake, np.ones(1600, dtype=np.float32), 0.1, 1)
 
         log_text = "\n".join(captured.output)
         self.assertNotIn(secret, log_text)
-        self.assertIn(f"transcripción: {len(secret)} caracteres", log_text)
+        self.assertIn(f"{len(secret)} caracteres", log_text)
         paste.assert_called_once_with(secret + " ")
         overlay.success_for.assert_called_once_with(1)
         self.assertFalse(fake.rec["busy"])
@@ -64,7 +81,7 @@ class TranscriptLogPrivacyTests(unittest.TestCase):
         engine.save_wavs_dir = None
         with patch.object(engine, "segment", return_value=[(0.0, 1.0)]), \
                 patch.object(engine, "_one", return_value=(0, secret)), \
-                self.assertLogs("instant", level="INFO") as captured:
+                self.assertLogs("instant2", level="INFO") as captured:
             result = engine.transcribe(np.ones(SAMPLE_RATE, dtype=np.float32))
 
         self.assertEqual(result, secret)
@@ -80,7 +97,7 @@ class TranscriptLogPrivacyTests(unittest.TestCase):
         engine._one = Mock(return_value=(-1, secret))
         wav = np.ones(SAMPLE_RATE, dtype=np.float32)
         chunks = [(0, wav, 1.0)]
-        with self.assertLogs("instant", level="INFO") as captured:
+        with self.assertLogs("instant2", level="INFO") as captured:
             result = engine._recover_empties(
                 wav, 1.0, [(0.0, 1.0)], chunks, [""])
 

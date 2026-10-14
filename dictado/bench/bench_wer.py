@@ -28,8 +28,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app.engine import Engine, SAMPLE_RATE  # noqa: E402
-from instant_app.paths import resolve_data_dir  # noqa: E402
+from instant2_app.engine import Engine, SAMPLE_RATE  # noqa: E402
+from instant2_app.paths import resolve_data_dir  # noqa: E402
 
 CACHE = os.path.join(os.path.dirname(__file__), ".fleurs_es_cache")
 SR = SAMPLE_RATE
@@ -127,7 +127,7 @@ def make_engine(data, variant):
         kw["vad_model"] = "ten"
     eng = Engine(**kw)
     if variant == "nofrontend":
-        import instant_app.engine as _mod
+        import instant2_app.engine as _mod
 
         _mod.frontend = lambda w: (
             np.ascontiguousarray(np.asarray(w).flatten(), dtype=np.float32),
@@ -142,7 +142,7 @@ def make_engine(data, variant):
 def transcribe_variant(eng, wav, variant):
     text = eng.transcribe(wav)
     if variant == "bias":
-        from instant_app import bias as _bias
+        from instant2_app import bias as _bias
 
         text = _bias.correct_biased(text, conf=eng.last_conf)
     return text

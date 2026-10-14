@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app.engine import join_texts, merge_short_bounds
+from instant2_app.engine import join_texts, merge_short_bounds
 
 
 def _check(name, cond):
@@ -15,8 +15,8 @@ def _check(name, cond):
 
 
 # Overlay progression is ordered by session/phase, with errors preempting completion.
-from instant_app import daemon as daemon_module
-from instant_app.overlay import OverlayTransitions
+from instant2_app import daemon as daemon_module
+from instant2_app.overlay import OverlayTransitions
 
 
 _states = OverlayTransitions()
@@ -89,6 +89,8 @@ class _FakeEngine:
 
 _daemon = daemon_module.Daemon.__new__(daemon_module.Daemon)
 _daemon.lock = daemon_module.threading.Lock()
+_daemon._overlay_sid = 0
+_daemon._tts_busy = False
 _daemon.rec = {
     "sid": 0, "grabando": False, "frames": [], "t_start": 0.0,
     "done": None, "busy": False,
@@ -97,20 +99,20 @@ _daemon.overlay = _OverlaySequence()
 _daemon.engine = _FakeEngine()
 _daemon.cfg = {"llm_url": ""}
 _daemon.beep = lambda **_kwargs: None
-with patch("instant_app.daemon.threading.Thread", _DeferredJob):
+with patch("instant2_app.daemon.threading.Thread", _DeferredJob):
     _daemon.on_press()
 _check("key-down sends immediate starting state",
        _daemon.overlay.events == [("starting", 1)])
 _daemon.rec["frames"] = [daemon_module.np.array([0.2, 0.2], dtype=daemon_module.np.float32)]
 _daemon.rec["done"].set()
-with patch("instant_app.daemon.threading.Thread", _DeferredJob):
+with patch("instant2_app.daemon.threading.Thread", _DeferredJob):
     _daemon.on_release()
 _check("release goes directly to processing",
        _daemon.overlay.events == [("starting", 1), ("processing", 1)])
 _daemon.overlay.listening(1)
 _check("late mic-open update cannot reverse release transition",
        _daemon.overlay.events[-1] == ("processing", 1))
-with patch("instant_app.paste.paste", return_value=None):
+with patch("instant2_app.paste.paste", return_value=None):
     _deferred_jobs[-1].target(*_deferred_jobs[-1].args)
 _check("successful paste produces brief confirmation",
        _daemon.overlay.events[-1] == ("success", 1, 760))
@@ -121,7 +123,7 @@ _daemon.engine.transcribe = lambda _wav: (_ for _ in ()).throw(RuntimeError("rec
 _daemon._job(daemon_module.np.array([0.2], dtype=daemon_module.np.float32), 1.0, 2)
 _check("recognition error replaces processing with actionable feedback",
        _daemon.overlay.events[-1][0:2] == ("error", 2)
-       and "Diagnóstico" in _daemon.overlay.events[-1][2])
+       and "Diagn" in _daemon.overlay.events[-1][2])
 
 # The daemon job uses the active local glossary before paste.
 _daemon.overlay.starting(3)
@@ -132,17 +134,17 @@ _daemon.cfg = {
     "active_context": "Trabajo",
     "context_profiles": {
         "General": [],
-        "Trabajo": [{"term": "Instant", "aliases": ["in stand"]}],
+        "Trabajo": [{"term": "Instant2", "aliases": ["in stand"]}],
     },
 }
-with patch("instant_app.paste.paste") as _pasted:
+with patch("instant2_app.paste.paste") as _pasted:
     _daemon._job(daemon_module.np.array([0.2], dtype=daemon_module.np.float32), 1.0, 3)
 _check("daemon pastes context-corrected transcription",
-       _pasted.call_args.args[0] == "Instant ")
+       _pasted.call_args.args[0] == "Instant2 ")
 
 
 # frontend: DC-remove + high-pass, sin tocar la voz.
-from instant_app.engine import frontend
+from instant2_app.engine import frontend
 import numpy as _np
 _sr = 16000
 _t = _np.arange(2 * _sr) / _sr

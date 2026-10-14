@@ -7,7 +7,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import audio, config, llm
+from instant2_app import audio, config, llm
 
 
 def _check(name, cond):
@@ -17,7 +17,7 @@ def _check(name, cond):
 
 
 # Overlay progression is ordered by session/phase, with errors preempting completion.
-from instant_app.overlay import OverlayTransitions
+from instant2_app.overlay import OverlayTransitions
 
 
 _states = OverlayTransitions()
@@ -36,7 +36,7 @@ _check("new press starts a new overlay session",
 # The Tk fallback (Linux/macOS) computes its animation per frame; the Qt Quick
 # overlay animates in QML. If this helper goes missing, _animate raises
 # NameError inside the Tk callback and the overlay silently stops animating.
-from instant_app.overlay import animation_frame, _TK_BAR_MAX, _TK_SPINNER_SEGMENTS
+from instant2_app.overlay import animation_frame, _TK_BAR_MAX, _TK_SPINNER_SEGMENTS
 
 _frame_bars, _frame_spin = animation_frame("recording", 0)
 _check("Tk animation frame matches the five drawn bars",
@@ -51,7 +51,7 @@ _check("Tk spinner covers every segment",
        == list(range(_TK_SPINNER_SEGMENTS)))
 
 # hotkey: claves win esperadas.
-from instant_app import hotkey
+from instant2_app import hotkey
 _check("keys win", set(hotkey.WINDOWS_KEYS) == {"f9", "f10", "f20", "scroll", "pause"})
 _check("keys posix", tuple(hotkey.POSIX_KEYS) == ("f9", "f10", "f11", "f12"))
 
@@ -74,26 +74,26 @@ with patch("sys.platform", "linux"):
 _orig_read = hotkey._read_keypress
 try:
     hotkey._read_keypress = lambda: "f10"
-    _check("capture directa", hotkey.capture_key("prompt", "f9") == "f10")
+    _check("capture directa", hotkey.capture_key("Presiona una tecla", "f9") == "f10")
     hotkey._read_keypress = lambda: "x"
-    _check("capture arbitrary character", hotkey.capture_key("prompt", "f9") == "x")
+    _check("capture arbitrary character", hotkey.capture_key("Presiona una tecla", "f9") == "x")
     hotkey._read_keypress = lambda: "space"
-    _check("capture spacebar", hotkey.capture_key("prompt", "f9") == "space")
+    _check("capture spacebar", hotkey.capture_key("Presiona una tecla", "f9") == "space")
     hotkey._read_keypress = lambda: ""
-    _check("capture enter default", hotkey.capture_key("prompt", "f9") == "f9")
+    _check("capture enter default", hotkey.capture_key("Presiona una tecla", "f9") == "f9")
     seq = iter(["invalida", "f9"])
     hotkey._read_keypress = lambda: next(seq)
-    _check("capture reintenta", hotkey.capture_key("prompt", "f9") == "f9")
+    _check("capture reintenta", hotkey.capture_key("Presiona una tecla", "f9") == "f9")
 finally:
     hotkey._read_keypress = _orig_read
 
 # Windows WASAPI runs at the device's native rate; permit shared-mode
-# conversion when Instant requests the recognizer's 16 kHz stream.
+# conversion when Instant2 requests the recognizer's 16 kHz stream.
 from io import StringIO
 
 with patch("sys.stdin", StringIO("f10\n")):
     _check("captura de tecla sin TTY",
-           hotkey.capture_key("prompt", "f9") == "f10")
+           hotkey.capture_key("Presiona una tecla", "f9") == "f10")
 
 class _FakeSettings:
     def __init__(self, auto_convert):
@@ -116,7 +116,7 @@ class _FakeSounddevice:
 
 def _stream_options(hostapi):
     fake_sd = _FakeSounddevice(hostapi)
-    with patch("instant_app.audio.sys.platform", "win32"):
+    with patch("instant2_app.audio.sys.platform", "win32"):
         with patch.dict(sys.modules, {"sounddevice": fake_sd}):
             return audio.input_stream_options(26)
 
@@ -346,49 +346,49 @@ with patch("sys.platform", "win32"), patch.dict(sys.modules, {"sounddevice": ope
            [device for device, _callback in open_sd.attempts] == [3, 2, 1] and
            all(callback_ is not None for _device, callback_ in open_sd.attempts))
 # setup: no-interactive configuration flags include context profiles.
-from instant_app.setup import _parse_args
+from instant2_app.setup import _parse_args
 o = _parse_args(["--yes", "--no-probe"])
 _check("setup yes noprobe", o.yes and o.no_probe)
 o = _parse_args(["--yes", "--mic", "3", "--key", "f9", "--threads", "4", "--no-sound"])
 _check("setup flags", o.mic == 3 and o.key == "f9" and o.threads == 4 and o.no_sound)
 o = _parse_args([
     "--context-profile", "Trabajo",
-    "--context-term", "Instant=instante|in stand",
+    "--context-term", "Instant2=instante|in stand",
     "--context-remove-term", "Parakeet",
     "--context-delete-profile",
 ])
 _check("setup context management flags",
        o.context_profile == "Trabajo"
-       and o.context_term == ["Instant=instante|in stand"]
+       and o.context_term == ["Instant2=instante|in stand"]
        and o.context_remove_term == ["Parakeet"]
        and o.context_delete_profile)
 
 # Setup can remove exact terms from a selected profile without changing others.
-from instant_app import setup as setup_module
+from instant2_app import setup as setup_module
 _setup_cfg = {
     **config.DEFAULTS,
     "active_context": "Trabajo",
     "context_profiles": {
         "General": [],
-        "Trabajo": [{"term": "Instant", "aliases": ["instante"]},
+        "Trabajo": [{"term": "Instant2", "aliases": ["instante"]},
                     {"term": "Parakeet", "aliases": ["para kit"]}],
     },
 }
 _saved_setup = {}
-with patch("instant_app.setup.config.load", return_value=_setup_cfg), \
-        patch("instant_app.setup.config.save",
+with patch("instant2_app.setup.config.load", return_value=_setup_cfg), \
+        patch("instant2_app.setup.config.save",
               side_effect=lambda value: (_saved_setup.update(value) or "config.json")), \
-        patch("instant_app.deps.check", return_value={
+        patch("instant2_app.deps.check", return_value={
             "sherpa_onnx": {"ok": True}, "sounddevice": {"ok": True}}), \
-        patch("instant_app.deps.report", return_value=""), \
-        patch("instant_app.models.check",
+        patch("instant2_app.deps.report", return_value=""), \
+        patch("instant2_app.models.check",
               return_value={"parakeet": True, "vad": True}), \
-        patch("instant_app.setup._real_inputs", return_value=[]), \
-        patch("instant_app.autostart.is_enabled", return_value=False), \
-        patch("instant_app.autostart.describe", return_value="disabled"):
+        patch("instant2_app.setup._real_inputs", return_value=[]), \
+        patch("instant2_app.autostart.is_enabled", return_value=False), \
+        patch("instant2_app.autostart.describe", return_value="disabled"):
     setup_module.cmd_setup([
         "--yes", "--no-probe", "--context-profile", "Trabajo",
-        "--context-remove-term", "Instant",
+        "--context-remove-term", "Instant2",
     ])
 _check("setup removes a vocabulary term from only the selected profile",
        _saved_setup["active_context"] == "Trabajo"
@@ -407,7 +407,7 @@ _work_context = {
     "context_profiles": {
         "General": [],
         "Trabajo": [
-            {"term": "Instant", "aliases": ["instante", "in stand"]},
+            {"term": "Instant2", "aliases": ["instante", "in stand"]},
             {"term": "Parakeet", "aliases": ["para kit"]},
         ],
     },
@@ -417,10 +417,10 @@ with patch("urllib.request.urlopen", side_effect=OSError("server unavailable")):
            llm.maybe_polish(
                "instante",
                {**_work_context, "llm_url": "http://127.0.0.1:8080"})
-           == "Instant")
+           == "Instant2")
 
 # Bias: la vecina no cruza frontera de oracion (.?!).
-from instant_app import bias as _bias
+from instant2_app import bias as _bias
 _check("bias no cruza punto entre alias y vecina",
        _bias.correct_biased("lei un comic. Hace push y sigo.", conf=0.5)
        == "lei un comic. Hace push y sigo.")
@@ -444,7 +444,7 @@ _check("opener porque abre",
 # Paste: guard no-op, Wayland no pisa, clipboard se restaura.
 import sys as _sys
 from unittest.mock import MagicMock as _MagicMock
-from instant_app import paste as _paste
+from instant2_app import paste as _paste
 _paste.paste("")
 _check("paste vacio no-op", True)
 _fake_pyper = _MagicMock()
@@ -528,7 +528,7 @@ _check("bias conf invalida no abre gate debil sin vecina",
 
 # GUI: clamp de CPU avisa (no silencioso) y _op_ready purga toasts viejos.
 import os as _os
-from instant_app import gui as _gui
+from instant2_app import gui as _gui
 def _bare_logic():
     logic = _gui.PanelLogic.__new__(_gui.PanelLogic)
     logic.cfg = {}

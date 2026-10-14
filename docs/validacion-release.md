@@ -18,10 +18,10 @@ instalar la aplicación en un escritorio real.
 
 | Plataforma | Artefacto | Cobertura automatizada actual | Validación de escritorio pendiente |
 |---|---|---|---|
-| Windows | `Instant-Setup.exe` y `Instant.exe` | Suite Windows; smoke del portable congelado. El instalador se construye en CI. | Instalación limpia, actualización, rollback, firma si está activa y desinstalación. |
-| macOS | `instant-macos`; `Instant-macos.dmg` si la firma está activa | Suite macOS; smoke del binario congelado. | Permiso de micrófono, Accesibilidad, Gatekeeper/notarización si está activa, actualización y desinstalación. |
-| Linux X11 | `instant-linux` | Suite Ubuntu; smoke del panel congelado en runner. | Instalación limpia, dependencias, X11, autostart, actualización y desinstalación. |
-| Arch/Omarchy Wayland | `instant-linux` | Pruebas unitarias de selección de backend, dependencias y pegado. | Portal de atajos de Hyprland, aplicaciones nativas Wayland, XWayland y pegado real. |
+| Windows | `Instant2-Setup.exe` y `Instant2.exe` | Suite Windows; smoke del portable congelado. El instalador se construye en CI. | Instalación limpia, actualización, rollback, firma si está activa y desinstalación. |
+| macOS | `instant2-macos`; `Instant2-macos.dmg` si la firma está activa | Suite macOS; smoke del binario congelado. | Permiso de micrófono, Accesibilidad, Gatekeeper/notarización si está activa, actualización y desinstalación. |
+| Linux X11 | `instant2-linux` | Suite Ubuntu; smoke del panel congelado en runner. | Instalación limpia, dependencias, X11, autostart, actualización y desinstalación. |
+| Arch/Omarchy Wayland | `instant2-linux` | Pruebas unitarias de selección de backend, dependencias y pegado. | Portal de atajos de Hyprland, aplicaciones nativas Wayland, XWayland y pegado real. |
 
 ## Instalación limpia
 
@@ -29,7 +29,7 @@ instalar la aplicación en un escritorio real.
   sidecar publicado.
 - [ ] Instalar o ejecutar como usuario normal, sin elevar permisos salvo que el
   instalador del sistema lo solicite para instalar la aplicación.
-- [ ] Abrir Instant y completar los permisos de micrófono/accesibilidad que
+- [ ] Abrir Instant2 y completar los permisos de micrófono/accesibilidad que
   correspondan.
 - [ ] Confirmar que el diagnóstico detecta dependencias faltantes y propone
   comandos adecuados para el sistema.
@@ -68,14 +68,14 @@ configuración y lista de modelos antes de probar.
 
 - [ ] Autorizar micrófono y Accesibilidad.
 - [ ] Si se publica el DMG notarizado, abrirlo con Gatekeeper y confirmar la
-  evaluación local con `spctl --assess --type open --verbose Instant.app`.
+  evaluación local con `spctl --assess --type open --verbose Instant2.app`.
 - [ ] Probar dictado en una aplicación nativa y pegar caracteres con acentos.
 
 ### Linux X11 y Arch/Omarchy Wayland
 
 - [ ] Probar el hotkey de mantener y soltar, el portapapeles previo y el pegado.
 - [ ] En Hyprland, confirmar que el portal queda registrado y asociar
-  `push-to-talk` siguiendo la [guía Linux](../dictado/README.md#hyprland-y-omarchy).
+  `instant2-push-to-talk` siguiendo la [guía Linux](../dictado/README.md#hyprland-y-omarchy).
 - [ ] Probar una aplicación Wayland nativa y otra XWayland por separado; anotar
   las diferencias.
 - [ ] Probar paquetes/dependencias con `apt` en Debian/Ubuntu y `pacman` en

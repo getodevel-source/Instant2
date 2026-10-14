@@ -21,7 +21,7 @@ else:
     from PySide6.QtNetwork import QLocalServer, QLocalSocket
     from PySide6.QtWidgets import QApplication
 
-    from instant_app import gui
+    from instant2_app import gui
 
     class _WindowStub(QObject):
         """Ventana mínima: solo recibe la acción que llegue por el canal."""
@@ -112,7 +112,7 @@ else:
             import tempfile
             import time
 
-            home = tempfile.mkdtemp(prefix="instant-gui-home-")
+            home = tempfile.mkdtemp(prefix="instant2-gui-home-")
             self.addCleanup(shutil.rmtree, home, ignore_errors=True)
             source = os.path.abspath(
                 os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -124,14 +124,14 @@ else:
                 QTWEBENGINE_CHROMIUM_FLAGS="--disable-gpu",
                 DISPLAY=os.environ.get("DISPLAY", ":0"),
                 HOME=home,
-                DICTADO_DATA=os.path.join(home, "models"),
+                INSTANT2_DATA=os.path.join(home, "models"),
                 PYTHONPATH=os.pathsep.join(
                     [source] + ([os.environ["PYTHONPATH"]]
                                 if os.environ.get("PYTHONPATH") else [])),
             )
             process = subprocess.Popen(
                 [sys.executable, "-c",
-                 "import sys; from instant_app.gui import run_gui; "
+                 "import sys; from instant2_app.gui import run_gui; "
                  "sys.exit(run_gui('setup'))"],
                 env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 

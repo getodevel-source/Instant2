@@ -6,10 +6,10 @@ import sys
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from instant_app.branding import create_icon_image
+from instant2_app.branding import create_icon_image
 
 
-output = ROOT / "build" / "instant.ico"
+output = ROOT / "build" / "instant2.ico"
 output.parent.mkdir(parents=True, exist_ok=True)
 create_icon_image(256).save(
     output,

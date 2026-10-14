@@ -1,4 +1,4 @@
-# Revisión de accesibilidad de Instant
+# Revisión de accesibilidad de Instant2
 
 El panel incluye navegación por teclado, foco visible, regiones de estado,
 controles con nombres y errores asociados, respeto por movimiento reducido,

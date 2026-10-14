@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import deps
+from instant2_app import deps
 
 
 class DependencyVersionTests(unittest.TestCase):

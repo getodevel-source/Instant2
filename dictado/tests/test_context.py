@@ -8,15 +8,15 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import bias as _bias
-from instant_app import config, context, llm
+from instant2_app import bias as _bias
+from instant2_app import config, context, llm
 
 _WORK_CONTEXT = {
     "active_context": "Trabajo",
     "context_profiles": {
         "General": [],
         "Trabajo": [
-            {"term": "Instant", "aliases": ["instante", "in stand"]},
+            {"term": "Instant2", "aliases": ["instante", "in stand"]},
             {"term": "Parakeet", "aliases": ["para kit"]},
         ],
     },
@@ -84,25 +84,29 @@ class _FakeResponse:
         return self.body
 
 
-def _llm_response(text):
-    return _FakeResponse(json.dumps({
-        "choices": [{"message": {"content": text}}],
-    }).encode())
+def _llm_response(text, finish_reason=None):
+    choice = {"message": {"content": text}}
+    if finish_reason is not None:
+        choice["finish_reason"] = finish_reason
+    return _FakeResponse(json.dumps({"choices": [choice]}).encode())
 
 
 class ConfigDefaultsTests(unittest.TestCase):
     def test_defaults_and_env_override(self):
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("DICTADO_LLM_URL", None)
-            self.addCleanup(os.environ.pop, "DICTADO_LLM_URL", None)
-            c = config.load()
-            self.assertEqual(c.get("llm_url", ""), "")
-            self.assertIs(c.get("sound"), False)
-            self.assertEqual(c.get("lang"), "es")
-            self.assertEqual(c.get("threads"), 4)
-            self.assertEqual(config.DEFAULTS.get("overlay_style"), "orbital")
-            with patch.dict(os.environ, {"DICTADO_LLM_URL": "http://127.0.0.1:8080"}):
-                self.assertEqual(config.load()["llm_url"], "http://127.0.0.1:8080")
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "config.json")
+            with patch("instant2_app.config.config_path", return_value=path), \
+                    patch.dict(os.environ, {}, clear=True):
+                c = config.load()
+                self.assertEqual(c.get("llm_url", ""), "")
+                self.assertIs(c.get("sound"), False)
+                self.assertEqual(c.get("lang"), "es")
+                self.assertEqual(c.get("threads"), 4)
+                self.assertEqual(config.DEFAULTS.get("overlay_style"), "orbital")
+                with patch.dict(os.environ, {
+                        "INSTANT2_LLM_URL": "http://127.0.0.1:8080"}, clear=True):
+                    self.assertEqual(
+                        config.load()["llm_url"], "http://127.0.0.1:8080")
 
 
 class LlmPolishTests(unittest.TestCase):
@@ -112,11 +116,55 @@ class LlmPolishTests(unittest.TestCase):
             llm.maybe_polish("hola mundo", {"llm_url": "http://127.0.0.1:9"}),
             "hola mundo")
 
-    def test_high_confidence_skips_network(self):
-        with patch("urllib.request.urlopen") as urlopen:
+    def test_every_confidence_uses_llm_when_enabled(self):
+        with patch("urllib.request.urlopen", return_value=_llm_response("hola mundo")) as urlopen:
             self.assertEqual(
                 llm.maybe_polish("hola mundo", {"llm_url": "http://127.0.0.1:8080"}, conf=0.95),
                 "hola mundo")
+            urlopen.assert_called_once()
+
+    def test_daemon_can_extend_candidate_timeout_for_a_sleeping_local_model(self):
+        timeouts = []
+
+        def urlopen(_request, timeout):
+            timeouts.append(timeout)
+            return _llm_response("Hola mundo.")
+
+        with patch("urllib.request.urlopen", side_effect=urlopen), \
+                patch.object(llm, "candidate_preserves_meaning", return_value=True):
+            result = llm.maybe_polish(
+                "hola mundo", {"llm_url": "http://127.0.0.1:8080"},
+                timeout=60.0)
+        self.assertEqual(result, "Hola mundo.")
+        self.assertEqual(timeouts, [60.0])
+
+    def test_normal_polish_budget_scales_for_100_word_dictation(self):
+        seen = {}
+
+        def urlopen(request, timeout):
+            seen["max_tokens"] = json.loads(request.data.decode("utf-8"))["max_tokens"]
+            return _llm_response("texto corregido")
+
+        with patch("urllib.request.urlopen", side_effect=urlopen):
+            llm.polish_candidate("palabra " * 100, "http://127.0.0.1:8080")
+        self.assertEqual(seen["max_tokens"], 432)
+
+    def test_normal_polish_keeps_original_when_llm_response_is_truncated(self):
+        original = "La frase original debe llegar completa hasta el final."
+        response = _llm_response("La frase original", finish_reason="length")
+        with patch("urllib.request.urlopen", return_value=response), \
+                patch.object(llm, "candidate_preserves_meaning", return_value=True):
+            result = llm.maybe_polish(
+                original, {"llm_url": "http://127.0.0.1:8080"})
+        self.assertEqual(result, original)
+
+    def test_normal_llm_can_be_disabled_explicitly(self):
+        with patch("urllib.request.urlopen") as urlopen:
+            self.assertEqual(
+                llm.maybe_polish("hola mundo", {
+                    "llm_url": "http://127.0.0.1:8080",
+                    "llm_normal_enabled": False,
+                }), "hola mundo")
             urlopen.assert_not_called()
 
     def test_low_confidence_falls_back_to_local(self):
@@ -141,14 +189,107 @@ class LlmPolishTests(unittest.TestCase):
         with patch("urllib.request.urlopen", return_value=_llm_response("Hola, mundo y todo.")):
             self.assertEqual(llm.polish("Hola mundo", "http://127.0.0.1:8080"), "Hola mundo")
 
+    def test_meaning_gate_skips_punctuation_and_case_only_changes(self):
+        with patch("urllib.request.urlopen") as urlopen:
+            self.assertTrue(llm.candidate_preserves_meaning(
+                "hola mundo", "HOLA, mundo.", "http://127.0.0.1:8080"))
+            urlopen.assert_not_called()
+
+    def test_meaning_gate_checks_accent_changes_that_can_change_meaning(self):
+        with patch("urllib.request.urlopen", return_value=_llm_response("REJECT")) as urlopen:
+            self.assertFalse(llm.candidate_preserves_meaning(
+                "el dijo que si", "\u00e9l dijo que s\u00ed",
+                "http://127.0.0.1:8080"))
+        urlopen.assert_called_once()
+
+    def test_meaning_gate_accepts_clear_asr_and_grammar_repairs(self):
+        original = (
+            "Necesito que preparen, necesito que prepares un resumen para Laura "
+            "Méndez. Compará los datos de abril, mayo y junio y señalás solo "
+            "las diferencias comprobables. No borres la advertencia ni cambié "
+            "los nombres.")
+        candidate = (
+            "Necesito que prepares un resumen para Laura Méndez. Compará los "
+            "datos de abril, mayo y junio y señalá solo las diferencias "
+            "comprobables. No borres la advertencia ni cambies los nombres.")
+        seen = {}
+
+        def urlopen(request, timeout):
+            seen["body"] = json.loads(request.data.decode("utf-8"))
+            return _llm_response("ACCEPT")
+
+        with patch("urllib.request.urlopen", side_effect=urlopen):
+            accepted = llm.candidate_preserves_meaning(
+                original, candidate, "http://127.0.0.1:8080")
+
+        self.assertTrue(accepted)
+        system = seen["body"]["messages"][0]["content"]
+        self.assertIn("cada forma verbal: persona, tiempo y modo", system)
+        self.assertIn("se quitó un arranque repetido", system)
+        self.assertIn("conserva 'solo'", system)
+        self.assertIn("Ante cualquier duda sobre un dato o la intención", system)
+
+    def test_meaning_gate_rejects_ambiguous_verb_form_changes(self):
+        seen = {}
+
+        def urlopen(request, timeout):
+            seen["body"] = json.loads(request.data.decode("utf-8"))
+            seen["timeout"] = timeout
+            return _llm_response("REJECT")
+
+        with patch("urllib.request.urlopen", side_effect=urlopen):
+            accepted = llm.candidate_preserves_meaning(
+                "cuando llega el paquete", "cuando llegue el paquete",
+                "http://127.0.0.1:8080")
+        self.assertFalse(accepted)
+        self.assertEqual(seen["timeout"], 2.0)
+        self.assertIn("cada forma verbal: persona, tiempo y modo",
+                      seen["body"]["messages"][0]["content"])
+        self.assertIn("No borres la advertencia ni cambié los nombres",
+                      seen["body"]["messages"][0]["content"])
+        self.assertIn("cuando llega el paquete",
+                      seen["body"]["messages"][0]["content"])
+        self.assertIn("cuando llega el paquete",
+                      seen["body"]["messages"][1]["content"])
+        self.assertEqual(seen["body"]["max_tokens"], 8)
+
+    def test_meaning_gate_rejects_ambiguous_or_unexpected_decisions(self):
+        with patch("urllib.request.urlopen", return_value=_llm_response(
+                "No estoy seguro; conserva el original.")):
+            self.assertFalse(llm.candidate_preserves_meaning(
+                "cuando llega", "cuando llegue", "http://127.0.0.1:8080"))
+
+    def test_normal_pipeline_falls_back_when_meaning_gate_rejects(self):
+        responses = iter((_llm_response("cuando llegue el paquete"),
+                          _llm_response("REJECT")))
+        with patch("urllib.request.urlopen", side_effect=lambda *_a, **_k: next(responses)):
+            result = llm.maybe_polish(
+                "cuando llega el paquete", {"llm_url": "http://127.0.0.1:8080"})
+        self.assertEqual(result, "cuando llega el paquete")
+
+    def test_normal_pipeline_falls_back_if_meaning_gate_times_out(self):
+        responses = iter((_llm_response("cuando llegue el paquete"),
+                          OSError("private server detail")))
+
+        def urlopen(*_args, **_kwargs):
+            result = next(responses)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        with patch("urllib.request.urlopen", side_effect=urlopen):
+            result = llm.maybe_polish(
+                "cuando llega el paquete", {"llm_url": "http://127.0.0.1:8080"})
+        self.assertEqual(result, "cuando llega el paquete")
+
     def test_local_glossary_with_llm_disabled(self):
-        self.assertEqual(llm.maybe_polish("in stand", _WORK_CONTEXT), "Instant")
+        self.assertEqual(llm.maybe_polish("in stand", _WORK_CONTEXT), "Instant2")
 
     def test_llm_failure_keeps_locally_corrected_text(self):
         with patch("urllib.request.urlopen", side_effect=OSError("server unavailable")):
             self.assertEqual(
                 llm.maybe_polish("instante", {**_WORK_CONTEXT, "llm_url": "http://127.0.0.1:8080"}),
-                "Instant")
+                "Instant2")
 
 
 class ContextProfileTests(unittest.TestCase):
@@ -156,7 +297,7 @@ class ContextProfileTests(unittest.TestCase):
         self.assertEqual(
             context.correct_aliases(
                 "instante abre el instanteo; in stand y para kit.", _WORK_CONTEXT),
-            "Instant abre el instanteo; Instant y Parakeet.")
+            "Instant2 abre el instanteo; Instant2 y Parakeet.")
 
     def test_exact_multiword_aliases_preserve_punctuation(self):
         self.assertEqual(context.correct_aliases("in, stand", _WORK_CONTEXT), "in, stand")
@@ -169,18 +310,18 @@ class ContextProfileTests(unittest.TestCase):
     def test_profiles_persist_through_config(self):
         with tempfile.TemporaryDirectory() as temp:
             config_file = os.path.join(temp, "config.json")
-            with patch("instant_app.config.config_path", return_value=config_file):
+            with patch("instant2_app.config.config_path", return_value=config_file):
                 config.save({
                     **config.DEFAULTS,
                     "active_context": "Trabajo",
                     "context_profiles": _WORK_CONTEXT["context_profiles"],
                 })
                 roundtrip = config.load()
-                with patch.dict(os.environ, {"DICTADO_CONTEXT": "General"}):
+                with patch.dict(os.environ, {"INSTANT2_CONTEXT": "General"}):
                     selected = config.load()
                 self.assertEqual(selected["active_context"], "General")
             self.assertEqual(roundtrip["active_context"], "Trabajo")
-            self.assertEqual(roundtrip["context_profiles"]["Trabajo"][0]["term"], "Instant")
+            self.assertEqual(roundtrip["context_profiles"]["Trabajo"][0]["term"], "Instant2")
 
     def test_sound_key_groups_recognizer_confusions(self):
         self.assertEqual(context._sound_key("Qwen"), context._sound_key("cuen"))
@@ -226,8 +367,8 @@ class ContextProfileTests(unittest.TestCase):
 
 class BiasCorrectionTests(unittest.TestCase):
     def test_general_rescues_doubtful_and_keeps_safe(self):
-        tech = "probando Instant con Parkit. Hice un comic del workflow."
-        fixed = "probando Instant con Parakeet. Hice un commit del workflow."
+        tech = "probando Instant2 con Parkit. Hice un comic del workflow."
+        fixed = "probando Instant2 con Parakeet. Hice un commit del workflow."
         self.assertEqual(_bias.correct_biased(tech, conf=0.5), fixed)
         self.assertEqual(_bias.correct_biased(tech, conf=0.95), tech)
         self.assertEqual(_bias.correct_biased("hola mundo", conf=0.3), "hola mundo")

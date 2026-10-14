@@ -17,7 +17,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..", "src")))
 from PySide6.QtCore import QTimer  # noqa: E402
 from PySide6.QtQuick import QQuickWindow  # noqa: E402,F401  (wrapper de grabWindow)
 
-from instant_app.overlay_web import _WebOverlay  # noqa: E402
+from instant2_app.overlay_web import _WebOverlay  # noqa: E402
+
+assert callable(QQuickWindow.grabWindow)
 
 
 def main():
@@ -71,6 +73,8 @@ def main():
                           "captures": captures, "ready": overlay._ready,
                           "loadProgress": page, "title": title}), flush=True)
         overlay.application.quit()
+
+
 
     QTimer.singleShot(300, lambda: dispatch("starting"))
     QTimer.singleShot(900, lambda: (feed_on.__setitem__(0, True), dispatch("listening")))

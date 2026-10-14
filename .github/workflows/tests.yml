@@ -63,7 +63,7 @@ jobs:
         shell: python
         run: |
           import glob, subprocess, sys
-          files = sorted(glob.glob("dictado/src/instant_app/*.py"))
+          files = sorted(glob.glob("dictado/src/instant2_app/*.py"))
           result = subprocess.run(
               [sys.executable, "-m", "pyflakes", *files],
               capture_output=True, text=True)
@@ -75,4 +75,4 @@ jobs:
               sys.exit(f"pyflakes: {len(findings)} hallazgo(s)")
 
       - name: Check the CLI starts
-        run: python -m instant_app --help
+        run: python -m instant2_app --help

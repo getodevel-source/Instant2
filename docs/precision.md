@@ -33,7 +33,7 @@ transducer sin contexto izquierdo en cortes, sin AGC (mitigado con
 
 - Fixes base: `_decode_lock` (race del recognizer), `_recover_empties`
   (retry ±1 s + total 30 s), `merge_short_bounds` 1.5 s, VAD 0.20 s/pad 0.3 s,
-  flush 0.3 s, pre-roll continuo, `DICTADO_SAVE_WAVS`.
+  flush 0.3 s, pre-roll continuo, `INSTANT2_SAVE_WAVS`.
 - Frontend (`frontend`): DC-remove + high-pass 80 Hz + aviso de clip >2 %.
 - Overlap 0.5 s de audio real por borde + costura (`_dedup_overlap`).
 - TEN-VAD int8 opt-in (`--vad-model ten`); default Silero.
@@ -46,7 +46,9 @@ transducer sin contexto izquierdo en cortes, sin AGC (mitigado con
 
 | Bench | Resultado |
 |---|---|
-| FLEURS es_419 60 clips | baseline 0.050; bias 0.050 (intacto); resto ±0.003 = ruido |
+| FLEURS es_419 60 clips | Registro previo: 0.050; repetición actual: baseline y bias 0.055, sin vacíos (WER mediano 0.028; RTF CPU 0.041×) |
+
+La repetición actual se ejecutó con Parakeet TDT v3 y 4 hilos CPU sobre 60 clips públicos FLEURS es_419. El baseline y el sesgo tuvieron WER 0,055; repetir el baseline sobre los WAV ya cacheados devolvió el mismo resultado. Esta muestra limpia no mostró mejora del sesgo. El valor anterior de 0,050 queda como dato histórico; la diferencia de 0,005 no se atribuye a una causa sin comprobar. La descarga inicial tardó 63 s y no forma parte del tiempo de transcripción. El procesamiento de cada variante tardó cerca de 30 s en total, con RTF 0,041×. Este corpus de lectura no sustituye dictado espontáneo ni validación con micrófonos distintos.
 | bench_bias 24 frases TTS degradadas | 0.254 → 0.206 (−19 %) |
 | Voz + mic reales, técnico | 12/12 técnicos bien; 0 FP en 129 palabras sanas (WER 5.4 %) |
 | Voz + mic reales, general 129 palabras | 5.4 % (todo del motor, nada del bias) |
@@ -75,7 +77,7 @@ referencia revisada, categorías generales de condición/micrófono y un
 identificador pseudónimo de hablante. `consent` debe ser `yes`, `si`, `sí`,
 `true` o `1`. La ruta puede ser absoluta o relativa al CSV.
 
-Ejecutar con los modelos de Instant ya descargados:
+Ejecutar con los modelos de Instant2 ya descargados:
 
 ```bash
 python bench/bench_real_audio.py --manifest bench/private-real-audio.csv

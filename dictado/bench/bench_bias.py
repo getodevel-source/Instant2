@@ -17,9 +17,9 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(__file__))
 
-from bench_wer import _degrade, _norm_es, _wer, load_sample  # noqa: E402
-from instant_app.engine import SAMPLE_RATE  # noqa: E402
-from instant_app.paths import resolve_data_dir  # noqa: E402
+from bench_wer import _degrade, _norm_es, _wer  # noqa: E402
+from instant2_app.engine import SAMPLE_RATE  # noqa: E402
+from instant2_app.paths import resolve_data_dir  # noqa: E402
 
 CACHE = os.path.join(os.path.dirname(__file__), ".bias_cache")
 SR = SAMPLE_RATE
@@ -33,20 +33,20 @@ SENTENCES = [
     "El driver del backend rompe el deploy del frontend.",
     "Hacemos rollback del build y repetimos el benchmark.",
     "El plugin de Python necesita un commit urgente.",
-    "Dicto con Parakeet y corrijo con el perfil de Instant.",
+    "Dicto con Parakeet y corrijo con el perfil de Instant2.",
     "Qwen y OpenAI fallan igual que GitHub en nombres.",
     "Le pregunté a Qwen por el deploy y me dijo OpenAI.",
     "Parakeet transcribe mejor que Qwen los nombres de GitHub.",
     "El staging del backend pide otro commit antes del deploy.",
     "Corrí el benchmark del workflow tras el rollback.",
     "El frontend sin el plugin no pasa el build.",
-    "Python y GitHub se llevan bien con Parakeet e Instant.",
+    "Python y GitHub se llevan bien con Parakeet e Instant2.",
     "Hice commit, push y deploy del backend a staging.",
     "El driver viejo frena el workflow del frontend.",
     "Staging y rollback antes de cada deploy del build.",
     "El benchmark marca que el plugin gasta driver.",
     "Qwen dice que OpenAI usa Parakeet para GitHub.",
-    "Instant dicta y Qwen corrige mejor que OpenAI.",
+    "Instant2 dicta y Qwen corrige mejor que OpenAI.",
     "El workflow pide commit en staging tras el build.",
     "Hago el deploy con rollback si el driver falla.",
 ]
@@ -98,8 +98,8 @@ def build_cache():
 def main():
     import wave
 
-    from instant_app import bias as _bias
-    from instant_app.engine import Engine
+    from instant2_app import bias as _bias
+    from instant2_app.engine import Engine
 
     build_cache()
     refs_path = os.path.join(CACHE, "refs.txt")
@@ -115,7 +115,7 @@ def main():
     wavs = []
     for i in range(len(refs)):
         with wave.open(os.path.join(CACHE, f"tech_{i:02d}.wav"), "rb") as w:
-            _sr, n = w.getframerate(), w.getnframes()
+            n = w.getnframes()
             wav = np.frombuffer(w.readframes(n),
                                 dtype=np.int16).astype(np.float32) / 32768.0
         wavs.append(np.ascontiguousarray(wav, dtype=np.float32))

@@ -1,8 +1,8 @@
-# Informe de mejoras posibles para Instant
+# Informe de mejoras posibles para Instant2
 
 **Corte de revisión:** 11 de octubre de 2026 · **Versión del repositorio:** `v0.5.1`
 
-Instant ya tiene una base sólida de dictado local, controles de privacidad, recuperación del actualizador y cobertura automatizada en Windows, Linux y macOS. Las mejoras con mayor valor ahora consisten en comprobar los recorridos completos en instalaciones reales, ampliar la evidencia de precisión con distintas voces y equipos, y mantener alineados el producto y sus documentos.
+Instant2 ya tiene una base sólida de dictado local, controles de privacidad, recuperación del actualizador y cobertura automatizada en Windows, Linux y macOS. Las mejoras con mayor valor ahora consisten en comprobar los recorridos completos en instalaciones reales, ampliar la evidencia de precisión con distintas voces y equipos, y mantener alineados el producto y sus documentos.
 
 ## Resumen ejecutivo
 
@@ -36,7 +36,7 @@ Instant ya tiene una base sólida de dictado local, controles de privacidad, rec
 
 ## Avance para Omarchy
 
-Se agregó una primera ruta experimental para Arch/Hyprland: Instant solicita el hotkey mediante el portal XDG, recibe eventos de tecla presionada/liberada, pega usando `wl-clipboard` y `wtype`, y el instalador/diagnóstico reconocen `pacman`. La guía explica cómo asociar el atajo desde la configuración de Hyprland.
+Se agregó una primera ruta experimental para Arch/Hyprland: Instant2 solicita el hotkey mediante el portal XDG, recibe eventos de tecla presionada/liberada, pega usando `wl-clipboard` y `wtype`, y el instalador/diagnóstico reconocen `pacman`. La guía explica cómo asociar el atajo desde la configuración de Hyprland.
 
 Falta probarlo en una sesión real de Omarchy, confirmar el backend de portal instalado por defecto y completar una vuelta de dictado en aplicaciones Wayland y XWayland. Hasta esa verificación, el soporte queda marcado como experimental.
 
@@ -109,7 +109,7 @@ Estas capacidades aparecen en el [changelog de `v0.5.0`](../CHANGELOG.md), el [w
 
 ### P1 · Soporte para Omarchy, Arch Linux y Hyprland/Wayland
 
-**Hallazgo:** Omarchy usa Arch Linux y Hyprland sobre Wayland, con un flujo de trabajo centrado en el teclado. Instant documentaba Linux como compatible solo con X11: `pynput` no ofrece el hotkey global necesario en Wayland, el pegado dependía de `xdotool` y el instalador Linux usaba `apt-get`. En esa combinación fallaba el flujo principal de “mantener para dictar y soltar para pegar”.
+**Hallazgo:** Omarchy usa Arch Linux y Hyprland sobre Wayland, con un flujo de trabajo centrado en el teclado. Instant2 documentaba Linux como compatible solo con X11: `pynput` no ofrece el hotkey global necesario en Wayland, el pegado dependía de `xdotool` y el instalador Linux usaba `apt-get`. En esa combinación fallaba el flujo principal de “mantener para dictar y soltar para pegar”.
 
 **Implementado en código; soporte todavía experimental:**
 
@@ -120,7 +120,7 @@ Estas capacidades aparecen en el [changelog de `v0.5.0`](../CHANGELOG.md), el [w
 
 **Criterio de cierre:** en una sesión real de Omarchy, mantener la tecla inicia la grabación, soltarla la detiene, la transcripción se pega en la aplicación enfocada y el portapapeles previo se restaura. El diagnóstico explica qué falta cuando no está disponible el portal o alguna herramienta. No requiere permisos de root ni lectura global de `/dev/input`.
 
-**Evidencia:** el [manual de Omarchy](https://omarchy.org/manual/) describe su base Arch/Hyprland y su navegación con teclado; la [guía de Hyprland](https://wiki.hypr.land/configuring/core/binds/globals/) documenta los atajos globales y su integración D-Bus con XDPH; la especificación de [XDG GlobalShortcuts](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.GlobalShortcuts.html) define eventos `Activated` y `Deactivated`; [wtype](https://github.com/atx/wtype) permite enviar `Ctrl+V` en Wayland y está disponible en [Arch Extra](https://archlinux.org/packages/extra/x86_64/wtype/). El estado actual de Instant está descrito en [la guía Linux](../dictado/README.md), [`hotkey.py`](../dictado/src/instant_app/hotkey.py), [`paste.py`](../dictado/src/instant_app/paste.py), [`deps.py`](../dictado/src/instant_app/deps.py) y [`install.sh`](../scripts/install.sh).
+**Evidencia:** el [manual de Omarchy](https://omarchy.org/manual/) describe su base Arch/Hyprland y su navegación con teclado; la [guía de Hyprland](https://wiki.hypr.land/configuring/core/binds/globals/) documenta los atajos globales y su integración D-Bus con XDPH; la especificación de [XDG GlobalShortcuts](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.GlobalShortcuts.html) define eventos `Activated` y `Deactivated`; [wtype](https://github.com/atx/wtype) permite enviar `Ctrl+V` en Wayland y está disponible en [Arch Extra](https://archlinux.org/packages/extra/x86_64/wtype/). El estado actual de Instant2 está descrito en [la guía Linux](../dictado/README.md), [`hotkey.py`](../dictado/src/instant2_app/hotkey.py), [`paste.py`](../dictado/src/instant2_app/paste.py), [`deps.py`](../dictado/src/instant2_app/deps.py) y [`install.sh`](../scripts/install.sh).
 
 ## Secuencia sugerida
 

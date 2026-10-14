@@ -1,4 +1,4 @@
-# Plan de mejora integral de Instant
+# Plan de mejora integral de Instant2
 
 > **Documento histórico.** Esta auditoría conserva sus puntajes, ejemplos y
 > estado de trabajo como una foto anterior a `v0.5.0`; menciones como “el
@@ -67,7 +67,7 @@ La puntuación inicial queda arriba como referencia. Después de implementar y c
 | Persistencia de configuración | 7 | 8 | Se serializa, sincroniza y reemplaza atómicamente el JSON; si un archivo heredado está dañado, recupera el `.bak`. Hay pruebas para ambos casos; falta ejercitar fallos de disco/permisos reales. |
 | Instalación y dependencias | 7 | 8 | El diagnóstico coincide con Python 3.12 mínimo y no intenta instalar paquetes con un intérprete incompatible. La instalación limpia multiplataforma sigue pendiente. |
 | Inicio automático, bandeja e instancias | 7 | 8 | El portable POSIX ahora apunta a su ejecutable congelado. La creación/limpieza se prueba sobre archivos aislados; falta confirmación de sesión de inicio real en Linux/macOS. |
-| Privacidad y operación local | 9 | 9 | Daemon, motor, corrector y errores de respuesta LLM no escriben texto reconocido en logs. UI/README aclaran que el endpoint remoto recibe texto y vocabulario activo; también documentan `DICTADO_SAVE_WAVS`. LLM continúa apagado por defecto. |
+| Privacidad y operación local | 9 | 9 | Daemon, motor, corrector y errores de respuesta LLM no escriben texto reconocido en logs. UI/README aclaran que el endpoint remoto recibe texto y vocabulario activo; también documentan `INSTANT2_SAVE_WAVS`. LLM continúa apagado por defecto. |
 | Build, instaladores y releases | 7 | 7 | CI incorpora smoke del portable Windows y empaqueta el helper; quedan los runners Linux/macOS y un upgrade/rollback instalado real. |
 | Documentación y onboarding | 8 | 8 | README, changelog, capturas y privacidad acompañan la UI nueva y los cambios revisados; falta validar instalación limpia y rutas de upgrade en cada SO. |
 

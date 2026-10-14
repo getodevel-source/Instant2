@@ -6,8 +6,8 @@ from unittest.mock import mock_open, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import deps, hotkey
-from instant_app.wayland_hotkey import PortalHotkey, _trigger_for
+from instant2_app import deps, hotkey
+from instant2_app.wayland_hotkey import PortalHotkey, _trigger_for
 
 
 class WaylandHotkeyTests(unittest.TestCase):
@@ -25,6 +25,35 @@ class WaylandHotkeyTests(unittest.TestCase):
                            clear=False):
             backend = hotkey.create("f9")
         self.assertIsInstance(backend, PortalHotkey)
+        self.assertEqual(backend.key_name, "f9")
+        self.assertEqual(backend.trigger, "F9")
+
+    def test_portal_dispatches_press_and_release_for_the_configured_key(self):
+        backend = PortalHotkey("f9")
+        events = []
+        backend._MessageType = type("MessageType", (), {"SIGNAL": object()})
+        signal = backend._MessageType.SIGNAL
+        backend._session_path = "/session/test"
+        backend._pressed = False
+        backend._on_press = lambda: events.append("press")
+        backend._on_release = lambda: events.append("release")
+
+        def send(member):
+            message = type("Message", (), {
+                "message_type": signal, "interface": "org.freedesktop.portal.GlobalShortcuts",
+                "path": "/session/test", "body": [0, backend.shortcut_id], "member": member,
+            })()
+            backend._on_portal_signal(message)
+
+        send("Activated")
+        send("Deactivated")
+        self.assertEqual(events, ["press", "release"])
+
+    def test_custom_key_gets_a_binding_id(self):
+        default = PortalHotkey("f9")
+        custom = PortalHotkey("f12")
+        self.assertEqual(default.shortcut_id, "instant2-push-to-talk")
+        self.assertEqual(custom.shortcut_id, "instant2-push-to-talk-f12")
 
 
 class ArchDependencyTests(unittest.TestCase):
@@ -34,7 +63,7 @@ class ArchDependencyTests(unittest.TestCase):
                 patch.object(deps.shutil, "which", return_value="/usr/bin/pacman"):
             self.assertTrue(deps._arch_based())
 
-    def test_system_dependency_install_uses_pacman_without_password_prompt(self):
+    def test_system_dependency_install_uses_pacman_without_interactive_password(self):
         with patch.object(sys, "platform", "linux"), \
                 patch.object(deps, "_arch_based", return_value=True), \
                 patch.object(deps.os, "geteuid", return_value=1000, create=True), \

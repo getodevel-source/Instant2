@@ -1,7 +1,7 @@
 """PyInstaller 6.22.3 QtWebEngine hook with DevTools resources omitted.
 
 Keep in sync with PyInstaller's upstream hook when its pinned release changes.
-Only the Chromium DevTools front-end bundles are omitted: Instant does not
+Only the Chromium DevTools front-end bundles are omitted: Instant2 does not
 expose DevTools, and these two resources account for about 83 MiB.
 """
 from pathlib import Path

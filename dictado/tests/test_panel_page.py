@@ -11,10 +11,10 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app.branding import PALETTE
-from instant_app.gui import compose_panel_page
+from instant2_app.branding import PALETTE
+from instant2_app.gui import compose_panel_page
 
-PACKAGE = os.path.join(os.path.dirname(__file__), "..", "src", "instant_app")
+PACKAGE = os.path.join(os.path.dirname(__file__), "..", "src", "instant2_app")
 GUI_SOURCE = os.path.join(PACKAGE, "gui.py")
 PANEL_PAGE = os.path.join(PACKAGE, "web", "panel.html")
 OVERLAY_PAGE = os.path.join(PACKAGE, "web", "overlay.html")
@@ -49,27 +49,66 @@ class PanelPageContractTests(unittest.TestCase):
 
     def test_page_keeps_the_user_facing_copy(self):
         source = self._source()
-        for expected in ("Dictado por voz", "Iniciar Instant", "Detener Instant",
+        for expected in ("Tu voz, en texto.", "Iniciar dictado", "Detener dictado",
+                         "ESTADO DEL DICTADO", "Servidor local administrado",
                          "Guardar cambios", "A&ntilde;adir perfil", "Eliminar perfil",
-                         "A&ntilde;adir t&eacute;rmino", "Descargar modelo", "Elegir tecla",
+                         "A&ntilde;adir t&eacute;rmino", "Descargar reconocimiento", "Cambiar tecla",
+                         "Leer texto en voz alta", "Kokoro usa el procesador de este equipo",
                          "Iniciar con el sistema", "Diagnóstico",
-                         "Buscar actualizaciones", "La prueba mide el nivel; no guarda audio."):
+                         "Buscar actualizaciones", "La prueba mide el nivel; no guarda audio.",
+                         "Dictado mejorado"):
             self.assertIn(expected, source)
+
+    def test_reader_offers_only_the_spanish_dora_voice(self):
+        source = self._source()
+        self.assertIn('<option value="ef_dora">', source)
+        self.assertIn('const readVoices = ["ef_dora"]', source)
+        self.assertNotIn('value="em_alex"', source)
+        self.assertNotIn('value="em_santa"', source)
+
+    def test_llm_retry_control_matches_setup_and_remote_states(self):
+        source = self._source()
+        self.assertIn('["starting", "recovering", "needs_setup", "disabled"]', source)
+        self.assertIn('["ready", "sleeping"]', source)
+        self.assertIn("externalLocal", source)
+        self.assertIn("remoteConfigured", source)
+        self.assertIn("Completá la configuración", source)
+        self.assertIn("Servicio remoto", source)
 
     def test_redesign_uses_single_section_views_and_keeps_advanced_settings(self):
         source = self._source()
         for expected in ("class=\"side-nav\"", "aria-current=\"page\"",
                          'id="sec-home"', 'id="sec-audio"', 'id="sec-settings"',
-                         'id="sec-vocab"', 'id="modelSetup"',
-                         "section.hidden = name !== page", "updateProgressWrap",
+                         'id="sec-vocab"', 'id="sec-read"', 'id="readText"',
+                         'id="readPlay"', 'id="readStop"', 'id="modelSetup"',
+                         "section.hidden = !visible", "page-enter", "updateProgressWrap",
                          "overlayStyleSelect", "threadsSelect", "maxSegmentInput",
                          "soundCheck", "llmUrlInput", "op:\"set_advanced\"",
+                         "llmDestination", "llmModelInput",
+                         "llmNormalCheck", "llmResources", "llmHomeStatus",
+                          "Servidor local administrado", "llmServerPathInput", "llmModelPathInput",
+                         "llmAccelerationSelect", "llmRuntimeStatus", "llmRuntimeRetry",
+                         "keyBtn",
                          "vadModelSelect", "blankPenaltyInput", "updateModeSelect",
                          "runBtnReason", 'id="checklist"', "renderChecklist"):
             self.assertIn(expected, source)
         self.assertIn('aria-describedby="statusDetail runBtnReason"', source)
         self.assertIn('aria-describedby="blankPenaltyHelp blankPenaltyError"',
                       source)
+        self.assertNotIn('id="llmManagedCheck"', source)
+
+
+    def test_motion_theme_uses_real_state_and_accessible_transitions(self):
+        source = self._source()
+        self.assertIn('id="instant2-motion-system"', source)
+        self.assertIn("@keyframes page-arrive", source)
+        self.assertIn("@keyframes details-arrive", source)
+        self.assertIn("prefers-reduced-motion: reduce", source)
+        self.assertIn('homeStatusLine.dataset.state = state', source)
+        self.assertIn('transform: scaleX(var(--progress,0))', source)
+        self.assertNotRegex(source, r"@keyframes[^}]*\b(?:width|height|left|top)\s*:")
+        self.assertNotIn("box-shadow 210ms", source)
+        self.assertNotIn("box-shadow 200ms", source)
 
     def test_controls_have_explicit_accessible_status_and_error_text(self):
         source = self._source()
@@ -94,6 +133,12 @@ class PanelPageContractTests(unittest.TestCase):
         found = {value.lower() for value in re.findall(r"#[0-9a-fA-F]{6}", self._source())}
         allowed = {value.lower() for value in PALETTE.values()} | ALLOWED_LITERALS
         self.assertEqual(found - allowed, set(), "panel.html: colores fuera de la paleta")
+
+    def test_panel_theme_colors_are_declared_in_branding(self):
+        source = self._source()
+        for key in ("panel_background", "panel_surface", "panel_text",
+                    "panel_accent", "panel_accent_button", "panel_hero_start"):
+            self.assertIn(PALETTE[key], source)
 
     def test_qwebchannel_is_injected_once(self):
         out = compose_panel_page("<html><!--QWEBCHANNEL--></html>", "window.qt=1;")
@@ -138,6 +183,10 @@ class HostContractTests(unittest.TestCase):
                 self.assertIn("height: 600", source)
                 self.assertIn("minimumWidth: 760", source)
                 self.assertIn("minimumHeight: 480", source)
+                self.assertIn("import QtQuick.Dialogs", source)
+                self.assertIn("FileDialog", source)
+                self.assertIn("function openFileDialog(kind)", source)
+                self.assertIn("bridgeObject.fileSelected", source)
 
     def test_pages_ship_with_the_package(self):
         self.assertTrue(os.path.isfile(PANEL_PAGE))

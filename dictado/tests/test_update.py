@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import update as update_module
+from instant2_app import update as update_module
 
 
 class VersionTests(unittest.TestCase):
@@ -24,20 +24,20 @@ class VersionTests(unittest.TestCase):
 
     def test_check_detects_update_with_mocked_api(self):
         payload = {"tag_name": "v9.9.9", "body": "notas",
-                   "assets": [{"name": "Instant.exe",
-                               "browser_download_url": "https://x/Instant.exe"}]}
+                   "assets": [{"name": "Instant2.exe",
+                               "browser_download_url": "https://x/Instant2.exe"}]}
         with patch.object(update_module, "fetch_json", return_value=payload), \
                 patch.object(update_module, "current_version", return_value="0.1.0"), \
                 patch.object(update_module.sys, "platform", "win32"):
             info = update_module.check()
         self.assertTrue(info["update"])
         self.assertEqual(info["latest"], "9.9.9")
-        self.assertEqual(info["asset_url"], "https://x/Instant.exe")
+        self.assertEqual(info["asset_url"], "https://x/Instant2.exe")
 
     def test_check_up_to_date(self):
         payload = {"tag_name": "v0.1.0", "body": "",
-                   "assets": [{"name": "Instant.exe",
-                               "browser_download_url": "https://x/Instant.exe"}]}
+                   "assets": [{"name": "Instant2.exe",
+                               "browser_download_url": "https://x/Instant2.exe"}]}
         with patch.object(update_module, "fetch_json", return_value=payload), \
                 patch.object(update_module, "current_version", return_value="0.1.0"), \
                 patch.object(update_module.sys, "platform", "win32"):
@@ -72,30 +72,30 @@ class InstallModeTests(unittest.TestCase):
         self.assertEqual(update_module.install_mode(), "source")
         with patch.object(update_module.sys, "platform", "win32"):
             self.assertEqual(update_module.platform_asset("source"),
-                             "Instant.exe")
+                             "Instant2.exe")
 
     def test_installed_mode_requires_uninstaller_next_to_exe(self):
         with tempfile.TemporaryDirectory() as directory:
-            exe = os.path.join(directory, "Instant.exe")
+            exe = os.path.join(directory, "Instant2.exe")
             open(exe, "wb").close()
             with patch.object(update_module.sys, "frozen", True, create=True), \
                     patch.object(update_module.sys, "executable", exe), \
                     patch.object(update_module.sys, "platform", "win32"):
                 self.assertEqual(update_module.install_mode(), "portable")
                 self.assertEqual(update_module.platform_asset(),
-                                 "Instant.exe")
+                                 "Instant2.exe")
                 open(os.path.join(directory, update_module.UNINSTALLER),
                      "wb").close()
                 self.assertEqual(update_module.install_mode(), "installed")
                 self.assertEqual(update_module.platform_asset(),
-                                 "Instant-Setup.exe")
+                                 "Instant2-Setup.exe")
 
     def test_check_uses_the_installer_asset_when_installed(self):
         payload = {"tag_name": "v9.9.9", "body": "",
-                   "assets": [{"name": "Instant-Setup.exe",
-                               "browser_download_url": "https://x/Instant-Setup.exe"}]}
+                   "assets": [{"name": "Instant2-Setup.exe",
+                               "browser_download_url": "https://x/Instant2-Setup.exe"}]}
         with tempfile.TemporaryDirectory() as directory:
-            exe = os.path.join(directory, "Instant.exe")
+            exe = os.path.join(directory, "Instant2.exe")
             open(exe, "wb").close()
             open(os.path.join(directory, update_module.UNINSTALLER),
                  "wb").close()
@@ -106,15 +106,102 @@ class InstallModeTests(unittest.TestCase):
                     patch.object(update_module, "current_version",
                                  return_value="0.1.0"):
                 info = update_module.check()
-        self.assertEqual(info["asset_url"], "https://x/Instant-Setup.exe")
+        self.assertEqual(info["asset_url"], "https://x/Instant2-Setup.exe")
+
+    def test_installed_update_lists_all_setup_volumes_in_order(self):
+        payload = {"tag_name": "v9.9.9", "body": "", "assets": [
+            {"name": "Instant2-Setup-2.bin",
+             "browser_download_url": "https://x/Instant2-Setup-2.bin",
+             "size": 20},
+            {"name": "Instant2-Setup.exe",
+             "browser_download_url": "https://x/Instant2-Setup.exe",
+             "size": 10},
+            {"name": "Instant2-Setup-1.bin",
+             "browser_download_url": "https://x/Instant2-Setup-1.bin",
+             "size": 15},
+            {"name": "Instant2-Setup.exe.sha256",
+             "browser_download_url": "https://x/Instant2-Setup.exe.sha256",
+             "size": 80},
+        ]}
+        with tempfile.TemporaryDirectory() as directory:
+            exe = os.path.join(directory, "Instant2.exe")
+            open(exe, "wb").close()
+            open(os.path.join(directory, update_module.UNINSTALLER), "wb").close()
+            with patch.object(update_module.sys, "frozen", True, create=True), \
+                    patch.object(update_module.sys, "executable", exe), \
+                    patch.object(update_module.sys, "platform", "win32"), \
+                    patch.object(update_module, "fetch_json", return_value=payload), \
+                    patch.object(update_module, "current_version", return_value="0.1.0"):
+                info = update_module.check()
+        self.assertEqual([item["name"] for item in info["asset_files"]], [
+            "Instant2-Setup.exe", "Instant2-Setup-1.bin", "Instant2-Setup-2.bin"])
+        self.assertEqual([item["size"] for item in info["asset_files"]], [10, 15, 20])
+
+    def test_installed_update_rejects_missing_setup_volume(self):
+        with self.assertRaisesRegex(ValueError, "partes incompletas"):
+            update_module._installer_files({
+                "Instant2-Setup.exe": "https://x/Instant2-Setup.exe",
+                "Instant2-Setup-1.bin": "https://x/Instant2-Setup-1.bin",
+                "Instant2-Setup-3.bin": "https://x/Instant2-Setup-3.bin",
+            })
+
+    def test_download_release_package_verifies_all_parts_in_same_directory(self):
+        bodies = {
+            "https://x/Instant2-Setup.exe": b"setup",
+            "https://x/Instant2-Setup-1.bin": b"disk-one",
+        }
+        hashes = {url: hashlib.sha256(body).hexdigest()
+                  for url, body in bodies.items()}
+        info = {"asset": "Instant2-Setup.exe", "asset_url":
+                "https://x/Instant2-Setup.exe", "asset_files": [
+                    {"name": "Instant2-Setup.exe",
+                     "url": "https://x/Instant2-Setup.exe", "size": 5},
+                    {"name": "Instant2-Setup-1.bin",
+                     "url": "https://x/Instant2-Setup-1.bin", "size": 8},
+                ]}
+        progress = []
+
+        def fake_download(url, target, expected_sha256=None, progress=None):
+            body = bodies[url]
+            self.assertEqual(expected_sha256, hashes[url])
+            with open(target, "wb") as handle:
+                handle.write(body)
+            if progress:
+                progress(len(body), len(body))
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(update_module, "fetch_expected_sha256",
+                             side_effect=lambda url: hashes[url]), \
+                patch.object(update_module, "download", side_effect=fake_download):
+            main, expected = update_module.download_release_package(
+                info, directory, progress=lambda done, total: progress.append((done, total)))
+            self.assertEqual(os.path.basename(main), "Instant2-Setup.exe")
+            self.assertEqual(expected, hashes["https://x/Instant2-Setup.exe"])
+            self.assertTrue(os.path.isfile(os.path.join(directory,
+                                                        "Instant2-Setup-1.bin")))
+            self.assertIn((13, 13), progress)
+
+    def test_download_release_package_rejects_path_traversal(self):
+        info = {"asset": "Instant2-Setup.exe", "asset_url": "https://x/setup.exe",
+                "asset_files": [
+                    {"name": "Instant2-Setup.exe", "url": "https://x/setup.exe",
+                     "size": 5},
+                    {"name": "..\\outside.bin", "url": "https://x/outside.bin",
+                     "size": 1},
+                ]}
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(update_module, "fetch_expected_sha256") as fetch:
+            with self.assertRaisesRegex(ValueError, "ruta de asset inválida"):
+                update_module.download_release_package(info, directory)
+            fetch.assert_not_called()
 
     def test_frozen_unix_is_portable_with_its_own_asset(self):
         with patch.object(update_module.sys, "frozen", True, create=True), \
                 patch.object(update_module.sys, "executable",
-                             "/opt/instant/instant"), \
+                             "/opt/instant2/instant2"), \
                 patch.object(update_module.sys, "platform", "linux"):
             self.assertEqual(update_module.install_mode(), "portable")
-            self.assertEqual(update_module.platform_asset(), "instant-linux")
+            self.assertEqual(update_module.platform_asset(), "instant2-linux")
 
 
 class ApplyUpdateTests(unittest.TestCase):
@@ -125,8 +212,8 @@ class ApplyUpdateTests(unittest.TestCase):
 
     def test_apply_binary_update_replaces_the_target(self):
         with tempfile.TemporaryDirectory() as directory:
-            downloaded = os.path.join(directory, "instant-linux.download")
-            target = os.path.join(directory, "instant")
+            downloaded = os.path.join(directory, "instant2-linux.download")
+            target = os.path.join(directory, "instant2")
             with open(downloaded, "wb") as handle:
                 handle.write(b"nuevo")
             with open(target, "wb") as handle:
@@ -144,8 +231,8 @@ class ApplyUpdateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target_dir = os.path.join(directory, "mounted-app")
             os.makedirs(target_dir)
-            downloaded = os.path.join(directory, "instant-linux.download")
-            target = os.path.join(target_dir, "instant")
+            downloaded = os.path.join(directory, "instant2-linux.download")
+            target = os.path.join(target_dir, "instant2")
             with open(downloaded, "wb") as handle:
                 handle.write(b"nuevo")
             with open(target, "wb") as handle:
@@ -196,7 +283,7 @@ class ApplyUpdateTests(unittest.TestCase):
 
     def test_apply_binary_update_blocks_source_mode_unless_allowed(self):
         with patch.object(update_module.sys, "platform", "linux"), \
-                patch("instant_app.update.install_mode", return_value="source"):
+                patch("instant2_app.update.install_mode", return_value="source"):
             with self.assertRaisesRegex(RuntimeError, "instalación source"):
                 update_module.apply_binary_update("descarga")
             # allow_source solo no alcanza: sin target explícito fuera del
@@ -208,8 +295,8 @@ class ApplyUpdateTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as directory, \
                     patch.object(update_module.sys, "prefix", "/otro/prefix"), \
                     patch.object(update_module.sys, "executable", "/otro/prefix/bin/python"):
-                downloaded = os.path.join(directory, "instant-linux.download")
-                target = os.path.join(directory, "instant")
+                downloaded = os.path.join(directory, "instant2-linux.download")
+                target = os.path.join(directory, "instant2")
                 with open(downloaded, "wb") as handle:
                     handle.write(b"nuevo")
                 with open(target, "wb") as handle:
@@ -236,8 +323,8 @@ class ApplyHardeningTests(unittest.TestCase):
 
     def test_check_rejects_non_semver_tag(self):
         payload = {"tag_name": "v0.1-beta", "body": "",
-                   "assets": [{"name": "Instant.exe",
-                               "browser_download_url": "https://x/Instant.exe"}]}
+                   "assets": [{"name": "Instant2.exe",
+                               "browser_download_url": "https://x/Instant2.exe"}]}
         with patch.object(update_module, "fetch_json", return_value=payload), \
                 patch.object(update_module, "current_version", return_value="0.1.0"), \
                 patch.object(update_module.sys, "platform", "win32"):
@@ -246,8 +333,8 @@ class ApplyHardeningTests(unittest.TestCase):
 
     def test_check_older_release_is_not_an_update_even_with_asset(self):
         payload = {"tag_name": "v0.0.1", "body": "",
-                   "assets": [{"name": "Instant.exe",
-                               "browser_download_url": "https://x/Instant.exe"}]}
+                   "assets": [{"name": "Instant2.exe",
+                               "browser_download_url": "https://x/Instant2.exe"}]}
         with patch.object(update_module, "fetch_json", return_value=payload), \
                 patch.object(update_module, "current_version", return_value="0.2.0"), \
                 patch.object(update_module.sys, "platform", "win32"):
@@ -315,8 +402,8 @@ class ApplyHardeningTests(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "chmod POSIX")
     def test_private_dirs_and_config_files_are_restricted(self):
-        from instant_app import config as config_module
-        from instant_app import paths as paths_module
+        from instant2_app import config as config_module
+        from instant2_app import paths as paths_module
         with tempfile.TemporaryDirectory() as base:
             directory = os.path.join(base, "cfg")
             self.assertEqual(paths_module.ensure_private_dir(directory), directory)
@@ -330,7 +417,7 @@ class ApplyHardeningTests(unittest.TestCase):
             self.assertEqual(mode, "0o600")
 
     def test_llm_blocks_plain_http_off_loopback(self):
-        from instant_app import llm as llm_module
+        from instant2_app import llm as llm_module
         for ok in ("http://localhost:8080", "http://127.0.0.1:8080",
                    "http://[::1]:8080", "https://llm.ejemplo.com"):
             self.assertTrue(llm_module.check_url(ok))
@@ -340,7 +427,7 @@ class ApplyHardeningTests(unittest.TestCase):
             llm_module.check_url("http://llm.ejemplo.com")
 
     def test_llm_failure_log_hides_url_and_keeps_class(self):
-        from instant_app import llm as llm_module
+        from instant2_app import llm as llm_module
         url = "http://127.0.0.1:9/v1/chat/completions?token=secreto-abc"
         with patch("urllib.request.urlopen",
                    side_effect=OSError("caído")) as _urlopen, \
@@ -356,7 +443,7 @@ class ApplyHardeningTests(unittest.TestCase):
         self.assertNotIn("127.0.0.1", logged)
 
     def test_llm_rejects_non_loopback_http_without_network(self):
-        from instant_app import llm as llm_module
+        from instant2_app import llm as llm_module
         with patch("urllib.request.urlopen") as _urlopen, \
                 patch.object(llm_module.log, "warning") as warning:
             out = llm_module.maybe_polish(
@@ -372,7 +459,7 @@ class ApplyHardeningTests(unittest.TestCase):
         self.assertNotIn("192.168.1.10", logged)
 
     def test_llm_sends_bearer_without_logging_it(self):
-        from instant_app import llm as llm_module
+        from instant2_app import llm as llm_module
         import json as _json
 
         seen = {}
@@ -403,7 +490,7 @@ class ApplyHardeningTests(unittest.TestCase):
 
 class DownloadVerifyTests(unittest.TestCase):
     def _fixture(self, body):
-        directory = tempfile.mkdtemp(prefix="instant-update-test-")
+        directory = tempfile.mkdtemp(prefix="instant2-update-test-")
         source = os.path.join(directory, "asset.bin")
         with open(source, "wb") as handle:
             handle.write(body)
@@ -417,7 +504,7 @@ class DownloadVerifyTests(unittest.TestCase):
 
     def test_cycle_download_verify_ok(self):
         _dir, source, digest = self._fixture(b"nuevo-exe-" * 1000)
-        dest = os.path.join(_dir, "out", "Instant.exe")
+        dest = os.path.join(_dir, "out", "Instant2.exe")
         expected = update_module.fetch_expected_sha256(self._file_url(source))
         self.assertEqual(expected, digest)
         seen = []
@@ -432,14 +519,14 @@ class DownloadVerifyTests(unittest.TestCase):
 
     def test_tampered_download_is_deleted(self):
         _dir, source, digest = self._fixture(b"original")
-        dest = os.path.join(_dir, "Instant.exe")
+        dest = os.path.join(_dir, "Instant2.exe")
         with self.assertRaises(ValueError):
             update_module.download(
                 self._file_url(source), dest, expected_sha256="0" * 64)
         self.assertFalse(os.path.exists(dest))
 
     def test_missing_sidecar_refuses(self):
-        directory = tempfile.mkdtemp(prefix="instant-update-test-")
+        directory = tempfile.mkdtemp(prefix="instant2-update-test-")
         source = os.path.join(directory, "asset.bin")
         with open(source, "wb") as handle:
             handle.write(b"sin-sidecar")
@@ -448,22 +535,22 @@ class DownloadVerifyTests(unittest.TestCase):
 
     def test_midstream_failure_leaves_no_part(self):
         from unittest.mock import MagicMock
-        directory = tempfile.mkdtemp(prefix="instant-update-test-")
-        dest = os.path.join(directory, "Instant.exe")
+        directory = tempfile.mkdtemp(prefix="instant2-update-test-")
+        dest = os.path.join(directory, "Instant2.exe")
         response = MagicMock()
         response.read.side_effect = [b"mitad", ConnectionError("corte")]
         context = MagicMock()
         context.__enter__.return_value = response
         with patch("urllib.request.urlopen", return_value=context):
             with self.assertRaises(ConnectionError):
-                update_module.download("https://x/Instant.exe", dest,
+                update_module.download("https://x/Instant2.exe", dest,
                                        expected_sha256="f" * 64)
         self.assertFalse(os.path.exists(dest))
         self.assertFalse(os.path.exists(dest + ".part"))
 
     def test_verified_file_lands_at_final_path(self):
         _dir, source, digest = self._fixture(b"final-" * 500)
-        dest = os.path.join(_dir, "Instant.exe")
+        dest = os.path.join(_dir, "Instant2.exe")
         result = update_module.download(
             self._file_url(source), dest, expected_sha256=digest)
         self.assertEqual(result, dest)
@@ -527,20 +614,20 @@ class UpdateFlowTests(unittest.TestCase):
 
     def _logic(self, cfg=None):
         from types import SimpleNamespace
-        from instant_app import gui
+        from instant2_app import gui
         emitted = []
         base_cfg = {"mic_hint": "", "mic_index": None, "key": "f9",
                     "autostart": False, "update_last_check": 0}
         base_cfg.update(cfg or {})
         with (
-            patch("instant_app.gui.config.load", return_value=base_cfg),
-            patch("instant_app.gui.models.check",
+            patch("instant2_app.gui.config.load", return_value=base_cfg),
+            patch("instant2_app.gui.models.check",
                   return_value={"parakeet": True, "vad": True}),
-            patch("instant_app.gui.resolve_data_dir",
+            patch("instant2_app.gui.resolve_data_dir",
                   return_value=os.path.join(os.getcwd(), "models")),
-            patch("instant_app.gui.daemon_is_running", return_value=False),
-            patch("instant_app.gui.audio.input_choices", return_value=[]),
-            patch("instant_app.gui.autostart.is_enabled", return_value=False),
+            patch("instant2_app.gui.daemon_is_running", return_value=False),
+            patch("instant2_app.gui.audio.input_choices", return_value=[]),
+            patch("instant2_app.gui.autostart.is_enabled", return_value=False),
             patch.dict(sys.modules, {"sounddevice": SimpleNamespace(
                 default=SimpleNamespace(device=(-1, -1)))}),
         ):
@@ -555,10 +642,10 @@ class UpdateFlowTests(unittest.TestCase):
 
     def _release(self, version="0.2.0"):
         return {"update": True, "current": "0.1.0", "latest": version,
-                "notes": "Novedades", "asset": "Instant.exe",
-                "asset_url": "https://x/Instant.exe"}
+                "notes": "Novedades", "asset": "Instant2.exe",
+                "asset_url": "https://x/Instant2.exe"}
 
-    def _verified_install_file(self, directory, name="Instant-Setup.exe"):
+    def _verified_install_file(self, directory, name="Instant2-Setup.exe"):
         import hashlib
         path = os.path.join(directory, name)
         with open(path, "wb") as handle:
@@ -571,11 +658,11 @@ class UpdateFlowTests(unittest.TestCase):
         logic, _emitted = self._logic({"update_mode": "auto"})
         info = self._release()
         with (
-            patch("instant_app.update.check", return_value=info),
-            patch("instant_app.update.fetch_expected_sha256",
+            patch("instant2_app.update.check", return_value=info),
+            patch("instant2_app.update.fetch_expected_sha256",
                   return_value="a" * 64),
-            patch("instant_app.update.download") as download,
-            patch("instant_app.gui.config.save", return_value="config.json"),
+            patch("instant2_app.update.download") as download,
+            patch("instant2_app.gui.config.save", return_value="config.json"),
         ):
             logic._silent_update_check()
 
@@ -586,12 +673,12 @@ class UpdateFlowTests(unittest.TestCase):
 
         # El sello diario evita otra consulta, pero no oculta la descarga lista.
         logic._update_silent_done = False
-        with patch("instant_app.update.check") as check:
+        with patch("instant2_app.update.check") as check:
             logic._silent_update_check()
         check.assert_not_called()
 
     def test_update_button_check_downloads_in_background_with_progress(self):
-        from instant_app import gui
+        from instant2_app import gui
         logic, emitted = self._logic({"update_mode": "auto"})
 
         import hashlib
@@ -604,10 +691,10 @@ class UpdateFlowTests(unittest.TestCase):
             kwargs["progress"](512, 1024)
 
         with (
-            patch("instant_app.update.check", return_value=self._release()),
-            patch("instant_app.update.fetch_expected_sha256",
+            patch("instant2_app.update.check", return_value=self._release()),
+            patch("instant2_app.update.fetch_expected_sha256",
                   return_value=fake_digest),
-            patch("instant_app.update.download", side_effect=fake_download) as download,
+            patch("instant2_app.update.download", side_effect=fake_download) as download,
         ):
             logic.check_updates()
 
@@ -627,27 +714,27 @@ class UpdateFlowTests(unittest.TestCase):
                          ["Actualizar y reiniciar", "Después"])
 
         with (
-            patch("instant_app.update.install_mode", return_value="portable"),
-            patch("instant_app.gui.os.path.isfile", return_value=True),
-            patch("instant_app.gui.subprocess.Popen") as popen,
+            patch("instant2_app.update.install_mode", return_value="portable"),
+            patch("instant2_app.gui.os.path.isfile", return_value=True),
+            patch("instant2_app.gui.subprocess.Popen") as popen,
         ):
             logic.handle({"op": "apply_update"})
 
         launches = [entry for entry in popen.call_args_list
-                    if entry.args and "instant-update.bat" in str(entry.args[0])]
+                    if entry.args and "instant2-update.bat" in str(entry.args[0])]
         self.assertEqual(len(launches), 1)
         self.assertEqual(launches[0].args[0][0], "cmd")
         self.assertEqual(launches[0].args[0][-1],
-                         os.path.join(gui._workdir(), "dist", "Instant.exe"))
+                         os.path.join(gui._workdir(), "dist", "Instant2.exe"))
         self.assertTrue(logic._closed)
 
     def test_silent_check_notify_mode_asks_before_downloading(self):
         logic, emitted = self._logic()
         info = self._release()
         with (
-            patch("instant_app.update.check", return_value=info),
-            patch("instant_app.update.download") as download,
-            patch("instant_app.gui.config.save", return_value="config.json"),
+            patch("instant2_app.update.check", return_value=info),
+            patch("instant2_app.update.download") as download,
+            patch("instant2_app.gui.config.save", return_value="config.json"),
         ):
             logic._silent_update_check()
         download.assert_not_called()
@@ -659,10 +746,10 @@ class UpdateFlowTests(unittest.TestCase):
         logic, emitted = self._logic({"update_mode": "auto"})
         info = self._release()
         with (
-            patch("instant_app.update.check", return_value=info),
-            patch("instant_app.update.fetch_expected_sha256",
+            patch("instant2_app.update.check", return_value=info),
+            patch("instant2_app.update.fetch_expected_sha256",
                   side_effect=[RuntimeError("sin red"), "c" * 64]),
-            patch("instant_app.update.download"),
+            patch("instant2_app.update.download"),
         ):
             logic.check_updates()
             self.assertEqual(logic.state_payload()["updates"]["action"], "retry_update")
@@ -682,10 +769,10 @@ class UpdateFlowTests(unittest.TestCase):
         _path, _digest = self._verified_install_file(_tmp.name)
         logic._ready_update = (_path, _digest, "0.2.0")
 
-        with (patch("instant_app.update.install_mode", return_value="installed"),
-              patch("instant_app.gui.stop_daemon") as stop,
-              patch("instant_app.gui.daemon_is_running", return_value=False),
-              patch("instant_app.gui.subprocess.Popen") as popen):
+        with (patch("instant2_app.update.install_mode", return_value="installed"),
+              patch("instant2_app.gui.stop_daemon") as stop,
+              patch("instant2_app.gui.daemon_is_running", return_value=False),
+              patch("instant2_app.gui.subprocess.Popen") as popen):
             logic.handle({"op": "apply_update"})
 
             self.assertTrue(logic._update_install_pending)
@@ -710,12 +797,12 @@ class UpdateFlowTests(unittest.TestCase):
         _path, _digest = self._verified_install_file(_tmp.name)
         logic._ready_update = (_path, _digest, "0.2.0")
 
-        with (patch("instant_app.update.install_mode", return_value="installed"),
-              patch("instant_app.gui.stop_daemon") as stop,
-              patch("instant_app.gui.daemon_is_running", return_value=True),
-              patch("instant_app.gui.time.monotonic", side_effect=[0, 9]),
-              patch("instant_app.gui.time.sleep") as sleep,
-              patch("instant_app.gui.subprocess.Popen") as popen):
+        with (patch("instant2_app.update.install_mode", return_value="installed"),
+              patch("instant2_app.gui.stop_daemon") as stop,
+              patch("instant2_app.gui.daemon_is_running", return_value=True),
+              patch("instant2_app.gui.time.monotonic", side_effect=[0, 9]),
+              patch("instant2_app.gui.time.sleep") as sleep,
+              patch("instant2_app.gui.subprocess.Popen") as popen):
             logic.handle({"op": "apply_update"})
             fn, _on_result, on_error, _progress = logic.tasks.jobs.pop()
             with self.assertRaisesRegex(RuntimeError, "sigue activo") as caught:
@@ -735,27 +822,27 @@ class UpdateFlowTests(unittest.TestCase):
         logic._pending_update = self._release()
 
         with tempfile.TemporaryDirectory() as temp:
-            _target, _digest = self._verified_install_file(temp, "Instant.exe")
+            _target, _digest = self._verified_install_file(temp, "Instant2.exe")
             logic._ready_update = (_target, _digest, "0.2.0")
             extraction = os.path.join(temp, "_MEI12345")
             os.makedirs(extraction)
-            bundled = os.path.join(extraction, "instant-update.bat")
+            bundled = os.path.join(extraction, "instant2-update.bat")
             with open(bundled, "w", encoding="utf-8") as handle:
                 handle.write("@echo off\n")
-            executable = os.path.join(temp, "portable", "Instant.exe")
+            executable = os.path.join(temp, "portable", "Instant2.exe")
             with (
-                patch("instant_app.update.install_mode", return_value="portable"),
+                patch("instant2_app.update.install_mode", return_value="portable"),
                 patch.object(sys, "frozen", True, create=True),
                 patch.object(sys, "platform", "win32"),
                 patch.object(sys, "_MEIPASS", extraction, create=True),
                 patch.object(sys, "executable", executable),
                 patch("tempfile.gettempdir", return_value=temp),
-                patch("instant_app.gui.subprocess.Popen") as popen,
+                patch("instant2_app.gui.subprocess.Popen") as popen,
             ):
                 logic.handle({"op": "apply_update"})
 
             helper = os.path.join(
-                temp, f"instant_update_{os.getpid()}", "instant-update.bat")
+                temp, f"instant2_update_{os.getpid()}", "instant2-update.bat")
             self.assertTrue(os.path.isfile(helper))
             args = popen.call_args.args[0]
             self.assertEqual(args[2], helper)
@@ -767,20 +854,20 @@ class UpdateFlowTests(unittest.TestCase):
         logic._pending_update = self._release()
 
         with tempfile.TemporaryDirectory() as temp:
-            _target, _digest = self._verified_install_file(temp, "Instant.exe")
+            _target, _digest = self._verified_install_file(temp, "Instant2.exe")
             logic._ready_update = (_target, _digest, "0.2.0")
-            bundled = os.path.join(temp, "instant-update.bat")
+            bundled = os.path.join(temp, "instant2-update.bat")
             with open(bundled, "w", encoding="utf-8") as handle:
                 handle.write("@echo off\n")
             with (
-                patch("instant_app.update.install_mode", return_value="portable"),
+                patch("instant2_app.update.install_mode", return_value="portable"),
                 patch.object(sys, "frozen", True, create=True),
                 patch.object(sys, "platform", "win32"),
                 patch.object(sys, "_MEIPASS", temp, create=True),
-                patch.object(sys, "executable", os.path.join(temp, "Instant.exe")),
+                patch.object(sys, "executable", os.path.join(temp, "Instant2.exe")),
                 patch("tempfile.gettempdir", return_value=temp),
                 patch("shutil.copyfile", side_effect=OSError("disco lleno")),
-                patch("instant_app.gui.subprocess.Popen") as popen,
+                patch("instant2_app.gui.subprocess.Popen") as popen,
             ):
                 logic.handle({"op": "apply_update"})
 

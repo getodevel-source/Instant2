@@ -14,10 +14,11 @@ from unittest.mock import patch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..", "src")))
 
-from PySide6.QtCore import QTimer  # noqa: E402
+from PySide6.QtCore import QPoint, QTimer, Qt  # noqa: E402
 from PySide6.QtQuick import QQuickWindow  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 
-from instant_app import gui  # noqa: E402
+from instant2_app import gui  # noqa: E402
 
 assert callable(QQuickWindow.grabWindow)
 
@@ -27,10 +28,10 @@ SMOKE_CONFIG = {
     "sound": False, "overlay_style": "orbital", "max_seg": 20,
     "active_context": "General",
     "context_profiles": {"General": [{
-        "term": "Instant", "aliases": ["in stand"], "sonido": True,
+        "term": "Instant2", "aliases": ["in stand"], "sonido": True,
     }]},
 }
-PAGES = ("home", "audio", "settings", "vocab")
+PAGES = ("home", "audio", "settings", "vocab", "read")
 
 
 def main():
@@ -39,7 +40,7 @@ def main():
     parser.add_argument("--out", default=os.path.join(
         HERE, "bakeoff", "out", "web_panel.png"))
     parser.add_argument("--seconds", type=float, default=10.0)
-    parser.add_argument("--page", choices=(*PAGES, "all"), default="home")
+    parser.add_argument("--page", choices=(*PAGES, "llm-setup", "all"), default="home")
     parser.add_argument("--mic-state", choices=("available", "empty", "lost"),
                         default="available")
     parser.add_argument("--model-state", choices=("ready", "missing"),
@@ -54,23 +55,23 @@ def main():
 
     # Estado del usuario a resguardo: nada de este smoke escribe el config
     # real ni toca el autostart del sistema.
-    with patch("instant_app.gui.config.save",
+    with patch("instant2_app.gui.config.save",
                side_effect=lambda cfg: "smoke-config.json") as save_cfg, \
-            patch("instant_app.gui.config.load", side_effect=lambda: copy.deepcopy(SMOKE_CONFIG)), \
-            patch("instant_app.gui.models.check",
+            patch("instant2_app.gui.config.load", side_effect=lambda: copy.deepcopy(SMOKE_CONFIG)), \
+            patch("instant2_app.gui.models.check",
                   return_value={"parakeet": args.model_state == "ready",
                                 "vad": args.model_state == "ready"}), \
-            patch("instant_app.gui.audio.input_choices",
+            patch("instant2_app.gui.audio.input_choices",
                   return_value=mic_rows), \
-            patch("instant_app.gui.audio.preferred_input_index",
+            patch("instant2_app.gui.audio.preferred_input_index",
                   side_effect=lambda default, rows: default if default in
                   [row[0] for row in rows] else (rows[0][0] if rows else None)), \
-            patch("instant_app.gui.daemon_is_running",
+            patch("instant2_app.gui.daemon_is_running",
                   return_value=args.daemon_state == "active"), \
             patch.object(gui.PanelLogic, "_silent_update_check"), \
-            patch("instant_app.gui.autostart.is_enabled", return_value=False), \
-            patch("instant_app.gui.autostart.enable") as autostart_enable, \
-            patch("instant_app.gui.autostart.disable") as autostart_disable:
+            patch("instant2_app.gui.autostart.is_enabled", return_value=False), \
+            patch("instant2_app.gui.autostart.enable") as autostart_enable, \
+            patch("instant2_app.gui.autostart.disable") as autostart_disable:
         run(args, save_cfg, autostart_enable, autostart_disable)
     return 0
 
@@ -90,7 +91,8 @@ def run(args, save_cfg, autostart_enable, autostart_disable):
         if args.page == "all":
             root, ext = os.path.splitext(args.out)
             target = f"{root}.{page}{ext}"
-        image.save(target)
+        if not image.save(target):
+            raise AssertionError(f"No se pudo guardar la captura: {target}")
         print(json.dumps({
             "event": "captured", "file": target, "page": page or "home",
             "size": [image.width(), image.height()],
@@ -116,16 +118,17 @@ def run(args, save_cfg, autostart_enable, autostart_disable):
         QTimer.singleShot(500, lambda: capture_frame(page))
 
     # Secuencia: perfil desechable para editar sin tocar el vocabulario real.
-    QTimer.singleShot(2500, lambda: op({"op": "navigate", "page": "settings"}))
-    QTimer.singleShot(3000, lambda: op({"op": "context_add", "name": "Smoke"}))
-    QTimer.singleShot(3200, lambda: op({"op": "vocab_add"}))
-    QTimer.singleShot(3400, lambda: op({"op": "vocab_set", "row": 0, "col": "term",
-                                        "value": "OpenAI"}))
-    QTimer.singleShot(3600, lambda: op({"op": "vocab_toggle_sound", "row": 0}))
-    QTimer.singleShot(3900, lambda: op({"op": "context_remove"}))
-    QTimer.singleShot(4200, lambda: op({"op": "set_autostart", "value": False}))
-    QTimer.singleShot(4800, lambda: op({"op": "key_captured", "code": 120, "name": "f9"}))
-    QTimer.singleShot(5200, lambda: op({"op": "save_config"}))
+    if args.page != "llm-setup":
+        QTimer.singleShot(2500, lambda: op({"op": "navigate", "page": "settings"}))
+        QTimer.singleShot(3000, lambda: op({"op": "context_add", "name": "Smoke"}))
+        QTimer.singleShot(3200, lambda: op({"op": "vocab_add"}))
+        QTimer.singleShot(3400, lambda: op({"op": "vocab_set", "row": 0, "col": "term",
+                                            "value": "OpenAI"}))
+        QTimer.singleShot(3600, lambda: op({"op": "vocab_toggle_sound", "row": 0}))
+        QTimer.singleShot(3900, lambda: op({"op": "context_remove"}))
+        QTimer.singleShot(4200, lambda: op({"op": "set_autostart", "value": False}))
+        QTimer.singleShot(4800, lambda: op({"op": "key_captured", "code": 120, "name": "f9"}))
+        QTimer.singleShot(5200, lambda: op({"op": "save_config"}))
 
     if args.mic_state == "lost":
         def lose_selected_mic():
@@ -138,7 +141,15 @@ def run(args, save_cfg, autostart_enable, autostart_disable):
         QTimer.singleShot(1100, lose_selected_mic)
 
     def capture_requested_page():
-        capture_page(PAGES[0] if args.page == "all" else args.page)
+        if args.page == "llm-setup":
+            if args.width != 1100 or args.height != 700:
+                raise AssertionError("llm-setup requiere una captura de 1100x700")
+            QTest.mouseClick(
+                panel.root, Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier, QPoint(1015, 305))
+            QTimer.singleShot(450, lambda: capture_frame("llm-setup"))
+        else:
+            capture_page(PAGES[0] if args.page == "all" else args.page)
 
     def finish():
         panel.logic.close()

@@ -7,7 +7,7 @@ Mide: determinismo run-to-run, RTF, A/B del fallback en cortes abruptos y
 bordes VAD vs ground truth en senal silabica sintetica.
 OJO: los tonos sinteticos no son voz; sirven para estabilidad/segmentacion,
 no para afirmar WER. La precision real se mide con wavs de fallo
-(DICTADO_SAVE_WAVS) cuando existan.
+(INSTANT2_SAVE_WAVS) cuando existan.
 """
 import os
 import statistics as st
@@ -18,8 +18,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app.engine import Engine, SAMPLE_RATE  # noqa: E402
-from instant_app.paths import resolve_data_dir  # noqa: E402
+from instant2_app.engine import Engine, SAMPLE_RATE  # noqa: E402
+from instant2_app.paths import resolve_data_dir  # noqa: E402
 
 SR = SAMPLE_RATE
 
@@ -127,7 +127,7 @@ def main():
     for vad_name in ("silero", "ten"):
         if vad_name == "ten" and not _os.path.isfile(
                 os.path.join(data, "silero-vad", "ten_vad.onnx")):
-            print("VAD ten: SKIP (falta ten_vad.onnx, `instant setup --vad-model ten`)",
+            print("VAD ten: SKIP (falta ten_vad.onnx, `instant2 setup --vad-model ten`)",
                   flush=True)
             continue
         for thr in (0.3, 0.5, 0.7):

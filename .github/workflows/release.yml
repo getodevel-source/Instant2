@@ -18,16 +18,16 @@ jobs:
         include:
           - os: windows-latest
             platform: windows
-            binary_name: Instant
-            output: Instant.exe
+            binary_name: Instant2
+            output: Instant2.exe
           - os: ubuntu-latest
             platform: linux
-            binary_name: instant-linux
-            output: instant-linux
+            binary_name: instant2-linux
+            output: instant2-linux
           - os: macos-latest
             platform: macos
-            binary_name: instant-macos
-            output: instant-macos
+            binary_name: instant2-macos
+            output: instant2-macos
     runs-on: ${{ matrix.os }}
     steps:
       # Actions pineadas por SHA (`action@SHA  # tag`): el SHA es lo que
@@ -70,27 +70,27 @@ jobs:
       - name: Version matches tag
         shell: bash
         run: |
-          test "${{ github.ref_name }}" = "v$(python -c 'import sys; sys.path.insert(0, "dictado/src"); from instant_app import __version__; print(__version__)')"
+          test "${{ github.ref_name }}" = "v$(python -c 'import sys; sys.path.insert(0, "dictado/src"); from instant2_app import __version__; print(__version__)')"
 
       - name: Build Windows portable (onefile)
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          ICON_PATH="$(python -c 'import os; print(os.path.abspath("dictado/build/instant.ico"))')"
-          # Custom hooks restrict QML, QtWebEngine, and Pillow to what Instant uses.
+          ICON_PATH="$(python -c 'import os; print(os.path.abspath("dictado/build/instant2.ico"))')"
+          # Custom hooks restrict QML, QtWebEngine, and Pillow to what Instant2 uses.
           pyinstaller --onefile --windowed --name "${{ matrix.binary_name }}" \
             --icon "$ICON_PATH" \
-            --hidden-import instant_app.gui \
-            --hidden-import instant_app.branding \
+            --hidden-import instant2_app.gui \
+            --hidden-import instant2_app.branding \
             --hidden-import pyexpat \
             --hidden-import PySide6.QtQml \
             --hidden-import PySide6.QtQuick \
             --additional-hooks-dir dictado/hooks \
-            --add-data "dictado/src/instant_app/qml/overlay_web_host.qml;instant_app/qml" \
-            --add-data "dictado/src/instant_app/qml/panel_web_host.qml;instant_app/qml" \
-            --add-data "dictado/src/instant_app/web/overlay.html;instant_app/web" \
-            --add-data "dictado/src/instant_app/web/panel.html;instant_app/web" \
-            --add-data "scripts/instant-update.bat;." \
+            --add-data "dictado/src/instant2_app/qml/overlay_web_host.qml;instant2_app/qml" \
+            --add-data "dictado/src/instant2_app/qml/panel_web_host.qml;instant2_app/qml" \
+            --add-data "dictado/src/instant2_app/web/overlay.html;instant2_app/web" \
+            --add-data "dictado/src/instant2_app/web/panel.html;instant2_app/web" \
+            --add-data "scripts/instant2-update.bat;." \
             --hidden-import PySide6.QtWebEngineQuick \
             --hidden-import PySide6.QtWebEngineCore \
             --hidden-import PySide6.QtWebChannel \
@@ -98,26 +98,30 @@ jobs:
             --hidden-import PIL.ImageDraw \
             --collect-all sherpa_onnx \
             --collect-all pystray \
-            dictado/src/instant_app/__main__.py
+            --collect-all kokoro_onnx \
+            --collect-all espeakng_loader \
+            --copy-metadata kokoro-onnx \
+            --hidden-import misaki.espeak \
+            dictado/src/instant2_app/__main__.py
 
       - name: Build Windows installer (onedir + Inno Setup)
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          ICON_PATH="$(python -c 'import os; print(os.path.abspath("dictado/build/instant.ico"))')"
-          pyinstaller --noconfirm --onedir --windowed --name Instant \
+          ICON_PATH="$(python -c 'import os; print(os.path.abspath("dictado/build/instant2.ico"))')"
+          pyinstaller --noconfirm --onedir --windowed --name Instant2 \
             --icon "$ICON_PATH" \
-            --hidden-import instant_app.gui \
-            --hidden-import instant_app.branding \
+            --hidden-import instant2_app.gui \
+            --hidden-import instant2_app.branding \
             --hidden-import pyexpat \
             --hidden-import PySide6.QtQml \
             --hidden-import PySide6.QtQuick \
             --additional-hooks-dir dictado/hooks \
-            --add-data "dictado/src/instant_app/qml/overlay_web_host.qml;instant_app/qml" \
-            --add-data "dictado/src/instant_app/qml/panel_web_host.qml;instant_app/qml" \
-            --add-data "dictado/src/instant_app/web/overlay.html;instant_app/web" \
-            --add-data "dictado/src/instant_app/web/panel.html;instant_app/web" \
-            --add-data "scripts/instant-update.bat;." \
+            --add-data "dictado/src/instant2_app/qml/overlay_web_host.qml;instant2_app/qml" \
+            --add-data "dictado/src/instant2_app/qml/panel_web_host.qml;instant2_app/qml" \
+            --add-data "dictado/src/instant2_app/web/overlay.html;instant2_app/web" \
+            --add-data "dictado/src/instant2_app/web/panel.html;instant2_app/web" \
+            --add-data "scripts/instant2-update.bat;." \
             --hidden-import PySide6.QtWebEngineQuick \
             --hidden-import PySide6.QtWebEngineCore \
             --hidden-import PySide6.QtWebChannel \
@@ -125,9 +129,18 @@ jobs:
             --hidden-import PIL.ImageDraw \
             --collect-all sherpa_onnx \
             --collect-all pystray \
-            dictado/src/instant_app/__main__.py
-          VERSION="$(python -c 'import sys; sys.path.insert(0, "dictado/src"); from instant_app import __version__; print(__version__)')"
-          SOURCE="$(python -c 'import os; print(os.path.abspath("dist/Instant"))')"
+            --collect-all kokoro_onnx \
+            --collect-all espeakng_loader \
+            --copy-metadata kokoro-onnx \
+            --hidden-import misaki.espeak \
+            dictado/src/instant2_app/__main__.py
+          # Reuse only verified local assets; CI fetches the same pinned models.
+          python scripts/prepare_offline_bundle.py \
+            --app-dir dist/Instant2 \
+            --payload-dir dist/Instant2-Models
+          VERSION="$(python -c 'import sys; sys.path.insert(0, "dictado/src"); from instant2_app import __version__; print(__version__)')"
+          SOURCE="$(python -c 'import os; print(os.path.abspath("dist/Instant2"))')"
+          MODELS="$(python -c 'import os; print(os.path.abspath("dist/Instant2-Models"))')"
           # Inno Setup viene preinstalado en las imágenes de los runners.
           ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
           if [ ! -f "$ISCC" ]; then ISCC="/c/Program Files/Inno Setup 6/ISCC.exe"; fi
@@ -138,8 +151,19 @@ jobs:
           # "You may not specify more than one script filename").
           MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
             "$ISCC" "/DAppVersion=$VERSION" "/DSourceDir=$SOURCE" \
-            "/DIconFile=$ICON_PATH" installer/instant.iss
-          ls -la dist/Instant-Setup.exe
+            "/DModelDir=$MODELS" "/DIconFile=$ICON_PATH" installer/instant2.iss
+          python - <<'PY'
+          from pathlib import Path
+          files = sorted(Path("dist").glob("Instant2-Setup*"))
+          binaries = [path for path in files
+                      if path.suffix.lower() in (".exe", ".bin")]
+          if not any(path.name == "Instant2-Setup.exe" for path in binaries):
+              raise SystemExit("Inno Setup no generó Instant2-Setup.exe")
+          for path in binaries:
+              if path.stat().st_size >= 2_000_000_000:
+                  raise SystemExit(f"El asset excede 2 GB: {path.name}")
+          print("Instalador offline listo:", ", ".join(path.name for path in binaries))
+          PY
 
       - name: Prepare macOS signing identity (optional)
         if: runner.os == 'macOS' && vars.ENABLE_CODE_SIGNING == 'true'
@@ -156,8 +180,8 @@ jobs:
               exit 1
             fi
           done
-          CERT_PATH="$RUNNER_TEMP/instant-developer-id.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/instant-signing.keychain-db"
+          CERT_PATH="$RUNNER_TEMP/instant2-developer-id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/instant2-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(uuidgen)"
           export CERT_PATH
           python3 -c 'import base64,os; open(os.environ["CERT_PATH"],"wb").write(base64.b64decode(os.environ["APPLE_CERTIFICATE_BASE64"]))'
@@ -172,7 +196,7 @@ jobs:
           security find-identity -v -p codesigning "$KEYCHAIN_PATH" |
             grep -F "$APPLE_SIGNING_IDENTITY"
           rm -f "$CERT_PATH"
-          echo "INSTANT_SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "INSTANT2_SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
 
       - name: Build Unix executable (daemon + panel)
         if: runner.os != 'Windows'
@@ -183,7 +207,7 @@ jobs:
         run: |
           WAYLAND_HOTKEY=()
           if [ "${{ matrix.platform }}" = "linux" ]; then
-            WAYLAND_HOTKEY+=(--hidden-import instant_app.wayland_hotkey)
+            WAYLAND_HOTKEY+=(--hidden-import instant2_app.wayland_hotkey)
           fi
           MAC_CODESIGN=()
           if [ "${{ matrix.platform }}" = "macos" ] && [ "${ENABLE_CODE_SIGNING:-}" = "true" ]; then
@@ -202,32 +226,36 @@ jobs:
             "${MAC_CODESIGN[@]}" \
             --hidden-import sherpa_onnx \
             --hidden-import sounddevice \
-            --hidden-import instant_app.gui \
+            --hidden-import instant2_app.gui \
             --hidden-import PySide6.QtNetwork \
             --hidden-import PySide6.QtQml \
             --hidden-import PySide6.QtQuick \
             --hidden-import PIL.Image \
             --hidden-import PIL.ImageDraw \
             --additional-hooks-dir dictado/hooks \
-            --add-data "dictado/src/instant_app/qml/overlay_web_host.qml:instant_app/qml" \
-            --add-data "dictado/src/instant_app/qml/panel_web_host.qml:instant_app/qml" \
-            --add-data "dictado/src/instant_app/web/overlay.html:instant_app/web" \
-            --add-data "dictado/src/instant_app/web/panel.html:instant_app/web" \
+            --add-data "dictado/src/instant2_app/qml/overlay_web_host.qml:instant2_app/qml" \
+            --add-data "dictado/src/instant2_app/qml/panel_web_host.qml:instant2_app/qml" \
+            --add-data "dictado/src/instant2_app/web/overlay.html:instant2_app/web" \
+            --add-data "dictado/src/instant2_app/web/panel.html:instant2_app/web" \
             --hidden-import PySide6.QtWebEngineQuick \
             --hidden-import PySide6.QtWebEngineCore \
             --hidden-import PySide6.QtWebChannel \
             --collect-all sherpa_onnx \
-            dictado/src/instant_app/__main__.py
+            --collect-all kokoro_onnx \
+            --collect-all espeakng_loader \
+            --copy-metadata kokoro-onnx \
+            --hidden-import misaki.espeak \
+            dictado/src/instant2_app/__main__.py
 
       - name: Smoke del portable Windows congelado
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $root = Join-Path $env:RUNNER_TEMP "instant-portable-smoke"
+          $root = Join-Path $env:RUNNER_TEMP "instant2-portable-smoke"
           $appData = Join-Path $root "appdata"
           $localData = Join-Path $root "localdata"
           $modelData = Join-Path $root "models"
-          $configDir = Join-Path $appData "instant"
+          $configDir = Join-Path $appData "instant2"
           New-Item -ItemType Directory -Force -Path $configDir, $localData, $modelData | Out-Null
           $stamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
           $utf8 = [System.Text.UTF8Encoding]::new($false)
@@ -236,13 +264,13 @@ jobs:
             ('{"update_last_check":' + $stamp + '}'), $utf8)
           $env:APPDATA = $appData
           $env:LOCALAPPDATA = $localData
-          $env:DICTADO_DATA = $modelData
+          $env:INSTANT2_DATA = $modelData
           $env:QT_QPA_PLATFORM = "offscreen"
           $env:QTWEBENGINE_CHROMIUM_FLAGS = "--disable-gpu"
-          $exe = [System.IO.Path]::GetFullPath("dist/Instant.exe")
+          $exe = [System.IO.Path]::GetFullPath("dist/Instant2.exe")
           $process = Start-Process -FilePath $exe -ArgumentList "setup" -PassThru -WindowStyle Hidden
           try {
-            $logFile = Join-Path $configDir "instant.log"
+            $logFile = Join-Path $configDir "instant2.log"
             $deadline = [DateTime]::UtcNow.AddSeconds(75)
             $ready = $false
             while ([DateTime]::UtcNow -lt $deadline) {
@@ -277,7 +305,7 @@ jobs:
           # config_dir() lo prefiere sobre $HOME (el log caía fuera del tmp).
           export XDG_CONFIG_HOME="$HOME/.config"
           export XDG_DATA_HOME="$HOME/.local/share"
-          export DICTADO_DATA="$HOME/models"
+          export INSTANT2_DATA="$HOME/models"
           export QT_QPA_PLATFORM=offscreen
           # run_gui exige un entorno gráfico declarado; la plataforma offscreen
           # hace el trabajo, pero el gate mira DISPLAY.
@@ -285,7 +313,7 @@ jobs:
           export QTWEBENGINE_CHROMIUM_FLAGS="--disable-gpu"
           ./dist/${{ matrix.binary_name }} setup &
           PID=$!
-          LOGS=("$HOME/.config/instant/instant.log" "$HOME/Library/Application Support/instant/instant.log")
+          LOGS=("$HOME/.config/instant2/instant2.log" "$HOME/Library/Application Support/instant2/instant2.log")
           OK=""
           for _ in $(seq 1 90); do
             for log in "${LOGS[@]}"; do
@@ -313,7 +341,7 @@ jobs:
               [string]::IsNullOrWhiteSpace($env:SIGNING_PFX_PASSWORD)) {
             throw "ENABLE_CODE_SIGNING=true requiere el PFX y su password en Actions secrets."
           }
-          $pfx = Join-Path $env:RUNNER_TEMP "instant-signing.pfx"
+          $pfx = Join-Path $env:RUNNER_TEMP "instant2-signing.pfx"
           try {
             [System.IO.File]::WriteAllBytes(
               $pfx, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
@@ -323,7 +351,7 @@ jobs:
               Where-Object { $_.FullName -match "\\x64\\signtool.exe$" } |
               Sort-Object FullName -Descending | Select-Object -First 1
             if (-not $signtool) { throw "No se encontró SignTool en Windows SDK." }
-            foreach ($file in @("dist/Instant.exe", "dist/Instant-Setup.exe")) {
+            foreach ($file in @("dist/Instant2.exe", "dist/Instant2-Setup.exe")) {
               & $signtool.FullName sign /fd SHA256 /f $pfx `
                 /p $env:SIGNING_PFX_PASSWORD /tr https://timestamp.digicert.com `
                 /td SHA256 $file
@@ -351,52 +379,52 @@ jobs:
               exit 1
             fi
           done
-          PROFILE="instant-notary-$GITHUB_RUN_ID"
-          KEYCHAIN_PATH="$INSTANT_SIGNING_KEYCHAIN"
+          PROFILE="instant2-notary-$GITHUB_RUN_ID"
+          KEYCHAIN_PATH="$INSTANT2_SIGNING_KEYCHAIN"
 
           codesign --force --options runtime --timestamp \
-            --sign "$APPLE_SIGNING_IDENTITY" dist/instant-macos
-          APP="dist/Instant.app"
+            --sign "$APPLE_SIGNING_IDENTITY" dist/instant2-macos
+          APP="dist/Instant2.app"
           mkdir -p "$APP/Contents/MacOS"
-          cp dist/instant-macos "$APP/Contents/MacOS/instant-macos"
-          VERSION="$(python3 -c 'import sys; sys.path.insert(0, "dictado/src"); from instant_app import __version__; print(__version__)')"
+          cp dist/instant2-macos "$APP/Contents/MacOS/instant2-macos"
+          VERSION="$(python3 -c 'import sys; sys.path.insert(0, "dictado/src"); from instant2_app import __version__; print(__version__)')"
           cat > "$APP/Contents/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0"><dict>
-            <key>CFBundleExecutable</key><string>instant-macos</string>
-            <key>CFBundleIdentifier</key><string>com.instant.dictado</string>
-            <key>CFBundleName</key><string>Instant</string>
-            <key>CFBundleDisplayName</key><string>Instant</string>
+            <key>CFBundleExecutable</key><string>instant2-macos</string>
+            <key>CFBundleIdentifier</key><string>com.instant2.dictado</string>
+            <key>CFBundleName</key><string>Instant2</string>
+            <key>CFBundleDisplayName</key><string>Instant2</string>
             <key>CFBundlePackageType</key><string>APPL</string>
             <key>CFBundleShortVersionString</key><string>$VERSION</string>
             <key>CFBundleVersion</key><string>$VERSION</string>
-            <key>NSMicrophoneUsageDescription</key><string>Instant usa el micrófono para transcribir dictados localmente.</string>
+            <key>NSMicrophoneUsageDescription</key><string>Instant2 usa el micrófono para transcribir dictados localmente.</string>
           </dict></plist>
           PLIST
           codesign --force --deep --options runtime --timestamp \
             --sign "$APPLE_SIGNING_IDENTITY" "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
-          hdiutil create -volname Instant -srcfolder "$APP" -ov -format UDZO \
-            dist/Instant-macos.dmg
+          hdiutil create -volname Instant2 -srcfolder "$APP" -ov -format UDZO \
+            dist/Instant2-macos.dmg
           codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" \
-            dist/Instant-macos.dmg
+            dist/Instant2-macos.dmg
           xcrun notarytool store-credentials "$PROFILE" \
             --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" --keychain "$KEYCHAIN_PATH"
-          xcrun notarytool submit dist/Instant-macos.dmg \
+          xcrun notarytool submit dist/Instant2-macos.dmg \
             --keychain-profile "$PROFILE" --keychain "$KEYCHAIN_PATH" --wait
-          xcrun stapler staple dist/Instant-macos.dmg
-          xcrun stapler validate dist/Instant-macos.dmg
+          xcrun stapler staple dist/Instant2-macos.dmg
+          xcrun stapler validate dist/Instant2-macos.dmg
           spctl --assess --type execute --verbose=2 "$APP"
           spctl --assess --type open --context context:primary-signature \
-            --verbose=2 dist/Instant-macos.dmg
+            --verbose=2 dist/Instant2-macos.dmg
 
       - name: Hash notarized macOS disk image
         if: runner.os == 'macOS' && vars.ENABLE_CODE_SIGNING == 'true'
         shell: bash
         run: |
-          python3 -c "import hashlib; name='Instant-macos.dmg'; data=open('dist/'+name,'rb').read(); open('dist/'+name+'.sha256','w').write(f'{hashlib.sha256(data).hexdigest()}  {name}\\n')"
+          python3 -c "import hashlib; name='Instant2-macos.dmg'; data=open('dist/'+name,'rb').read(); open('dist/'+name+'.sha256','w').write(f'{hashlib.sha256(data).hexdigest()}  {name}\\n')"
 
       # SHA256 != firma: el sidecar solo detecta descargas corruptas, no un
       # release comprometido. La prueba criptográfica la da la atestación
@@ -410,12 +438,24 @@ jobs:
       - name: SHA256 sidecar for the installer
         if: runner.os == 'Windows'
         run: |
-          python -c "import hashlib; name = 'Instant-Setup.exe'; data = open('dist/' + name, 'rb').read(); open('dist/' + name + '.sha256', 'w').write(f'{hashlib.sha256(data).hexdigest()}  {name}\n')"
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          files = sorted(path for path in Path("dist").glob("Instant2-Setup*")
+                         if path.suffix.lower() in (".exe", ".bin"))
+          for path in files:
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for block in iter(lambda: handle.read(1 << 20), b""):
+                      digest.update(block)
+              path.with_name(path.name + ".sha256").write_text(
+                  f"{digest.hexdigest()}  {path.name}\n", encoding="ascii")
+          PY
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: instant-${{ matrix.platform }}
+          name: instant2-${{ matrix.platform }}
           path: |
             dist/${{ matrix.output }}
             dist/${{ matrix.output }}.sha256
@@ -424,26 +464,25 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: instant-windows-installer
+          name: instant2-windows-installer
           path: |
-            dist/Instant-Setup.exe
-            dist/Instant-Setup.exe.sha256
+            dist/Instant2-Setup*
 
       - name: Upload notarized macOS disk image
         if: runner.os == 'macOS' && vars.ENABLE_CODE_SIGNING == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: instant-macos-dmg
+          name: instant2-macos-dmg
           path: |
-            dist/Instant-macos.dmg
-            dist/Instant-macos.dmg.sha256
+            dist/Instant2-macos.dmg
+            dist/Instant2-macos.dmg.sha256
 
       - name: Remove temporary macOS signing keychain
         if: always() && runner.os == 'macOS' && vars.ENABLE_CODE_SIGNING == 'true'
         shell: bash
         run: |
-          if [ -n "${INSTANT_SIGNING_KEYCHAIN:-}" ]; then
-            security delete-keychain "$INSTANT_SIGNING_KEYCHAIN" || true
+          if [ -n "${INSTANT2_SIGNING_KEYCHAIN:-}" ]; then
+            security delete-keychain "$INSTANT2_SIGNING_KEYCHAIN" || true
           fi
 
   sbom:
@@ -463,11 +502,11 @@ jobs:
             "https://github.com/anchore/syft/releases/download/v1.20.0/syft_1.20.0_linux_amd64.tar.gz"
           echo "${SYFT_SHA}  /tmp/syft.tar.gz" | sha256sum -c -
           tar -xzf /tmp/syft.tar.gz -C /tmp syft
-          /tmp/syft packages dir:./dictado -o spdx-json=/tmp/instant-sbom.spdx.json
+          /tmp/syft packages dir:./dictado -o spdx-json=/tmp/instant2-sbom.spdx.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: instant-sbom
-          path: /tmp/instant-sbom.spdx.json
+          name: instant2-sbom
+          path: /tmp/instant2-sbom.spdx.json
           if-no-files-found: error
 
   provenance:
@@ -481,7 +520,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: instant-*
+          pattern: instant2-*
           path: release-assets
           merge-multiple: true
       - name: Attest build provenance (SLSA, OIDC sin secretos)
@@ -498,7 +537,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: instant*
+          pattern: instant2*
           path: release-assets
           merge-multiple: true
 

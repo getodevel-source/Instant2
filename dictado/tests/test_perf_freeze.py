@@ -13,9 +13,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import daemon as daemon_module
-from instant_app import __main__ as main_mod
-from instant_app.engine import Engine
+from instant2_app import daemon as daemon_module
+from instant2_app import __main__ as main_mod
+from instant2_app.engine import Engine
 
 
 def _blk():
@@ -216,7 +216,7 @@ class PerfFreezeTests(unittest.TestCase):
 
     def test_transcribe_serialized_without_threadpool(self):
         eng_path = os.path.join(os.path.dirname(__file__), "..", "src",
-                                "instant_app", "engine.py")
+                                "instant2_app", "engine.py")
         with open(eng_path, encoding="utf-8") as handle:
             eng_src = handle.read()
         self.assertNotIn("ThreadPoolExecutor", eng_src)

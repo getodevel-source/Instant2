@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import models
+from instant2_app import models
 
 BODY = b"parakeet-de-prueba-" * 100  # ~1.9 KB por archivo falso
 
@@ -96,7 +96,7 @@ class ModelDownloadTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.data_dir, ignore_errors=True)
 
     def _steps(self):
-        from instant_app.paths import PARAKEET_SUBDIR, VAD_SUBDIR
+        from instant2_app.paths import PARAKEET_SUBDIR, VAD_SUBDIR
 
         parakeet = [(self.server.url, name, self.expected)
                     for name in models.PARAKEET_FILES]
@@ -211,7 +211,7 @@ class ModelDownloadTests(unittest.TestCase):
         self.assertIn(f"bytes={partial_size}-", self.server.ranges)
 
     def test_space_check_counts_only_bytes_missing_from_resumable_parts(self):
-        from instant_app.paths import PARAKEET_SUBDIR, VAD_SUBDIR
+        from instant2_app.paths import PARAKEET_SUBDIR, VAD_SUBDIR
 
         entries = [(PARAKEET_SUBDIR, name) for name in models.PARAKEET_FILES]
         entries.append((VAD_SUBDIR, "silero_vad.onnx"))
@@ -246,9 +246,9 @@ class ModelDownloadTests(unittest.TestCase):
     def test_mirror_endpoint_is_honored(self):
         with patch.dict(os.environ, {"HF_ENDPOINT": "https://espejo.local/"},
                         clear=False):
-            os.environ.pop("DICTADO_HF_ENDPOINT", None)
+            os.environ.pop("INSTANT2_HF_ENDPOINT", None)
             self.assertEqual(models._endpoint(), "https://espejo.local")
-        with patch.dict(os.environ, {"DICTADO_HF_ENDPOINT": "https://propio.local"},
+        with patch.dict(os.environ, {"INSTANT2_HF_ENDPOINT": "https://propio.local"},
                         clear=False):
             self.assertEqual(models._endpoint(), "https://propio.local")
 

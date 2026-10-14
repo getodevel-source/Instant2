@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# uninstall.sh: desinstala Instant en Linux/macOS.
-# Por defecto conserva config (~/.config/instant o ~/Library/...) y modelos
+# uninstall.sh: desinstala Instant2 en Linux/macOS.
+# Por defecto conserva config (~/.config/instant2 o ~/Library/...) y modelos
 # (igual que el desinstalador de Windows): borrar 670 MB y ajustes sin pedir
 # sería destructivo. Con --purge se borra también todo lo del usuario.
 #
@@ -29,28 +29,28 @@ OS="$(uname -s)"
 
 config_dir() {
   case "$OS" in
-    Darwin) printf '%s' "$HOME/Library/Application Support/instant" ;;
-    *) printf '%s' "${XDG_CONFIG_HOME:-$HOME/.config}/instant" ;;
+    Darwin) printf '%s' "$HOME/Library/Application Support/instant2" ;;
+    *) printf '%s' "${XDG_CONFIG_HOME:-$HOME/.config}/instant2" ;;
   esac
 }
 data_dir() {
   case "$OS" in
-    Darwin) printf '%s' "$HOME/Library/Application Support/instant/models" ;;
-    *) printf '%s' "${XDG_DATA_HOME:-$HOME/.local/share}/instant/models" ;;
+    Darwin) printf '%s' "$HOME/Library/Application Support/instant2/models" ;;
+    *) printf '%s' "${XDG_DATA_HOME:-$HOME/.local/share}/instant2/models" ;;
   esac
 }
 
 CONFIG_DIR="$(config_dir)"
-DATA_DIR="${DICTADO_DATA:-$(data_dir)}"
-DESKTOP_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/instant.desktop"
-PLIST="$HOME/Library/LaunchAgents/com.instant.dictado.plist"
+DATA_DIR="${INSTANT2_DATA:-$(data_dir)}"
+DESKTOP_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/instant2.desktop"
+PLIST="$HOME/Library/LaunchAgents/com.instant2.dictado.plist"
 
 echo "[1/3] Frenando daemon y panel..."
-if [ -x "$SCRIPT_DIR/instant-stop.sh" ]; then
-  "$SCRIPT_DIR/instant-stop.sh" || true
+if [ -x "$SCRIPT_DIR/instant2-stop.sh" ]; then
+  "$SCRIPT_DIR/instant2-stop.sh" || true
 else
-  echo "  (sin instant-stop.sh; intento por PID file)"
-  PIDFILE="$CONFIG_DIR/instant.pid"
+  echo "  (sin instant2-stop.sh; intento por PID file)"
+  PIDFILE="$CONFIG_DIR/instant2.pid"
   if [ -f "$PIDFILE" ]; then
     LEPID="$(tr -d '[:space:]' < "$PIDFILE" 2>/dev/null || true)"
     if [ -n "${LEPID:-}" ]; then kill "$LEPID" 2>/dev/null || true; fi
@@ -58,30 +58,30 @@ else
 fi
 # El panel Qt no lo cubre el stop del daemon: se cierra por cmdline propia.
 if command -v pkill >/dev/null 2>&1; then
-  pkill -f "instant.*(panel|gui|setup)" 2>/dev/null || true
+  pkill -f "instant2.*(panel|gui|setup)" 2>/dev/null || true
 fi
 
 echo "[2/3] Quitando arranque automático..."
 case "$OS" in
   Darwin)
     if [ -f "$PLIST" ]; then
-      if grep -q "com.instant.dictado" "$PLIST" 2>/dev/null; then
+      if grep -q "com.instant2.dictado" "$PLIST" 2>/dev/null; then
         if command -v launchctl >/dev/null 2>&1; then
           launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || true
         fi
         rm -f "$PLIST" && echo "  LaunchAgent eliminado."
       else
-        echo "  $PLIST no es de Instant; no se toca."
+        echo "  $PLIST no es de Instant2; no se toca."
       fi
     else
       echo "  Sin LaunchAgent."
     fi ;;
   *)
     if [ -f "$DESKTOP_FILE" ]; then
-      if grep -q "instant-autostart-managed" "$DESKTOP_FILE" 2>/dev/null; then
+      if grep -q "instant2-autostart-managed" "$DESKTOP_FILE" 2>/dev/null; then
         rm -f "$DESKTOP_FILE" && echo "  Autostart .desktop eliminado."
       else
-        echo "  $DESKTOP_FILE no es de Instant; no se toca."
+        echo "  $DESKTOP_FILE no es de Instant2; no se toca."
       fi
     else
       echo "  Sin autostart .desktop."
@@ -117,8 +117,8 @@ if [ "$PURGE" -eq 1 ]; then
         echo "  Ruta de purga peligrosa, no se toca: $target"; continue ;;
     esac
     case "$canon_target" in
-      *instant*) rm -rf -- "$target" && echo "  Eliminado: $target" ;;
-      *) echo "  No parece de Instant, no se toca: $target" ;;
+      *instant2*) rm -rf -- "$target" && echo "  Eliminado: $target" ;;
+      *) echo "  No parece de Instant2, no se toca: $target" ;;
     esac
   done
 else

@@ -1,4 +1,4 @@
-"""U-10: precedencia DICTADO_DATA vs cwd ./models (sin mic ni red)."""
+"""Instant2 model paths stay separate from cwd and sibling product installs."""
 import os
 import shutil
 import sys
@@ -7,7 +7,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import paths
+from instant2_app import paths
 
 MARKER = os.path.join(paths.PARAKEET_SUBDIR, "encoder.int8.onnx")
 
@@ -29,7 +29,7 @@ def _same_path(got, want):
 
 class DataDirPrecedenceTests(unittest.TestCase):
     def setUp(self):
-        self.old_env = os.environ.get("DICTADO_DATA")
+        self.old_env = os.environ.get("INSTANT2_DATA")
         self.old_cwd = os.getcwd()
         self.old_frozen = getattr(sys, "frozen", None)
         self.old_executable = sys.executable
@@ -37,9 +37,9 @@ class DataDirPrecedenceTests(unittest.TestCase):
     def tearDown(self):
         os.chdir(self.old_cwd)
         if self.old_env is None:
-            os.environ.pop("DICTADO_DATA", None)
+            os.environ.pop("INSTANT2_DATA", None)
         else:
-            os.environ["DICTADO_DATA"] = self.old_env
+            os.environ["INSTANT2_DATA"] = self.old_env
         if self.old_frozen is None:
             if hasattr(sys, "frozen"):
                 del sys.frozen
@@ -51,7 +51,7 @@ class DataDirPrecedenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as env_d, tempfile.TemporaryDirectory() as cwd_d:
             _touch(env_d)
             _touch(os.path.join(cwd_d, "models"))
-            os.environ["DICTADO_DATA"] = env_d
+            os.environ["INSTANT2_DATA"] = env_d
             os.chdir(cwd_d)
             try:
                 got = paths.resolve_data_dir()
@@ -59,8 +59,8 @@ class DataDirPrecedenceTests(unittest.TestCase):
                 os.chdir(self.old_cwd)
             self.assertTrue(_same_path(got, env_d))
 
-    def test_cwd_models_with_marker_wins_over_user_dir(self):
-        os.environ.pop("DICTADO_DATA", None)
+    def test_cwd_models_are_ignored_to_keep_products_isolated(self):
+        os.environ.pop("INSTANT2_DATA", None)
         with tempfile.TemporaryDirectory() as cwd_d:
             _touch(os.path.join(cwd_d, "models"))
             os.chdir(cwd_d)
@@ -68,26 +68,26 @@ class DataDirPrecedenceTests(unittest.TestCase):
                 got = paths.resolve_data_dir()
             finally:
                 os.chdir(self.old_cwd)
-            self.assertTrue(_same_path(got, os.path.join(cwd_d, "models")))
+            self.assertTrue(_same_path(got, paths.user_data_dir()))
 
-    def test_frozen_dist_uses_checkout_sibling_models(self):
+    def test_frozen_dist_ignores_sibling_models(self):
         with tempfile.TemporaryDirectory() as checkout:
             dist = os.path.join(checkout, "dist")
             os.makedirs(dist)
             _touch(os.path.join(checkout, "models"))
-            os.environ.pop("DICTADO_DATA", None)
+            os.environ.pop("INSTANT2_DATA", None)
             sys.frozen = True
-            sys.executable = os.path.join(dist, "Instant.exe")
+            sys.executable = os.path.join(dist, "Instant2.exe")
             with tempfile.TemporaryDirectory() as cwd_d:
                 os.chdir(cwd_d)
                 try:
                     got = paths.resolve_data_dir()
                 finally:
                     os.chdir(self.old_cwd)
-                self.assertTrue(_same_path(got, os.path.join(checkout, "models")))
+                self.assertTrue(_same_path(got, paths.user_data_dir()))
 
     def test_cwd_without_marker_falls_back_to_user_data_dir(self):
-        os.environ.pop("DICTADO_DATA", None)
+        os.environ.pop("INSTANT2_DATA", None)
         with tempfile.TemporaryDirectory() as cwd_d:
             os.chdir(cwd_d)
             try:
@@ -96,15 +96,20 @@ class DataDirPrecedenceTests(unittest.TestCase):
                 os.chdir(self.old_cwd)
             self.assertTrue(_same_path(got, paths.user_data_dir()))
 
+    def test_default_model_directory_is_scoped_to_instant2(self):
+        self.assertTrue(paths.user_data_dir().endswith(
+            os.path.join("instant2", "models")))
+        self.assertTrue(paths.config_dir().endswith("instant2"))
+
     def test_nonexistent_env_is_preserved_literally(self):
-        ghost = os.path.join(tempfile.gettempdir(), "instant-ghost-noexiste")
+        ghost = os.path.join(tempfile.gettempdir(), "instant2-ghost-noexiste")
         shutil.rmtree(ghost, ignore_errors=True)
-        os.environ["DICTADO_DATA"] = ghost
+        os.environ["INSTANT2_DATA"] = ghost
         self.assertEqual(paths.resolve_data_dir(), ghost)
 
     def test_env_with_tilde_and_vars_is_expanded(self):
         os.environ["FOO_TEST_DATA"] = "models-dir"
-        os.environ["DICTADO_DATA"] = "~/$FOO_TEST_DATA" if os.name != "nt" else "~/%FOO_TEST_DATA%"
+        os.environ["INSTANT2_DATA"] = "~/$FOO_TEST_DATA" if os.name != "nt" else "~/%FOO_TEST_DATA%"
         expanded = paths.resolve_data_dir()
         self.assertNotIn("~", expanded)
         self.assertNotIn("%", expanded)

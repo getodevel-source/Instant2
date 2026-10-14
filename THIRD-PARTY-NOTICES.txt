@@ -1,0 +1,30 @@
+Instant2 includes these model and runtime assets in the Windows offline installer.
+
+Speech recognition
+NVIDIA Parakeet TDT 0.6B v3, converted to int8 ONNX for sherpa-onnx.
+Original model and license: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+License: Creative Commons Attribution 4.0 International (CC BY 4.0).
+The ONNX conversion is published at:
+https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
+Changes: NVIDIA weights converted to int8 ONNX for sherpa-onnx.
+
+Language model
+Qwen3.5 4B Q4_K_M, GGUF quantization by bartowski.
+Source: https://huggingface.co/bartowski/Qwen_Qwen3.5-4B-GGUF
+License: Apache License 2.0 (as identified by the source model repository).
+Changes: quantized to Q4_K_M and converted to GGUF.
+
+Text to speech
+Kokoro 82M ONNX model, Apache License 2.0:
+https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX
+Spanish voice: ef_dora (Dora), from the Spanish voice set in that repository.
+Only the Dora voice is included.
+
+Local LLM runtime
+llama.cpp Windows x64 Vulkan release b11573, including its CPU backend.
+Source: https://github.com/ggml-org/llama.cpp/releases/tag/b11573
+License: MIT. The runtime bundle also contains LICENSE-LLVM-OpenMP from its
+upstream archive for the included OpenMP runtime.
+
+The app uses CPU when no compatible Vulkan device is available. Vulkan
+acceleration depends on the graphics driver installed on the user's computer.

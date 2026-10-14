@@ -11,12 +11,12 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app.branding import PALETTE  # noqa: E402
-from instant_app.overlay_web import (  # noqa: E402
+from instant2_app.branding import PALETTE  # noqa: E402
+from instant2_app.overlay_web import (  # noqa: E402
     WINDOW_SIZES, compose_page, frame_payload)
 
 PAGE_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "src", "instant_app", "web", "overlay.html")
+    os.path.dirname(__file__), "..", "src", "instant2_app", "web", "overlay.html")
 
 
 class FramePayloadTests(unittest.TestCase):
@@ -36,6 +36,7 @@ class FramePayloadTests(unittest.TestCase):
         self.assertEqual(set(payload), {"mode", "message", "keyLabel", "style"})
 
 
+
 class ComposePageTests(unittest.TestCase):
     def test_qwebchannel_is_injected_once(self):
         out = compose_page("<html><!--QWEBCHANNEL--></html>", "window.qt=1;")
@@ -52,6 +53,8 @@ class ComposePageTests(unittest.TestCase):
             self.assertIn(expected, source)
         # El "Copiado" es copy del renderer classic, como en el QML.
         self.assertIn("Copiado", source)
+        self.assertIn("DICTADO MEJORADO", source)
+
 
     def test_roundrect_falls_back_without_native_support(self):
         with open(PAGE_PATH, encoding="utf-8") as handle:
@@ -66,7 +69,30 @@ class ComposePageTests(unittest.TestCase):
         frame = frame[:frame.index("function hasPending")]
         self.assertIn("try {", frame)
         self.assertIn("catch", frame)
-        self.assertIn("requestAnimationFrame(frame)", frame)
+        self.assertIn("scheduleNextFrame();", frame)
+        self.assertIn("requestAnimationFrame(frame)", source)
+
+    def test_reduced_motion_freezes_audio_signal_and_renders_without_a_loop(self):
+        with open(PAGE_PATH, encoding="utf-8") as handle:
+            source = handle.read()
+        self.assertIn("prefers-reduced-motion: reduce", source)
+        self.assertIn("let reducedMotion", source)
+        self.assertIn("}, reducedMotion ? 40 : 33);", source)
+        self.assertIn("const breathe = 0.5;", source)
+        self.assertNotIn("Math.sin(timeS * 4.2", source)
+        self.assertNotIn("Math.sin(timeS * 3.2", source)
+        self.assertIn("if (!reducedMotion && exiting", source)
+        self.assertIn("state.level = 0;", source)
+        self.assertIn("state.bands.fill(0.18);", source)
+        self.assertIn("if (reducedMotion && state.mode !== 'idle')", source)
+        self.assertIn("if (reducedMotion && state.mode !== 'idle')\n      scheduleNextFrame();", source)
+        frame = source[source.index("function frame(now)"):]
+        frame = frame[:frame.index("function hasPending")]
+        self.assertIn("if (reducedMotion) {\n      running = false;\n      return;\n    }", frame)
+        self.assertLess(frame.index("if (reducedMotion) {"), frame.index("scheduleNextFrame();"))
+
+
+
 
 
 class WindowSizesTests(unittest.TestCase):

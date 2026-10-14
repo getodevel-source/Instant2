@@ -205,7 +205,7 @@ def main():
     parser.add_argument("--manifest", required=True,
                         help="CSV privado con clips y consentimiento explícito")
     parser.add_argument("--data-dir", default=None,
-                        help="directorio local de modelos Instant")
+                        help="directorio local de modelos Instant2")
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--json", dest="json_path", default=None,
                         help="guardar únicamente métricas agregadas en este archivo")
@@ -214,9 +214,9 @@ def main():
         parser.error("--threads debe ser mayor que cero")
 
     records = read_manifest(args.manifest)
-    from instant_app import bias
-    from instant_app.engine import Engine
-    from instant_app.paths import resolve_data_dir
+    from instant2_app import bias
+    from instant2_app.engine import Engine
+    from instant2_app.paths import resolve_data_dir
 
     data_dir = args.data_dir or resolve_data_dir()
     engine = Engine(data_dir=data_dir, threads=args.threads)

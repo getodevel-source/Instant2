@@ -3,18 +3,18 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "instant"
-# La version vive en instant_app/__init__.py: una sola fuente de verdad, para
+name = "instant2"
+# La version vive en instant2_app/__init__.py: una sola fuente de verdad, para
 # que el paquete instalado y el codigo no puedan desincronizarse.
 dynamic = ["version"]
-description = "Instant hold-to-talk ES offline: Parakeet v3 + Silero VAD, CPU-only"
+description = "Instant2: local Spanish dictation and natural voice reading"
 # 3.12 y no 3.10: las versiones fijadas de abajo lo exigen (numpy 2.5.3 pide
 # >=3.12) y es la version con la que corre la suite en los tres sistemas.
 requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "getodevel-source" }]
-# Versiones fijadas: Instant es una aplicacion, no una libreria, y estas son las
+# Versiones fijadas: Instant2 es una aplicacion, no una libreria, y estas son las
 # que estan probadas en este equipo. `sherpa-onnx` es la de mas riesgo (se usa
 # su API directa: from_transducer, VadModel), y una version nueva puede romper
 # el arranque sin que nadie haya tocado el codigo.
@@ -33,18 +33,24 @@ dependencies = [
     "pystray==0.19.5; sys_platform == 'win32'",
     "Pillow==12.3.0",
     "PySide6==6.11.2",
+    # Kokoro TTS se ejecuta por ONNX Runtime en CPU; no agrega PyTorch ni
+    # descarga los pesos al instalar la aplicación.
+    "kokoro-onnx==0.6.1",
+    "misaki-fork==0.9.6",
+    "onnxruntime==1.31.0",
+    "espeakng-loader==0.2.4",
 ]
 
 [project.scripts]
-instant = "instant_app.__main__:main"
+instant2 = "instant2_app.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 # El overlay Qt Quick se carga por ruta (overlay.py): sin esto, un
-# `pip install` de instant no lleva los .qml y el overlay no levanta.
+# `pip install` de instant2 no lleva los .qml y el overlay no levanta.
 [tool.setuptools.package-data]
-instant_app = ["qml/*.qml", "web/*.html"]
+instant2_app = ["qml/*.qml", "web/*.html"]
 
 [tool.setuptools.dynamic]
-version = { attr = "instant_app.__version__" }
+version = { attr = "instant2_app.__version__" }

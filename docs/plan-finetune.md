@@ -1,4 +1,4 @@
-# Plan fine-tune Parakeet v3 → español técnico (Instant)
+# Plan fine-tune Parakeet v3 → español técnico (Instant2)
 
 Objetivo: un encoder/joiner que reconozca commit/build/deploy/… de verdad,
 en vez de rescatarlos por texto. La app no cambia: los ONNX fine-tuneados
@@ -53,5 +53,5 @@ LoRA 0.6B cabe en 16 GB VRAM. Sin GPU local: RunPod puntual es lo óptimo.
 ## Riesgos
 
 - Corpus chico → overfit a 4 voces TTS. Mitiga: RIRs/ruido + tus tomas.
-- Distribución: +670 MB opt-in (`parakeet-v3-instant/`), setup lo baja aparte.
+- Distribución: +670 MB opt-in (`parakeet-v3-instant2/`), setup lo baja aparte.
 - Licencia: CC-BY-4.0 permite derivados con atribución.

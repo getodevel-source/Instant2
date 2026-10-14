@@ -11,8 +11,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import overlay as overlay_module
-from instant_app import overlay_web as overlay_web_module
+from instant2_app import overlay as overlay_module
+from instant2_app import overlay_web as overlay_web_module
 
 
 class OverlayRendererSelectionTests(unittest.TestCase):
@@ -28,17 +28,17 @@ class OverlayRendererSelectionTests(unittest.TestCase):
         with patch.object(overlay_web_module, "_WebOverlay",
                           side_effect=RuntimeError("no webengine")), \
                 patch.object(overlay_module, "_TkOverlay") as tk, \
-                self.assertLogs("instant", level="WARNING") as logs:
+                self.assertLogs("instant2", level="WARNING") as logs:
             overlay = overlay_module.Overlay("F9")
         tk.assert_called_once_with("F9")
         self.assertIs(overlay._renderer, tk.return_value)
-        self.assertIn("overlay web no abrió", logs.output[0])
+        self.assertIn("overlay web no abri", logs.output[0])
 
     def test_fallback_also_covers_a_missing_pyside6(self):
         with patch.object(overlay_web_module, "_WebOverlay",
                           side_effect=ImportError("No module named PySide6")), \
                 patch.object(overlay_module, "_TkOverlay") as tk, \
-                self.assertLogs("instant", level="WARNING"):
+                self.assertLogs("instant2", level="WARNING"):
             overlay = overlay_module.Overlay("F9", style="classic")
         self.assertIs(overlay._renderer, tk.return_value)
 

@@ -1,18 +1,27 @@
-# Modelos: se descargan en primer arranque (`instant setup`), nunca en el repo.
+# Modelos: se descargan en primer arranque (`instant2 setup`), nunca en el repo.
 # Se ignora el dir entero: onnx + tokens.txt son todos descargables.
 models/
 *.onnx
 
 # Python
 __pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 *.pyc
 *.pyo
 *.egg-info/
 build/
 dist/
+dist-smooth/
+dist-f10/
+dist-f10-final/
+dist-f10-waves/
 .venv/
 venv/
 .env/
+.herdr-web-ui/
+basura/
 
 # Logs
 *.log
@@ -30,9 +39,10 @@ dsh-session-*.html
 dictado/bench/private-real-audio/
 dictado/bench/private-real-audio.csv
 dictado/bench/private-real-audio-summary.json
+# Keep the curated local Windows build recipe; only generated specs are noise.
 *.spec
+!Instant2-MVP.spec
 # Cache del bench WER (corpus FLEURS descargado, ~100 MB): se regenera solo.
 dictado/bench/.fleurs_es_cache/
 # Cache de benches (corpus descargado/TTS, se regenera solo).
-dictado/bench/.fleurs_es_cache/
 dictado/bench/.bias_cache/

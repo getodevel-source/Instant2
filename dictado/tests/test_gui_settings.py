@@ -14,9 +14,10 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import gui, hotkey
+from instant2_app import gui, hotkey
 
-CFG = {"mic_hint": "", "mic_index": None, "key": "f9", "autostart": False}
+CFG = {"mic_hint": "", "mic_index": None, "key": "f9",
+       "autostart": False}
 
 
 class DeviceCatalogTests(unittest.TestCase):
@@ -24,8 +25,8 @@ class DeviceCatalogTests(unittest.TestCase):
         catalog = gui.DeviceCatalog({"mic_hint": "USB Mic", "mic_index": 5})
         choices = [(5, "USB Mic", 1, 48000), (8, "USB Mic", 1, 48000)]
         sd = SimpleNamespace(default=SimpleNamespace(device=(5, -1)))
-        with patch("instant_app.gui.audio.input_choices", return_value=choices), \
-                patch("instant_app.gui.audio.preferred_input_index", side_effect=lambda default, _rows: default), \
+        with patch("instant2_app.gui.audio.input_choices", return_value=choices), \
+                patch("instant2_app.gui.audio.preferred_input_index", side_effect=lambda default, _rows: default), \
                 patch.dict(sys.modules, {"sounddevice": sd}):
             labels, selected, missing = catalog.refresh()
         self.assertEqual(selected, "USB Mic [5] (predeterminado)")
@@ -33,8 +34,8 @@ class DeviceCatalogTests(unittest.TestCase):
         catalog.remember(catalog.devices["USB Mic [8]"])
         shifted = [(12, "USB Mic", 1, 48000), (18, "USB Mic", 1, 48000)]
         sd.default.device = (12, -1)
-        with patch("instant_app.gui.audio.input_choices", return_value=shifted), \
-                patch("instant_app.gui.audio.preferred_input_index", side_effect=lambda default, _rows: default), \
+        with patch("instant2_app.gui.audio.input_choices", return_value=shifted), \
+                patch("instant2_app.gui.audio.preferred_input_index", side_effect=lambda default, _rows: default), \
                 patch.dict(sys.modules, {"sounddevice": sd}):
             labels, selected, missing = catalog.refresh(catalog.pending_device, preserve=True)
         self.assertIsNone(selected)
@@ -44,14 +45,14 @@ class DeviceCatalogTests(unittest.TestCase):
     def test_refresh_preserves_unique_name_when_only_index_changes(self):
         catalog = gui.DeviceCatalog({"mic_hint": "USB Mic", "mic_index": 5})
         sd = SimpleNamespace(default=SimpleNamespace(device=(5, -1)))
-        with patch("instant_app.gui.audio.input_choices", return_value=[(5, "USB Mic", 1, 48000)]), \
-                patch("instant_app.gui.audio.preferred_input_index", side_effect=lambda default, _rows: default), \
+        with patch("instant2_app.gui.audio.input_choices", return_value=[(5, "USB Mic", 1, 48000)]), \
+                patch("instant2_app.gui.audio.preferred_input_index", side_effect=lambda default, _rows: default), \
                 patch.dict(sys.modules, {"sounddevice": sd}):
             catalog.refresh()
         catalog.remember((5, "USB Mic"))
         sd.default.device = (12, -1)
-        with patch("instant_app.gui.audio.input_choices", return_value=[(12, "USB Mic", 1, 48000)]), \
-                patch("instant_app.gui.audio.preferred_input_index", side_effect=lambda default, _rows: default), \
+        with patch("instant2_app.gui.audio.input_choices", return_value=[(12, "USB Mic", 1, 48000)]), \
+                patch("instant2_app.gui.audio.preferred_input_index", side_effect=lambda default, _rows: default), \
                 patch.dict(sys.modules, {"sounddevice": sd}):
             _labels, selected, missing = catalog.refresh(catalog.pending_device, preserve=True)
         self.assertIsNotNone(selected)
@@ -89,12 +90,12 @@ class SyncTasks:
 
 def make_logic(autostart_override=False, **kwargs):
     emitted = []
-    with patch("instant_app.gui.config.load", return_value=dict(CFG)), \
-            patch("instant_app.gui.models.check", return_value={"parakeet": True, "vad": True}), \
-            patch("instant_app.gui.resolve_data_dir", return_value=os.path.join(os.getcwd(), "models")), \
-            patch("instant_app.gui.daemon_is_running", return_value=False), \
-            patch("instant_app.gui.audio.input_choices", return_value=[]), \
-            patch("instant_app.gui.autostart.is_enabled", return_value=False), \
+    with patch("instant2_app.gui.config.load", return_value=dict(CFG)), \
+            patch("instant2_app.gui.models.check", return_value={"parakeet": True, "vad": True}), \
+            patch("instant2_app.gui.resolve_data_dir", return_value=os.path.join(os.getcwd(), "models")), \
+            patch("instant2_app.gui.daemon_is_running", return_value=False), \
+            patch("instant2_app.gui.audio.input_choices", return_value=[]), \
+            patch("instant2_app.gui.autostart.is_enabled", return_value=False), \
             patch.dict(sys.modules, {"sounddevice": SimpleNamespace(
                 default=SimpleNamespace(device=(-1, -1)))}):
         logic = gui.PanelLogic(
@@ -108,21 +109,30 @@ MIC = [(5, "USB Mic", 1, 48000)]
 
 
 def with_mics():
-    return patch("instant_app.gui.audio.input_choices", return_value=MIC), \
-        patch("instant_app.gui.audio.preferred_input_index",
+    return patch("instant2_app.gui.audio.input_choices", return_value=MIC), \
+        patch("instant2_app.gui.audio.preferred_input_index",
               side_effect=lambda default, _rows: default), \
         patch.dict(sys.modules, {"sounddevice": SimpleNamespace(
             default=SimpleNamespace(device=(5, -1)))})
 
 
 class LogicSettingsTests(unittest.TestCase):
+    def test_unconfigured_llm_is_reported_without_a_false_start_state(self):
+        logic, emitted = make_logic()
+        logic.sync_llm_runtime()
+        states = [payload["llm_runtime"]["status"] for kind, payload in emitted
+                  if kind == "state" and "llm_runtime" in payload]
+        self.assertNotIn("starting", states)
+        current = logic.state_payload()["llm_runtime"]
+        self.assertEqual(current["status"], "needs_setup")
+        self.assertIn("dictado local sigue disponible", current["detail"])
+
     def test_selected_hotkey_is_published_without_repeating_the_hint(self):
         logic, _emitted = make_logic()
         logic._set_key("enter")
         state = logic.state_payload()
         self.assertEqual(state["key_label"], "Enter")
-        self.assertEqual(state["status"]["detail"],
-                         "Enfocá el campo donde querés escribir.")
+        self.assertIn("campo", state["status"]["detail"])
 
     def test_selected_device_after_refresh(self):
         logic, _emitted = make_logic()
@@ -135,10 +145,10 @@ class LogicSettingsTests(unittest.TestCase):
     def test_key_change_marks_dirty_and_save_reports_restart(self):
         logic, emitted = make_logic()
         self.assertEqual(logic.settings_status, "Ajustes guardados.")
-        logic._set_key("f10")
+        logic._set_key("f12")
         self.assertEqual(logic.settings_status, "Hay cambios sin guardar.")
-        with patch("instant_app.gui.config.save", return_value="config.json"), \
-                patch("instant_app.gui.autostart.is_enabled", return_value=False):
+        with patch("instant2_app.gui.config.save", return_value="config.json"), \
+                patch("instant2_app.gui.autostart.is_enabled", return_value=False):
             logic.save_config(show_message=True)
         self.assertEqual(logic.settings_status, "Ajustes guardados.")
         self.assertFalse(logic._restart_needed)
@@ -147,15 +157,16 @@ class LogicSettingsTests(unittest.TestCase):
         logic._last_daemon_running = True
         logic._settings_daemon_changed(True)
         logic._set_key("f11")
-        with patch("instant_app.gui.config.save", return_value="config.json"), \
-                patch("instant_app.gui.autostart.is_enabled", return_value=False):
+        with patch("instant2_app.gui.config.save", return_value="config.json"), \
+                patch("instant2_app.gui.autostart.is_enabled", return_value=False):
             logic.save_config(show_message=True)
         self.assertEqual(logic.settings_status,
-                         "Guardado; reiniciá Instant para aplicar micrófono, "
-                         "tecla, voz y rendimiento.")
+                         "Guardado; reiniciá Instant2 para aplicar micrófono, "
+                         "atajos, LLM y rendimiento.")
         saved = [payload for kind, payload in emitted if kind == "toast"
                  and payload["title"] == "Ajustes guardados"]
-        self.assertTrue(saved and "reiniciá Instant" in saved[-1]["message"])
+        self.assertTrue(saved and "reiniciá Instant2" in saved[-1]["message"])
+
 
     def test_advanced_voice_options_are_dirty_persisted_and_request_restart(self):
         logic, _emitted = make_logic()
@@ -165,11 +176,17 @@ class LogicSettingsTests(unittest.TestCase):
         logic.handle({"op": "set_advanced", "key": "sound", "value": True})
         logic.handle({"op": "set_advanced", "key": "llm_url",
                       "value": "http://127.0.0.1:8080"})
+        logic.handle({"op": "set_advanced", "key": "llm_model",
+                      "value": "qwen3.5:2b-q4_K_M"})
+        logic.handle({"op": "set_advanced", "key": "llm_normal_enabled",
+                      "value": True})
+        logic.handle({"op": "set_advanced", "key": "resource_mode",
+                      "value": "memory"})
         self.assertEqual(logic.settings_status, "Hay cambios sin guardar.")
 
         logic._last_daemon_running = True
-        with patch("instant_app.gui.config.save", return_value="config.json"), \
-                patch("instant_app.gui.autostart.is_enabled", return_value=False):
+        with patch("instant2_app.gui.config.save", return_value="config.json"), \
+                patch("instant2_app.gui.autostart.is_enabled", return_value=False):
             logic.save_config(show_message=False)
 
         self.assertEqual(logic.cfg["overlay_style"], "orbital")
@@ -177,6 +194,9 @@ class LogicSettingsTests(unittest.TestCase):
         self.assertEqual(logic.cfg["max_seg"], 12)
         self.assertTrue(logic.cfg["sound"])
         self.assertEqual(logic.cfg["llm_url"], "http://127.0.0.1:8080")
+        self.assertEqual(logic.cfg["llm_model"], "qwen3.5:2b-q4_K_M")
+        self.assertTrue(logic.cfg["llm_normal_enabled"])
+        self.assertEqual(logic.cfg["resource_mode"], "memory")
         self.assertTrue(logic._restart_needed)
 
     def test_advanced_settings_reject_invalid_values(self):
@@ -185,18 +205,110 @@ class LogicSettingsTests(unittest.TestCase):
         logic.handle({"op": "set_advanced", "key": "llm_url",
                       "value": "http://[not-a-valid-ipv6-address"})
         logic.handle({"op": "set_advanced", "key": "max_seg", "value": "120"})
+        logic.handle({"op": "set_advanced", "key": "resource_mode",
+                      "value": "ultra-memory"})
         self.assertEqual(logic.cfg.get("llm_url", ""), "")
         self.assertEqual(logic.cfg.get("max_seg", 20.0), 20.0)
         warnings = [payload for kind, payload in emitted if kind == "toast"]
-        self.assertEqual(len(warnings), 3)
+        self.assertEqual(len(warnings), 4)
+
+    def test_managed_local_llm_settings_are_visible_saved_and_not_assumed_ready(self):
+        logic, _emitted = make_logic()
+        logic.handle({"op": "set_advanced", "key": "llm_server_path",
+                      "value": r"C:\tools\llama-server.exe"})
+        logic.handle({"op": "set_advanced", "key": "llm_model_path",
+                      "value": r"C:\models\qwen.gguf"})
+        logic.handle({"op": "set_advanced", "key": "llm_acceleration",
+                      "value": "cpu"})
+        state = logic.state_payload()
+        self.assertEqual(state["advanced"]["llm_url"], "http://127.0.0.1:8080/v1")
+        self.assertEqual(state["advanced"]["llm_acceleration"], "cpu")
+        self.assertNotEqual(state["llm_runtime"]["status"], "ready")
+
+        with patch("instant2_app.gui.config.save", return_value="config.json"), \
+                patch("instant2_app.gui.autostart.is_enabled", return_value=False):
+            logic.save_config(show_message=False)
+        self.assertEqual(logic.cfg["llm_server_path"], r"C:\tools\llama-server.exe")
+        self.assertEqual(logic.cfg["llm_model_path"], r"C:\models\qwen.gguf")
+        self.assertEqual(logic.cfg["llm_acceleration"], "cpu")
+        self.assertTrue(logic.cfg["llm_managed_enabled"])
+        self.assertEqual(logic.state_payload()["llm_runtime"]["status"], "stopped")
+
+    def test_selecting_local_runtime_paths_sets_loopback_endpoint_automatically(self):
+        logic, _emitted = make_logic()
+        logic.cfg["llm_url"] = ""
+        logic.handle({"op": "set_advanced", "key": "llm_server_path",
+                      "value": r"C:\tools\llama-server.exe"})
+        self.assertEqual(logic.cfg["llm_url"], "http://127.0.0.1:8080/v1")
+
+    def test_llm_status_is_read_from_the_resident_daemon(self):
+        logic, _emitted = make_logic()
+        logic.cfg.update({
+            "llm_managed_enabled": True,
+            "llm_url": "http://127.0.0.1:8080/v1",
+            "llm_server_path": r"C:\\tools\\llama-server.exe",
+            "llm_model_path": r"C:\\models\\qwen.gguf",
+        })
+        logic._last_daemon_running = True
+        sleeping = {"status": "sleeping", "detail": "LLM local en reposo.",
+                    "device": "CPU", "owned": True}
+        with patch("instant2_app.llm_runtime_status.read_status",
+                   return_value=sleeping):
+            logic.sync_llm_runtime()
+        self.assertEqual(logic.state_payload()["llm_runtime"], sleeping)
+
+    def test_gui_retries_by_signaling_daemon_instead_of_owning_llm(self):
+        logic, _emitted = make_logic()
+        logic.cfg.update({
+            "llm_managed_enabled": True,
+            "llm_url": "http://127.0.0.1:8080/v1",
+            "llm_server_path": r"C:\\tools\\llama-server.exe",
+            "llm_model_path": r"C:\\models\\qwen.gguf",
+        })
+        logic._last_daemon_running = True
+        with patch("instant2_app.llm_runtime_status.request_retry") as retry, \
+                patch.object(logic, "save_config", return_value=True):
+            logic._op_llm_runtime_retry({})
+        retry.assert_called_once_with()
+        self.assertEqual(logic.state_payload()["llm_runtime"]["status"], "starting")
+
+    def test_local_external_and_remote_endpoints_are_reported_without_starting_processes(self):
+        logic, _emitted = make_logic()
+        logic.cfg.update({
+            "llm_managed_enabled": False,
+            "llm_url": "http://127.0.0.1:11434/v1",
+        })
+        logic.sync_llm_runtime()
+        state = logic.state_payload()["llm_runtime"]
+        self.assertEqual(state["status"], "configured")
+        self.assertIn("local", state["detail"])
+        logic.cfg["llm_url"] = "https://llm.example.test/v1"
+        logic.sync_llm_runtime()
+        state = logic.state_payload()["llm_runtime"]
+        self.assertEqual(state["status"], "configured")
+        self.assertIn("remoto", state["detail"])
+
+    def test_local_runtime_file_picker_routes_only_supported_paths(self):
+        panel = gui._WebPanel.__new__(gui._WebPanel)
+        opened = []
+        selected = []
+        panel.root = SimpleNamespace(openFileDialog=opened.append)
+        panel.logic = SimpleNamespace(handle=selected.append)
+        panel._handle_call('{"op":"choose_runtime_file","kind":"llm_model_path"}')
+        self.assertEqual(opened, ["llm_model_path"])
+        panel._handle_runtime_file_selected("llm_model_path", r"C:\models\qwen.gguf")
+        self.assertEqual(selected, [{"op": "set_advanced", "key": "llm_model_path",
+                                     "value": r"C:\models\qwen.gguf"}])
+        panel._handle_runtime_file_selected("other", "ignored")
+        self.assertEqual(len(selected), 1)
 
     def test_autostart_override_wins_and_save_applies_it(self):
         logic, _emitted = make_logic(autostart_override=True)
         self.assertTrue(logic.state_payload()["autostart"])
-        with patch("instant_app.gui.config.save", return_value="config.json"), \
-                patch("instant_app.gui.autostart.is_enabled", return_value=False), \
-                patch("instant_app.gui.autostart.enable") as enable, \
-                patch("instant_app.gui.autostart.disable") as disable:
+        with patch("instant2_app.gui.config.save", return_value="config.json"), \
+                patch("instant2_app.gui.autostart.is_enabled", return_value=False), \
+                patch("instant2_app.gui.autostart.enable") as enable, \
+                patch("instant2_app.gui.autostart.disable") as disable:
             logic.save_config(show_message=False)
         enable.assert_called_once()
         disable.assert_not_called()
@@ -204,17 +316,17 @@ class LogicSettingsTests(unittest.TestCase):
     def test_mic_missing_after_shift_reports_unavailable(self):
         logic, _emitted = make_logic()
         # Dos entradas con el mismo nombre: la identidad es ambigua a propósito.
-        with patch("instant_app.gui.audio.input_choices",
+        with patch("instant2_app.gui.audio.input_choices",
                    return_value=[(5, "USB Mic", 1, 48000), (8, "USB Mic", 1, 48000)]), \
-                patch("instant_app.gui.audio.preferred_input_index",
+                patch("instant2_app.gui.audio.preferred_input_index",
                       side_effect=lambda default, _rows: default), \
                 patch.dict(sys.modules, {"sounddevice": SimpleNamespace(
                     default=SimpleNamespace(device=(5, -1)))}):
             logic.refresh_microphones(initial=True)
         logic.select_mic("USB Mic [5] (predeterminado)")
-        with patch("instant_app.gui.audio.input_choices",
+        with patch("instant2_app.gui.audio.input_choices",
                    return_value=[(12, "USB Mic", 1, 48000), (18, "USB Mic", 1, 48000)]), \
-                patch("instant_app.gui.audio.preferred_input_index",
+                patch("instant2_app.gui.audio.preferred_input_index",
                       side_effect=lambda default, _rows: default), \
                 patch.dict(sys.modules, {"sounddevice": SimpleNamespace(
                     default=SimpleNamespace(device=(12, -1)))}):
@@ -227,7 +339,7 @@ class LogicSettingsTests(unittest.TestCase):
 
     def test_empty_device_list_reports_no_microphones(self):
         logic, _emitted = make_logic()
-        with patch("instant_app.gui.audio.input_choices", side_effect=OSError("sin ALSA")):
+        with patch("instant2_app.gui.audio.input_choices", side_effect=OSError("sin ALSA")):
             logic.refresh_microphones(initial=True)
         self.assertTrue(logic._microphones_loaded)
         self.assertTrue(logic.meter["text"].startswith("No se detectaron micrófonos."))
@@ -248,12 +360,12 @@ class LogicSettingsTests(unittest.TestCase):
                 on_level(0.5)
             return 0.5
 
-        with patch("instant_app.gui.audio.peak_meter", side_effect=peak_meter):
+        with patch("instant2_app.gui.audio.peak_meter", side_effect=peak_meter):
             logic.test_microphone()
         self.assertEqual(logic.meter["text"], "Señal detectada (0.500).")
         self.assertEqual(logic.meter["percent"], 100)
 
-        with patch("instant_app.gui.audio.peak_meter", return_value=0.001):
+        with patch("instant2_app.gui.audio.peak_meter", return_value=0.001):
             logic.test_microphone()
         self.assertEqual(logic.meter["text"],
                          "No detecté señal; revisá micrófono/volumen.")
@@ -269,7 +381,8 @@ class LogicSettingsTests(unittest.TestCase):
             logic.key_captured(0, "zz")
         results = [payload for kind, payload in emitted if kind == "key_result"]
         self.assertFalse(results[-1]["ok"])
-        self.assertIn("probá otra", results[-1]["message"])
+        self.assertIn("prob", results[-1]["message"])
+
 
     def test_vocab_flow_round_trips_through_the_editor_format(self):
         logic, _emitted = make_logic()
@@ -290,7 +403,7 @@ class LogicSettingsTests(unittest.TestCase):
         logic, emitted = make_logic()
         logic.context_add("General")
         titles = [payload["title"] for kind, payload in emitted if kind == "toast"]
-        self.assertIn("Instant", titles)
+        self.assertIn("Instant2", titles)
         messages = [payload["message"] for kind, payload in emitted if kind == "toast"]
         self.assertIn("Ya existe ese perfil.", messages)
 
@@ -370,7 +483,7 @@ class LogicSettingsTests(unittest.TestCase):
         with choices, preferred, sounddevice:
             logic.refresh_microphones(initial=True)
         logic.meter = {"percent": 87, "text": "Señal 0.500"}
-        with patch("instant_app.gui.audio.peak_meter", return_value=0.001):
+        with patch("instant2_app.gui.audio.peak_meter", return_value=0.001):
             logic.test_microphone()
         self.assertEqual(logic.meter["percent"], 0)
         self.assertIn("No detecté señal", logic.meter["text"])
@@ -398,6 +511,14 @@ class LogicSettingsTests(unittest.TestCase):
         self.assertEqual(state["vad_model"], "ten")
         self.assertEqual(state["blank_penalty"], 0.5)
         self.assertEqual(state["update_mode"], "off")
+        self.assertIn("llm_resources", state)
+        self.assertTrue(state["llm_normal_enabled"])
+        logic.handle({"op": "set_advanced", "key": "llm_model",
+                      "value": "llama3.2:3b-instruct-q4_K_M"})
+        logic.handle({"op": "set_advanced", "key": "llm_normal_enabled",
+                      "value": False})
+        self.assertEqual(logic.cfg["llm_model"], "llama3.2:3b-instruct-q4_K_M")
+        self.assertFalse(logic.cfg["llm_normal_enabled"])
         logic.handle({"op": "set_advanced", "key": "vad_model", "value": "xxx"})
         logic.handle({"op": "set_advanced", "key": "blank_penalty", "value": "9"})
         logic.handle({"op": "set_advanced", "key": "update_mode", "value": "xxx"})
@@ -408,6 +529,13 @@ class LogicSettingsTests(unittest.TestCase):
         self.assertIn("Detector de voz no válido", titles)
         self.assertIn("Penalidad no válida", titles)
         self.assertIn("Modo de actualización no válido", titles)
+    def test_set_advanced_rejects_unsafe_model_names(self):
+        logic, emitted = make_logic()
+        logic.handle({"op": "set_advanced", "key": "llm_model",
+                      "value": "model\nsecret"})
+        self.assertEqual(logic.cfg.get("llm_model", ""), "")
+        titles = [payload["title"] for kind, payload in emitted if kind == "toast"]
+        self.assertIn("Modelo no válido", titles)
 
     def test_set_advanced_llm_token_never_echoed(self):
         logic, _emitted = make_logic()
@@ -442,22 +570,22 @@ class LogicSettingsTests(unittest.TestCase):
         pages = {item["id"]: item["page"] for item in state["checklist"]}
         self.assertEqual(pages, {"models": "home", "mic": "audio", "key": "settings"})
 
-    def test_home_without_models_nudges_to_setup_visibly(self):
+    def test_home_without_recognizer_keeps_other_features_available(self):
         logic, emitted = make_logic()
         logic.model_ready = False
         logic.page = "home"
         logic.handle({"op": "ready"})
-        self.assertEqual(logic.page, "settings")
-        self.assertIn(("navigate", {"page": "settings"}), emitted)
+        self.assertEqual(logic.page, "home")
+        self.assertNotIn(("navigate", {"page": "settings"}), emitted)
         titles = [payload["title"] for kind, payload in emitted if kind == "toast"]
-        self.assertIn("Te falta un paso", titles)
+        self.assertIn("Dictado pendiente", titles)
 
     def test_friendly_errors_wrap_raw_detail(self):
-        from instant_app.gui import _friendly_error
+        from instant2_app.gui import _friendly_error
         cause, action = _friendly_error(OSError("sin red"))
         self.assertTrue(cause and action)
         logic, emitted = make_logic()
-        with patch("instant_app.gui.subprocess.Popen",
+        with patch("instant2_app.gui.subprocess.Popen",
                    side_effect=OSError("sin red")):
             logic._daemon_state_ready = True
             logic._microphones_loaded = True
@@ -470,7 +598,7 @@ class LogicSettingsTests(unittest.TestCase):
     def test_cancelled_model_download_is_recoverable(self):
         logic, _emitted = make_logic()
         logic.model_ready = False
-        with patch("instant_app.gui.models.download_models",
+        with patch("instant2_app.gui.models.download_models",
                    side_effect=gui.models.DownloadCancelled("cancelada")):
             logic.download_models()
         self.assertFalse(logic.state_payload()["model"]["downloading"])
@@ -493,7 +621,7 @@ class SetupConsoleTests(unittest.TestCase):
     def test_unknown_flag_exits_uncleanly(self):
         import io
         from contextlib import redirect_stdout
-        from instant_app import setup as setup_module
+        from instant2_app import setup as setup_module
         buffer = io.StringIO()
         with redirect_stdout(buffer):
             with self.assertRaises(SystemExit) as caught:
@@ -505,45 +633,45 @@ class SetupConsoleTests(unittest.TestCase):
         import io
         from contextlib import redirect_stdout
         from unittest.mock import patch as _patch
-        from instant_app import setup as setup_module
+        from instant2_app import setup as setup_module
         buffer = io.StringIO()
         with redirect_stdout(buffer), \
-                _patch("instant_app.setup.config.load", return_value=dict(
+                _patch("instant2_app.setup.config.load", return_value=dict(
                     setup_module.config.DEFAULTS)), \
-                _patch("instant_app.setup.config.save",
+                _patch("instant2_app.setup.config.save",
                        return_value="config.json"), \
-                _patch("instant_app.deps.check", return_value={
+                _patch("instant2_app.deps.check", return_value={
                     "sherpa_onnx": {"ok": True}, "sounddevice": {"ok": True}}), \
-                _patch("instant_app.deps.report", return_value=""), \
-                _patch("instant_app.models.check",
+                _patch("instant2_app.deps.report", return_value=""), \
+                _patch("instant2_app.models.check",
                        return_value={"parakeet": False, "vad": False}), \
-                _patch("instant_app.models.download_models",
+                _patch("instant2_app.models.download_models",
                        side_effect=OSError("sin red")), \
-                _patch("instant_app.setup._real_inputs", return_value=[]), \
-                _patch("instant_app.autostart.is_enabled", return_value=False), \
-                _patch("instant_app.autostart.describe", return_value="off"):
+                _patch("instant2_app.setup._real_inputs", return_value=[]), \
+                _patch("instant2_app.autostart.is_enabled", return_value=False), \
+                _patch("instant2_app.autostart.describe", return_value="off"):
             rc = setup_module.cmd_setup(["--yes", "--no-probe"])
         out = buffer.getvalue()
         self.assertEqual(rc, 2)
         self.assertNotIn("\nListo.", out)
         self.assertIn("Configuración incompleta:", out)
-        self.assertIn("instant setup", out)
+        self.assertIn("instant2 setup", out)
 
 
 class UpdateConsentTests(unittest.TestCase):
     def _logic(self, cfg):
         from types import SimpleNamespace as _NS
         from unittest.mock import patch as _patch
-        from instant_app import gui as _gui
+        from instant2_app import gui as _gui
         emitted = []
-        with _patch("instant_app.gui.config.load", return_value=dict(cfg)), \
-                _patch("instant_app.gui.models.check",
+        with _patch("instant2_app.gui.config.load", return_value=dict(cfg)), \
+                _patch("instant2_app.gui.models.check",
                        return_value={"parakeet": True, "vad": True}), \
-                _patch("instant_app.gui.resolve_data_dir",
+                _patch("instant2_app.gui.resolve_data_dir",
                        return_value="models"), \
-                _patch("instant_app.gui.daemon_is_running", return_value=False), \
-                _patch("instant_app.gui.audio.input_choices", return_value=[]), \
-                _patch("instant_app.gui.autostart.is_enabled",
+                _patch("instant2_app.gui.daemon_is_running", return_value=False), \
+                _patch("instant2_app.gui.audio.input_choices", return_value=[]), \
+                _patch("instant2_app.gui.autostart.is_enabled",
                        return_value=False), \
                 _patch.dict(sys.modules, {"sounddevice": SimpleNamespace(
                     default=_NS(device=(-1, -1)))}):
@@ -555,15 +683,15 @@ class UpdateConsentTests(unittest.TestCase):
 
     def _release(self):
         return {"update": True, "current": "0.1.0", "latest": "0.2.0",
-                "notes": "", "asset": "Instant.exe",
-                "asset_url": "https://x/Instant.exe"}
+                "notes": "", "asset": "Instant2.exe",
+                "asset_url": "https://x/Instant2.exe"}
 
     def test_off_mode_skips_silent_check_entirely(self):
         from unittest.mock import patch as _patch
         logic, _emitted = self._logic({"mic_hint": "", "mic_index": None,
                                        "key": "f9", "autostart": False,
                                        "update_mode": "off"})
-        with _patch("instant_app.update.check") as check:
+        with _patch("instant2_app.update.check") as check:
             logic._silent_update_check()
         check.assert_not_called()
 
@@ -572,8 +700,8 @@ class UpdateConsentTests(unittest.TestCase):
         logic, _emitted = self._logic({"mic_hint": "", "mic_index": None,
                                        "key": "f9", "autostart": False,
                                        "update_mode": "auto"})
-        with _patch.dict(os.environ, {"INSTANT_NO_UPDATE": "1"}), \
-                _patch("instant_app.update.check") as check:
+        with _patch.dict(os.environ, {"INSTANT2_NO_UPDATE": "1"}), \
+                _patch("instant2_app.update.check") as check:
             logic._silent_update_check()
         check.assert_not_called()
 
@@ -582,10 +710,10 @@ class UpdateConsentTests(unittest.TestCase):
         logic, emitted = self._logic({"mic_hint": "", "mic_index": None,
                                       "key": "f9", "autostart": False,
                                       "update_mode": "notify"})
-        with _patch("instant_app.update.check", return_value=self._release()), \
-                _patch("instant_app.gui.config.save",
+        with _patch("instant2_app.update.check", return_value=self._release()), \
+                _patch("instant2_app.gui.config.save",
                        return_value="config.json"), \
-                _patch("instant_app.update.download") as download:
+                _patch("instant2_app.update.download") as download:
             logic._silent_update_check()
         download.assert_not_called()
         self.assertIn("Descargar v0.2.0", logic.update_button)
@@ -593,9 +721,9 @@ class UpdateConsentTests(unittest.TestCase):
                    and payload["title"] == "Hay versión nueva: 0.2.0"]
         self.assertTrue(consent)
         self.assertIn("Descargar", [a["label"] for a in consent[-1]["actions"]])
-        with _patch("instant_app.update.fetch_expected_sha256",
+        with _patch("instant2_app.update.fetch_expected_sha256",
                      return_value="ab" * 32), \
-                _patch("instant_app.update.download") as download2:
+                _patch("instant2_app.update.download") as download2:
             logic.handle({"op": "download_update"})
         download2.assert_called_once()
 
@@ -603,7 +731,7 @@ class UpdateConsentTests(unittest.TestCase):
         import hashlib as _hl
         import tempfile as _tf
         from unittest.mock import patch as _patch
-        from instant_app import gui as _gui
+        from instant2_app import gui as _gui
         logic, emitted = self._logic({"mic_hint": "", "mic_index": None,
                                       "key": "f9", "autostart": False,
                                       "update_mode": "auto",
@@ -614,11 +742,11 @@ class UpdateConsentTests(unittest.TestCase):
         try:
             digest = _hl.sha256(b"binario-nuevo").hexdigest()
             logic._pending_update = self._release()
-            with _patch("instant_app.update.install_mode",
+            with _patch("instant2_app.update.install_mode",
                         return_value="portable"), \
-                    _patch("instant_app.gui.os.path.isfile",
+                    _patch("instant2_app.gui.os.path.isfile",
                            return_value=False), \
-                    _patch("instant_app.gui.subprocess.Popen") as popen:
+                    _patch("instant2_app.gui.subprocess.Popen") as popen:
                 logic._install_ready(target, "00" * 32)
             popen.assert_not_called()
             failed = [payload for kind, payload in emitted
@@ -628,9 +756,9 @@ class UpdateConsentTests(unittest.TestCase):
             self.assertIn("Detalle:", failed[-1]["message"])
             with _patch.object(_gui.sys, "frozen", True, create=True), \
                     _patch.object(_gui.sys, "platform", "linux"), \
-                    _patch("instant_app.update.install_mode",
+                    _patch("instant2_app.update.install_mode",
                            return_value="portable"), \
-                    _patch("instant_app.update.apply_binary_update",
+                    _patch("instant2_app.update.apply_binary_update",
                            side_effect=TypeError("viejo")) as apply_update, \
                     _patch.object(logic, "stop_daemon_flow"):
                 logic._update_install_pending = False

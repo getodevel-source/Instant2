@@ -9,8 +9,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import daemon as daemon_module
-from instant_app.engine import Engine, SAMPLE_RATE
+from instant2_app import daemon as daemon_module
+from instant2_app.engine import Engine, SAMPLE_RATE
 
 
 def _check(name, cond):

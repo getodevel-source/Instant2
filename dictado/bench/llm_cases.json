@@ -1,0 +1,134 @@
+{
+  "normal": [
+    {
+      "id": "question_accent",
+      "input": "buenos dias como estas",
+      "expected": "Buenos días, ¿cómo estás?"
+    },
+    {
+      "id": "name_and_pause",
+      "input": "mañana viene juan y despues nos llama",
+      "expected": "Mañana viene Juan y después nos llama."
+    },
+    {
+      "id": "technical_question",
+      "input": "cual es la diferencia entre llama 3 punto 2 y qwen 3 punto 5",
+      "expected": "¿Cuál es la diferencia entre Llama 3 punto 2 y Qwen 3 punto 5?",
+      "must_keep": [
+        "Llama",
+        "Qwen"
+      ]
+    },
+    {
+      "id": "argentine_question",
+      "input": "podes revisar el archivo config y decirme si sigue usando cuatro hilos",
+      "expected": "¿Podés revisar el archivo config y decirme si sigue usando cuatro hilos?"
+    },
+    {
+      "id": "sentence_boundary",
+      "input": "hola juan mañana te mando el archivo",
+      "expected": "Hola, Juan. Mañana te mando el archivo."
+    },
+    {
+      "id": "restriction",
+      "input": "el pedido es simple no agregues funciones nuevas ni cambies el flujo actual",
+      "expected": "El pedido es simple: no agregues funciones nuevas ni cambies el flujo actual.",
+      "must_keep": [
+        "no agregues funciones nuevas",
+        "cambies el flujo actual"
+      ]
+    },
+    {
+      "id": "deadline",
+      "input": "si terminas hoy mandame el resumen antes de las seis",
+      "expected": "Si terminás hoy, mandame el resumen antes de las seis.",
+      "must_keep": [
+        "antes de las seis"
+      ]
+    },
+    {
+      "id": "negation",
+      "input": "necesito saber cuanto tarda el modelo en cargar no me importa el rendimiento maximo",
+      "expected": "Necesito saber cuánto tarda el modelo en cargar; no me importa el rendimiento máximo.",
+      "must_keep": [
+        "no me importa el rendimiento máximo"
+      ]
+    },
+    {
+      "id": "clipboard",
+      "input": "deja el texto original en el portapapeles y no lo pegues",
+      "expected": "Dejá el texto original en el portapapeles y no lo pegues.",
+      "must_keep": [
+        "texto original",
+        "no lo pegues"
+      ]
+    },
+    {
+      "id": "application_name",
+      "input": "instant dos mejora la transcripcion con inteligencia artificial",
+      "expected": "Instant2 mejora la transcripción con inteligencia artificial."
+    },
+    {
+      "id": "benchmark_quantization",
+      "input": "vamos a probar qwen 2b y llama 3b con q4 y q8",
+      "expected": "Vamos a probar Qwen 2b y Llama 3b con Q4 y Q8."
+    },
+    {
+      "id": "hardware_numbers_as_words",
+      "input": "la rx 6800 xt tiene dieciseis gigas de vram pero el equipo solo tiene seis libres",
+      "expected": "La RX 6800 XT tiene dieciséis gigas de VRAM, pero el equipo solo tiene seis libres."
+    },
+    {
+      "id": "list_pause",
+      "input": "tengo dos opciones la primera usa cpu la segunda gpu",
+      "expected": "Tengo dos opciones: la primera usa CPU; la segunda, GPU."
+    },
+    {
+      "id": "do_not_delete",
+      "input": "te dije que no borres ninguna rama y que no hagas commit",
+      "expected": "Te dije que no borres ninguna rama y que no hagas commit.",
+      "must_keep": [
+        "no borres ninguna rama",
+        "no hagas commit"
+      ]
+    },
+    {
+      "id": "question_punctuation",
+      "input": "como se llamaba el modelo que probamos el martes",
+      "expected": "¿Cómo se llamaba el modelo que probamos el martes?"
+    },
+    {
+      "id": "proper_name",
+      "input": "el martes maria revisa el informe de instant dos",
+      "expected": "El martes María revisa el informe de Instant dos."
+    },
+    {
+      "id": "multiple_pauses",
+      "input": "primero escucha el audio despues corrige las tildes y al final muestra el texto",
+      "expected": "Primero escucha el audio, después corrige las tildes y, al final, muestra el texto."
+    },
+    {
+      "id": "question_and_statement",
+      "input": "cuando llega el paquete avisame y no instales nada automaticamente",
+      "expected": "Cuando llega el paquete, avisame y no instales nada automáticamente.",
+      "must_keep": [
+        "cuando llega el paquete",
+        "no instales nada automaticamente"
+      ]
+    },
+    {
+      "id": "numbers_and_limits",
+      "input": "usa cuatro hilos como maximo y no cambies el limite de veinte segundos",
+      "expected": "Usá cuatro hilos como máximo y no cambies el límite de veinte segundos.",
+      "must_keep": [
+        "cuatro hilos",
+        "veinte segundos"
+      ]
+    },
+    {
+      "id": "settings_label",
+      "input": "el boton guardar cambios aparece despues de elegir el microfono",
+      "expected": "El botón Guardar cambios aparece después de elegir el micrófono."
+    }
+  ]
+}

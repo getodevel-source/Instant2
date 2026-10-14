@@ -7,7 +7,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app.engine import Engine, SAMPLE_RATE, _fit_level
+from instant2_app.engine import Engine, SAMPLE_RATE, _fit_level
 
 
 def _check(name, cond):
@@ -120,7 +120,7 @@ _check("take bajito se rescata", eng.transcribe(bajo) == "se escucha"
         and eng._rec.calls == 1)
 
 # 7. Confianza: exp(media log-probs); sin scores no se castiga.
-from instant_app.engine import _mean_conf
+from instant2_app.engine import _mean_conf
 _check("conf sin scores es 1", _mean_conf(None) == 1.0 and _mean_conf([]) == 1.0)
 _check("conf tokens seguros alta",
         abs(_mean_conf([-0.1, -0.2, -0.05]) - 0.89) < 0.02)
@@ -137,7 +137,7 @@ _check("blank invalido a 0", _e.blank_penalty == 0.0)
 _check("word_confs init vacio", _e.last_word_confs == [])
 
 # 9. Gate por palabra: alinea tokens a palabras con el eslabon debil.
-from instant_app.engine import _word_confs
+from instant2_app.engine import _word_confs
 _wc = _word_confs(
     [" S", "ub", "í", " qu", "em", "ita"],
     [-0.01, -0.0, -0.0, -0.68, -0.0, -0.01],
@@ -161,7 +161,7 @@ _check("word_confs con offset rs",
 # 11. B3: el dedup recorta el prefijo duplicado; el gate desplaza, no trunca.
 # "mundo cruel" sale en ambos decodes; join lo cose una vez y las confianzas
 # conservan 4 palabras (no 5): se salta el duplicado del seg2, no la cola.
-from instant_app.engine import _overlap_count
+from instant2_app.engine import _overlap_count
 _check("overlap_count dos palabras", _overlap_count("hola mundo cruel", "mundo cruel adios") == 2)
 eng = _engine([(0.0, 2.0), (3.2, 3.7)], lambda _w: "x")
 _texts = ["hola mundo cruel", "mundo cruel adios"]
@@ -234,7 +234,7 @@ _check("drops por pieza no recortan repeticion lejana",
         == ["hola", "mundo", "noche", "dia", "mundo", "noche", "dia", "claro"])
 
 # 14. merge_short_bounds no reune por encima del tope max_seg.
-from instant_app.engine import merge_short_bounds
+from instant2_app.engine import merge_short_bounds
 _check("merge respeta max_seg",
         merge_short_bounds([(0.0, 19.0), (19.5, 21.0)], max_seg=20.0)
         == [(0.0, 19.0), (19.5, 21.0)])

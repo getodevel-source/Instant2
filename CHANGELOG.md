@@ -3,6 +3,56 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 El proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
+Instant2 se desarrolla en su propio repositorio, a partir de la base de Instant.
+Las entradas 0.6.x que siguen describen la base heredada de Instant; no son
+versiones publicadas de Instant2. Las versiones, los ajustes, los datos y las
+publicaciones de Instant2 comienzan por separado.
+
+## [0.1.0] - 2026-10-12
+
+### Primera versi?n independiente
+- Identidad, paquete, configuraci?n y datos propios de Instant2.
+- UI redise?ada para el dictado mejorado, los ajustes y el estado del servicio LLM.
+- Correcci?n de transcripciones con LLM y fallback local ante fallos o propuestas
+  que no superan la comprobaci?n conservadora.
+- Administraci?n opcional del runtime LLM local y estado local/remoto visible.
+  Los modelos quedan fuera del instalador.
+- Animaciones ligadas a estados reales y preferencia de movimiento reducido.
+- Audio y texto dictado fuera de los registros por defecto.
+
+### Validaci?n
+- A?ade comprobaciones del flujo de dictado, runtime local, errores y privacidad.
+
+## [0.6.1] - 2026-10-12
+
+### Mejorado
+- Dictado usa como texto final la corrección de Qwen, que ahora puede
+  resolver errores claros del reconocimiento de voz. Si el servicio falla,
+  Instant2 conserva la corrección local.
+- La instrucción de corrección pide conservar intención, nombres, cifras,
+  negaciones y requisitos, y evitar información inventada.
+
+### Validación
+- Añade una prueba que confirma que Dictado acepta una corrección de
+  palabra de Qwen y mantiene el fallback local cuando el servidor falla.
+
+## [0.6.0] - 2026-10-12
+
+### Agregado
+- Indicador de servicio local o remoto y lectura de CPU, RAM y GPU para orientar
+  la selecci?n del modelo. Los modelos quedan fuera del instalador y se conectan
+  mediante un servidor compatible configurado por la persona.
+
+### Mejorado
+- El procesamiento de audio sigue siendo local; al LLM se le env?a texto.
+  El audio y las transcripciones no se agregan a registros ni al historial.
+- El pulido LLM opcional puede mejorar puntuaci?n y graf?a sin debilitar la
+  protecci?n estricta disponible para las rutas que la requieran.
+
+### Validaci?n pendiente
+- Prueba manual de captura y pegado en Windows y Wayland/Omarchy, adem?s de
+  mediciones de precisi?n y uso de recursos en m?s de un equipo.
+
 ## [0.5.2] - 2026-10-12
 
 ### Mejorado
@@ -270,7 +320,7 @@ Toda la UI pasa a web (QtWebEngine), elegida con el bake-off de
 
 - **El overlay del daemon dibuja en web.** La ventana es la misma de siempre
   (transparente, siempre encima, sin foco, abajo al centro del monitor activo)
-  pero la página es `instant_app/web/overlay.html`: los dos estilos de siempre
+  pero la página es `instant2_app/web/overlay.html`: los dos estilos de siempre
   (`classic` y `orbital`) y el contrato intacto (modo, mensaje, tecla, nivel,
   9 bandas y tono por QWebChannel). Si QtWebEngine no puede abrir, el daemon
   cae al respaldo Tk y lo deja en el log.
@@ -395,7 +445,7 @@ Misma UI en los tres sistemas, instalador de Windows y descarga de modelos de pr
 ### Corregido
 
 - **Los `.qml` del overlay viajan en el paquete.** Un `pip install` (incluido
-  `install.bat`) armaba un wheel sin `instant_app/qml/*.qml`: solo el ejecutable
+  `install.bat`) armaba un wheel sin `instant2_app/qml/*.qml`: solo el ejecutable
   congelado los llevaba por `--add-data`. Ahora `package-data` los incluye, así
   que la instalación por pip también tiene el overlay Qt Quick.
 
@@ -594,7 +644,7 @@ pero solo después de que la suite pase en Windows, Linux y macOS y de que
   movimiento (entrada/salida/tilde/giro) intacto.
 - **`instant-run.bat` ya no confunde la ventana con el daemon.** Su chequeo de
   duplicados matcheaba cualquier `pythonw` con "instant" (incluida la ventana
-  de ajustes) y se negaba a arrancar; ahora solo mira `instant_app run`.
+  de ajustes) y se negaba a arrancar; ahora solo mira `instant2_app run`.
 - **Actualización desde GitHub sin hacerlo a mano.** `instant update`
   consulta el último release y compara versiones; con `--download` baja el
   asset y lo verifica por SHA256 (sidecar `.sha256` publicado por el

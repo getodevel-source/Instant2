@@ -10,9 +10,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import daemon as daemon_module
-from instant_app import hotkey as hotkey_module
-from instant_app.engine import Engine, SAMPLE_RATE
+from instant2_app import daemon as daemon_module
+from instant2_app import hotkey as hotkey_module
+from instant2_app.engine import Engine, SAMPLE_RATE
 
 
 def _check(name, cond):
@@ -89,8 +89,8 @@ class _StuckStream:
 old_max = daemon_module.StreamKeeper.MAX_SESSION_SECONDS
 daemon_module.StreamKeeper.MAX_SESSION_SECONDS = 0.3
 try:
-    with patch("instant_app.audio.resolve_mic", return_value=None), \
-            patch("instant_app.audio.open_input_stream",
+    with patch("instant2_app.audio.resolve_mic", return_value=None), \
+            patch("instant2_app.audio.open_input_stream",
                   return_value=(_StuckStream(), None)):
         done = threading.Event()
 
@@ -124,6 +124,7 @@ hk._pk = type("PK", (), {"Listener": None, "Key": type("K", (), {"f9": object()}
 hk._target = object()
 hk._norm = lambda key: True
 hk._down = True
+hk._suppress = False
 hk._listener = None
 started = []
 
@@ -188,8 +189,8 @@ _check("keeper muerto avisa microfono perdido",
        and d.rec["frames"] == [] and not d.overlay.listening_calls)
 
 # 5. mic_index vencido: keeper.start() y _record_oneshot no caen al default.
-with patch("instant_app.audio.resolve_mic", return_value=None), \
-        patch("instant_app.audio.open_input_stream") as opener:
+with patch("instant2_app.audio.resolve_mic", return_value=None), \
+        patch("instant2_app.audio.open_input_stream") as opener:
     k = daemon_module.StreamKeeper({"mic_index": 7})
     try:
         k.start()
@@ -202,8 +203,8 @@ d = _daemon()
 d.cfg = {"mic_index": 7}
 d.rec.update(sid=3, grabando=True)
 done = threading.Event()
-with patch("instant_app.audio.resolve_mic", return_value=None), \
-        patch("instant_app.audio.open_input_stream") as opener:
+with patch("instant2_app.audio.resolve_mic", return_value=None), \
+        patch("instant2_app.audio.open_input_stream") as opener:
     d._record_oneshot(3, done)
 _check("oneshot mic_index vencido no abre default",
        done.is_set() and not opener.called and d.rec["grabando"] is False
@@ -249,11 +250,11 @@ _check("retry fraccionario llega al total", eng.transcribe(wav) == "ok")
 _check("retry fraccionario conserva muestras", seen.get("n") == int(2.5 * SAMPLE_RATE))
 
 # 7. Engine recibe vad_sil/min_dur del config (via Daemon.__init__ path).
-with patch("instant_app.daemon.Engine") as eng_cls, \
-        patch("instant_app.daemon.Overlay"), \
-        patch("instant_app.audio.resolve_mic", return_value=None), \
-        patch("instant_app.hotkey.create"):
-    from instant_app.daemon import Daemon as _D
+with patch("instant2_app.daemon.Engine") as eng_cls, \
+        patch("instant2_app.daemon.Overlay"), \
+        patch("instant2_app.audio.resolve_mic", return_value=None), \
+        patch("instant2_app.hotkey.create"):
+    from instant2_app.daemon import Daemon as _D
     _D({"vad_sil": 0.9, "min_dur": 1.2, "vad_pad": 0.1})
 _check("daemon pasa vad_sil/min_dur/vad_pad",
        eng_cls.call_args.kwargs.get("vad_sil") == 0.9
@@ -286,8 +287,6 @@ except daemon_module._StreamDied:
 # 9. B1: re-press rápido (<0.3s) no pierde el onset de la sesión nueva.
 # El _pump viejo no hace flush sobre la cola compartida (superseded) y su
 # end_session(generation) no drena lo que la sesión nueva ya encoló.
-import queue as _queue_mod
-
 d = _daemon()
 k = daemon_module.StreamKeeper({})
 k.stream = type("S", (), {"active": True})()
@@ -337,14 +336,14 @@ d.engine.min_dur = 0.4
 wav = (np.sin(2 * np.pi * 220 * np.arange(int(1.0 * SAMPLE_RATE)) / SAMPLE_RATE)
        * 0.05).astype(np.float32)
 d.engine.transcribe = lambda _w: "hola"
-with patch("instant_app.paste.paste",
+with patch("instant2_app.paste.paste",
            side_effect=RuntimeError("en Wayland no hay inyeccion: instala xclip")):
     d._job(wav, 1.0, 77)
 _check("paste Wayland surfea mensaje",
        any("xclip" in t for _, t in d.overlay.errors))
 
 # 11. C1: Tk set_level a cero corta la cola (asigna, no max).
-from instant_app.overlay import _TkOverlay
+from instant2_app.overlay import _TkOverlay
 tk = _TkOverlay.__new__(_TkOverlay)
 tk._dispatch_lock = threading.Lock()
 tk._level = 0.8

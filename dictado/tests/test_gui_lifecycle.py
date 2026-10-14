@@ -15,11 +15,11 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app import gui
+from instant2_app import gui
 
 
 def daemon_spawns(mock):
-    """Llamadas a Popen que son el arranque del daemon (instant ... run).
+    """Llamadas a Popen que son el arranque del daemon (instant2 ... run).
 
     En Linux, importar sounddevice dispara `ldconfig` por ctypes y ese Popen
     también pasa por el parche: contar crudo daba falsos positivos.
@@ -31,7 +31,7 @@ def daemon_spawns(mock):
         argv = entry.args[0]
         if not isinstance(argv, (list, tuple)):
             continue
-        if any("instant" in str(part).lower() for part in argv):
+        if any("instant2" in str(part).lower() for part in argv):
             found.append(entry)
     return found
 
@@ -74,12 +74,12 @@ class SyncTasks:
 
 def make_logic(emitted=None, tasks=None, schedule=None, **kwargs):
     emitted = emitted if emitted is not None else []
-    with patch("instant_app.gui.config.load", return_value=dict(CFG)), \
-            patch("instant_app.gui.models.check", return_value={"parakeet": True, "vad": True}), \
-            patch("instant_app.gui.resolve_data_dir", return_value=os.path.join(os.getcwd(), "models")), \
-            patch("instant_app.gui.daemon_is_running", return_value=False), \
-            patch("instant_app.gui.audio.input_choices", return_value=[]), \
-            patch("instant_app.gui.autostart.is_enabled", return_value=False), \
+    with patch("instant2_app.gui.config.load", return_value=dict(CFG)), \
+            patch("instant2_app.gui.models.check", return_value={"parakeet": True, "vad": True}), \
+            patch("instant2_app.gui.resolve_data_dir", return_value=os.path.join(os.getcwd(), "models")), \
+            patch("instant2_app.gui.daemon_is_running", return_value=False), \
+            patch("instant2_app.gui.audio.input_choices", return_value=[]), \
+            patch("instant2_app.gui.autostart.is_enabled", return_value=False), \
             patch.dict(sys.modules, {"sounddevice": SimpleNamespace(
                 default=SimpleNamespace(device=(-1, -1)))}):
         logic = gui.PanelLogic(
@@ -102,23 +102,24 @@ class PanelLifecycleTests(unittest.TestCase):
         for running in (False, True):
             with self.subTest(running=running):
                 logic, _emitted = make_logic()
-                with patch("instant_app.gui.daemon_is_running", return_value=running):
+                with patch("instant2_app.gui.daemon_is_running", return_value=running):
                     logic.refresh_daemon()
                 state = logic.state_payload()
                 self.assertEqual(state["status"]["state"],
                                  "ok" if running else "down")
                 self.assertEqual(state["status"]["title"],
-                                 "Instant está activo" if running
-                                 else "Instant está detenido")
+                                 "Dictado activo" if running
+                                 else "Dictado detenido")
                 self.assertEqual(state["status"]["detail"],
-                                 "Enfocá el campo donde querés escribir.")
+                                 "Enfocá el campo donde querés escribir. "
+                                 "El servicio de dictado y el LLM tienen estados separados.")
 
     def test_running_daemon_can_be_restarted_when_prerequisites_are_ready(self):
         logic, _emitted = make_logic()
         logic._microphones_loaded = True
         logic.mic_selected = "USB Mic"
         logic.catalog.devices["USB Mic"] = (5, "USB Mic")
-        with patch("instant_app.gui.daemon_is_running", return_value=True):
+        with patch("instant2_app.gui.daemon_is_running", return_value=True):
             logic.refresh_daemon()
         status = logic.state_payload()["status"]
         self.assertFalse(status["can_start"])
@@ -137,9 +138,9 @@ class PanelLifecycleTests(unittest.TestCase):
 
         logic.tasks.submit(slow, lambda value: seen.append(value))
         self.assertTrue(started.wait(2))
-        with patch("instant_app.gui.daemon_is_running",
+        with patch("instant2_app.gui.daemon_is_running",
                    side_effect=AssertionError("close consultó el daemon")), \
-                patch("instant_app.gui.stop_daemon",
+                patch("instant2_app.gui.stop_daemon",
                       side_effect=AssertionError("close frenó el daemon")):
             logic.close()
         release.set()
@@ -194,7 +195,7 @@ class PanelLifecycleTests(unittest.TestCase):
             logic._start_daemon(save_settings=False)
         spawns = daemon_spawns(launch)
         self.assertEqual(len(spawns), 1)
-        self.assertEqual(spawns[0].kwargs["env"]["DICTADO_DATA"], logic.data_dir)
+        self.assertEqual(spawns[0].kwargs["env"]["INSTANT2_DATA"], logic.data_dir)
         self.assertEqual(spawns[0].kwargs["cwd"], gui._workdir())
 
     def test_noargs_start_waits_for_readiness_and_starts_once(self):
@@ -217,7 +218,7 @@ class PanelLifecycleTests(unittest.TestCase):
         with patch("subprocess.Popen", side_effect=record_popen) as launch:
             logic._maybe_start_daemon_on_open()
             self.assertEqual(daemon_spawns(launch), [])
-            with patch("instant_app.gui.daemon_is_running", return_value=False):
+            with patch("instant2_app.gui.daemon_is_running", return_value=False):
                 logic.refresh_daemon()
             logic.refresh_microphones(initial=True)
             self.assertTrue(logic._daemon_state_ready)
@@ -275,10 +276,10 @@ class PanelLifecycleTests(unittest.TestCase):
         # Instalado (Windows): frena el daemon y lanza el Setup en silencio.
         logic, _emitted = make_logic()
         with _tempfile.TemporaryDirectory() as _dir:
-            _setup, _digest = _verified(_dir, "Instant-Setup.exe")
-            with patch("instant_app.update.install_mode", return_value="installed"), \
-                    patch("instant_app.gui.stop_daemon") as stop, \
-                    patch("instant_app.gui.daemon_is_running", return_value=False), \
+            _setup, _digest = _verified(_dir, "Instant2-Setup.exe")
+            with patch("instant2_app.update.install_mode", return_value="installed"), \
+                    patch("instant2_app.gui.stop_daemon") as stop, \
+                    patch("instant2_app.gui.daemon_is_running", return_value=False), \
                     patch("subprocess.Popen") as popen:
                 logic._install_ready(_setup, _digest)
         stop.assert_called_once()
@@ -290,12 +291,12 @@ class PanelLifecycleTests(unittest.TestCase):
         # Unix congelado: reemplazo en caliente + reinicio del dictado.
         logic, emitted = make_logic()
         with _tempfile.TemporaryDirectory() as _dir:
-            _target, _digest = _verified(_dir, "instant-linux")
+            _target, _digest = _verified(_dir, "instant2-linux")
             with patch.object(sys, "frozen", True, create=True), \
                     patch.object(sys, "platform", "linux"), \
-                    patch("instant_app.update.install_mode", return_value="portable"), \
-                    patch("instant_app.update.apply_binary_update",
-                          return_value="/usr/local/bin/instant") as apply_update, \
+                    patch("instant2_app.update.install_mode", return_value="portable"), \
+                    patch("instant2_app.update.apply_binary_update",
+                          return_value="/usr/local/bin/instant2") as apply_update, \
                     patch.object(logic, "stop_daemon_flow") as restart:
                 logic._install_ready(_target, _digest)
         apply_update.assert_called_once_with(_target, expected_sha256=_digest)
@@ -304,16 +305,16 @@ class PanelLifecycleTests(unittest.TestCase):
         # Portable sin script: aviso con instrucciones, sin lanzar nada.
         logic, emitted = make_logic()
         with _tempfile.TemporaryDirectory() as _dir:
-            _target, _digest = _verified(_dir, "Instant.exe")
-            with patch("instant_app.update.install_mode", return_value="portable"), \
-                    patch("instant_app.gui.os.path.isfile",
+            _target, _digest = _verified(_dir, "Instant2.exe")
+            with patch("instant2_app.update.install_mode", return_value="portable"), \
+                    patch("instant2_app.gui.os.path.isfile",
                           side_effect=lambda p: False
                           if str(p).endswith(".bat") else True), \
-                    patch("instant_app.gui.subprocess.Popen") as popen:
+                    patch("instant2_app.gui.subprocess.Popen") as popen:
                 logic._install_ready(_target, _digest)
         popen.assert_not_called()
         messages = [payload for kind, payload in emitted if kind == "toast"]
-        self.assertTrue(any("instant-update.bat" in item["message"] for item in messages))
+        self.assertTrue(any("instant2-update.bat" in item["message"] for item in messages))
 
     def test_apply_gui_action_scrolls_to_audio_and_requests_start(self):
         logic, emitted = make_logic()
@@ -325,7 +326,7 @@ class PanelLifecycleTests(unittest.TestCase):
 
     def test_daemon_poll_failure_surfaces_in_status_detail(self):
         logic, _emitted = make_logic()
-        with patch("instant_app.gui.daemon_is_running",
+        with patch("instant2_app.gui.daemon_is_running",
                    side_effect=RuntimeError("boom")):
             logic.refresh_daemon()
         self.assertIn("boom", logic.status_detail)
@@ -335,7 +336,7 @@ class PanelLifecycleTests(unittest.TestCase):
         logic, _emitted = make_logic()
         logic.status_detail = gui.DAEMON_MISSING_DETAIL
         logic._daemon_start_pending = True
-        with patch("instant_app.gui.daemon_is_running", return_value=False):
+        with patch("instant2_app.gui.daemon_is_running", return_value=False):
             logic.refresh_daemon()
         self.assertEqual(logic.status_detail, gui.DAEMON_MISSING_DETAIL)
 

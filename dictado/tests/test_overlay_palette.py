@@ -12,10 +12,10 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from instant_app.branding import PALETTE
+from instant2_app.branding import PALETTE
 
 WEB_PAGE = os.path.join(
-    os.path.dirname(__file__), "..", "src", "instant_app", "web", "overlay.html")
+    os.path.dirname(__file__), "..", "src", "instant2_app", "web", "overlay.html")
 
 # Únicos colores que pueden escribirse a mano: blanco y negro puros se usan con
 # alfa para la luz de canto y la sombra, no como color de marca.
