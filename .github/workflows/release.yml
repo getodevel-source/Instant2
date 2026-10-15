@@ -561,5 +561,5 @@ jobs:
           name: Instant2 v${{ steps.release_meta.outputs.version }}
           files: release-assets/*
           fail_on_unmatched_files: true
-          draft: true
+          draft: false
           generate_release_notes: true

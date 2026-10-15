@@ -8,6 +8,18 @@ Las dos primeras entradas documentan versiones de Instant2. El historial que
 sigue corresponde al Instant heredado y sus versiones no son releases de
 Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z`.
 
+## [0.1.2] - 2026-10-15
+
+### Corregido
+- La revisión opcional con LLM conserva cantidades dichas con palabras y
+  rechaza tanto los cambios de valor como su conversión a cifras.
+- Los tags nuevos de release se publican al completar CI para que el
+  actualizador integrado los encuentre automáticamente.
+
+### Validación
+- Las pruebas de fidelidad comprueban cantidades escritas con palabras,
+  cantidades pasadas a dígitos y correcciones ortográficas que deben conservarlas.
+
 ## [0.1.1] - 2026-10-14
 
 ### Mejorado

@@ -56,6 +56,27 @@ configuración y lista de modelos antes de probar.
 
 ## Casos específicos
 
+### Actualización desde la aplicación (Windows portable)
+
+Esta comprobación verifica el actualizador integrado contra una release
+publicada. Descargar o reemplazar el ejecutable desde el navegador, el terminal
+o el explorador de archivos no satisface este paso.
+
+- [ ] Confirmar que Instant2 muestra la versión anterior al pie del panel y
+  que no hay un dictado en curso.
+- [ ] Abrir **Ajustes → Actualizaciones**, elegir **Avisarme** y pulsar
+  **Buscar actualizaciones**.
+- [ ] Confirmar que se identifica la nueva versión; comenzar la descarga desde
+  el botón de la aplicación y esperar a que confirme el SHA-256.
+- [ ] Aceptar la aplicación de la actualización dentro de Instant2. Dejar que
+  el actualizador detenga los procesos de esa copia portable, reemplace el
+  ejecutable y vuelva a abrir la aplicación.
+- [ ] Confirmar en la aplicación abierta que muestra la nueva versión, que el
+  daemon inicia correctamente y que su configuración se conserva.
+- [ ] Anotar versión anterior/nueva, fecha, modo portable y el resultado de
+  cada paso; la salida de CI o un hash obtenido fuera de la aplicación no
+  demuestra el ciclo de actualización integrado.
+
 ### Windows
 
 - [ ] Probar instalador y portable por separado.

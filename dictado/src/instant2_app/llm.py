@@ -395,6 +395,66 @@ _RESTRICTIONS = frozenset({"no", "ni", "nunca", "jamas", "sin", "solo",
                             "solamente", "unicamente", "excepto", "salvo"})
 _GRAMMAR_INSERTIONS = frozenset({"a", "al", "de", "del", "el", "la", "los",
                                   "las", "un", "una", "unos", "unas", "en"})
+_NUMBER_WORDS = frozenset({
+    "un", "uno", "una", "dos", "tres", "cuatro", "cinco", "seis",
+    "siete", "ocho", "nueve", "cero", "diez", "once", "doce", "trece",
+    "catorce", "quince", "dieciseis", "diecisiete", "dieciocho",
+    "diecinueve", "veinte", "veintiuno", "veintiun", "veintiuna",
+    "veintidos", "veintitres", "veinticuatro", "veinticinco", "veintiseis",
+    "veintisiete", "veintiocho", "veintinueve", "treinta", "cuarenta",
+    "cincuenta", "sesenta", "setenta", "ochenta", "noventa", "cien",
+    "ciento", "doscientos", "doscientas", "trescientos", "trescientas",
+    "cuatrocientos", "cuatrocientas", "quinientos", "quinientas",
+    "seiscientos", "seiscientas", "setecientos", "setecientas", "ochocientos",
+    "ochocientas", "novecientos", "novecientas", "mil", "millon", "millones",
+    "billon", "billones",
+})
+_NUMBER_WORD_CONNECTORS = frozenset({"y", "coma", "punto"})
+_NUMBER_WORD_PREFIXES = frozenset({"menos", "mas"})
+_NUMBER_UNITS = frozenset({
+    "centavo", "centavos", "dolar", "dolares", "euro", "euros",
+    "peso", "pesos", "real", "reales", "segundo", "segundos", "minuto",
+    "minutos", "hora", "horas", "dia", "dias", "semana", "semanas",
+    "mes", "meses", "ano", "anos", "milisegundo", "milisegundos",
+    "metro", "metros", "centimetro", "centimetros", "milimetro",
+    "milimetros", "kilometro", "kilometros", "milla", "millas", "gramo",
+    "gramos", "kilogramo", "kilogramos", "kilo", "kilos", "tonelada",
+    "toneladas", "litro", "litros", "mililitro", "mililitros", "byte",
+    "bytes", "kilobyte", "kilobytes", "megabyte", "megabytes", "gigabyte",
+    "gigabytes", "terabyte", "terabytes", "giga", "gigas",
+})
+
+
+def _number_word_phrases(text):
+    """Number expressions in words, retained conservatively and in order.
+
+    Inferring the value of a free-form Spanish numeral is ambiguous (for
+    example, ``un`` can also be an article). Comparing its normalized words
+    protects the spoken quantity and common measurement unit without asking a
+    model to interpret it.
+    """
+    words = _words(text)
+    phrases = []
+    current = []
+    for index, word in enumerate(words):
+        previous_number = bool(current) and current[-1] in _NUMBER_WORDS
+        next_number = (index + 1 < len(words)
+                       and words[index + 1] in _NUMBER_WORDS)
+        if word in _NUMBER_WORDS:
+            current.append(word)
+        elif (word in _NUMBER_WORD_PREFIXES and not current and next_number):
+            current.append(word)
+        elif word in _NUMBER_WORD_CONNECTORS and previous_number and next_number:
+            current.append(word)
+        else:
+            if current:
+                unit = (words[index] if index < len(words)
+                        and words[index] in _NUMBER_UNITS else "")
+                phrases.append((tuple(current), unit))
+                current = []
+    if current:
+        phrases.append((tuple(current), ""))
+    return phrases
 
 
 def preserves_facts(original, candidate):
@@ -408,6 +468,8 @@ def preserves_facts(original, candidate):
             word for word in candidate_words if word in _RESTRICTIONS):
         return False
     if re.findall(r"\d+(?:[.,]\d+)*", original) != re.findall(r"\d+(?:[.,]\d+)*", candidate):
+        return False
+    if _number_word_phrases(original) != _number_word_phrases(candidate):
         return False
     changes = SequenceMatcher(None, original_words, candidate_words, autojunk=False)
     for operation, _start, _end, begin, end in changes.get_opcodes():

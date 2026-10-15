@@ -82,16 +82,20 @@ caja y puntuación. Los tiempos excluyen captura humana y pegado.
 | FLEURS, 24 clips | 4,72 % | 5,19 % | 4,72 % |
 | VoxPopuli, 24 clips | 9,71 % | 9,71 % | 9,51 % |
 
-El filtro determinista protege cifras escritas con dígitos y el recuento de
-negaciones/restricciones, y rechaza inserciones de contenido ajeno antes del
-verificador probabilístico. Se reforzó la instrucción de no reescribir por
-estilo. Dos pruebas tabuladas cubren esos contratos.
+El filtro determinista protege cifras escritas con dígitos y cantidades
+expresadas en palabras, preserva negaciones/restricciones y rechaza inserciones
+de contenido ajeno antes del verificador probabilístico. Las pruebas cubren
+cambios entre números escritos con palabras, conversión de una cantidad a
+dígitos y una corrección ortográfica que conserva el número. Esta protección
+conserva la secuencia de palabras numéricas y puede rechazar una grafía distinta
+del mismo valor. Se reforzó la instrucción de no reescribir por estilo.
 
 Persisten regresiones individuales: una en FLEURS y tres en VoxPopuli en la
 submuestra final. Las sustituciones siguen dependiendo del verificador; no hay
-garantía para todos los nombres ni cantidades expresadas en palabras. La media
-de corrección fue 0,54/0,71 s. Es una muestra pequeña de lectura y discurso
-parlamentario; no demuestra precisión conversacional general.
+garantía para todos los nombres ni para expresiones numéricas fuera de la
+protección determinista. La media de corrección fue 0,54/0,71 s. Es una muestra
+pequeña de lectura y discurso parlamentario; no demuestra precisión
+conversacional general.
 
 ## 4. Recursos y recuperación
 

@@ -12,6 +12,11 @@ class CorrectionFactTests(unittest.TestCase):
     def test_changed_numbers_negations_and_restrictions_are_rejected_without_http(self):
         cases = [
             ("Mandá 38000 pesos", "Mandá 42500 pesos"),
+            ("Mandá treinta y ocho mil pesos", "Mandá cuarenta y dos mil quinientos pesos"),
+            ("Esperá veinte minutos", "Esperá doce minutos"),
+            ("Esperá diez días", "Esperá diez semanas"),
+            ("El ajuste es menos tres puntos", "El ajuste es tres puntos"),
+            ("Guardá cien registros", "Guardá 100 registros"),
             ("No envíes el mensaje", "Envía el mensaje"),
             ("Mostrá solo las diferencias", "Mostrá las diferencias"),
             ("No lo borres ni lo publiques", "No lo borres y lo publiques"),
@@ -30,6 +35,10 @@ class CorrectionFactTests(unittest.TestCase):
         ]:
             with self.subTest(original=original):
                 self.assertTrue(llm.preserves_facts(original,candidate))
+
+    def test_number_words_survive_orthographic_cleanup(self):
+        self.assertTrue(llm.preserves_facts(
+            "hoy son veinte y un asistentes", "Hoy son veinte y un asistentes."))
 
 
 if __name__ == "__main__":
