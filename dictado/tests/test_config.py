@@ -12,6 +12,14 @@ from instant2_app import config
 
 
 class ConfigPersistenceTests(unittest.TestCase):
+    def test_voice_detection_cli_uses_public_choices_and_keeps_old_aliases(self):
+        self.assertEqual(config.parse_vad_mode("liviana"), "silero")
+        self.assertEqual(config.parse_vad_mode("más precisa"), "ten")
+        self.assertEqual(config.parse_vad_mode("silero"), "silero")
+        self.assertEqual(config.parse_vad_mode("ten"), "ten")
+        with self.assertRaisesRegex(ValueError, "liviana.*más precisa"):
+            config.parse_vad_mode("otro")
+
     def test_new_configuration_manages_local_llm_by_default(self):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "config.json")

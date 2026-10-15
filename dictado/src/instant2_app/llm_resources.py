@@ -172,7 +172,7 @@ def _recommendation(total_bytes, available_bytes, gpus):
         return {
             "profile": "gpu",
             "model_hint": "Empezar comparando modelos de 2B y 4B en Q4; esta GPU tiene margen para probar ambos.",
-            "runtime_hint": "Usar aceleración GPU automática si Ollama o llama.cpp confirma que el controlador es compatible.",
+            "runtime_hint": "Usar aceleración GPU automática si el servicio confirma que el controlador es compatible.",
         }
     if gpu_gb >= 3 and available_gb >= 2:
         return {

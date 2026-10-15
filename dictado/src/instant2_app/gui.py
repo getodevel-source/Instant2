@@ -19,7 +19,9 @@ La API pública hacia afuera es la de siempre: `run_gui`, `daemon_is_running`,
 import ctypes
 import json
 import logging
+import ntpath
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -112,7 +114,7 @@ def _toast_error(logic, title, exc):
     """Toast accionable: causa+acción en criollo; detalle crudo solo al log."""
     cause, action = _friendly_error(exc)
     raw = str(exc) if exc is not None else ""
-    detail = f"{type(exc).__name__}: {raw}" if raw else type(exc).__name__
+    detail = _public_error_detail(type(exc).__name__, raw)
     log.warning("%s: %s", title, detail, exc_info=True)
     logic.toast(title, f"{cause}\n{action}\nDetalle: {detail}", level="error")
 
@@ -121,9 +123,18 @@ def _toast_warn(logic, title, exc):
     """Variante warn de `_toast_error` (chequeos y descargas)."""
     cause, action = _friendly_error(exc)
     raw = str(exc) if exc is not None else ""
-    detail = f"{type(exc).__name__}: {raw}" if raw else type(exc).__name__
+    detail = _public_error_detail(type(exc).__name__, raw)
     log.warning("%s: %s", title, detail, exc_info=True)
     logic.toast(title, f"{cause}\n{action}\nDetalle: {detail}", level="warn")
+
+
+def _public_error_detail(error_type, message):
+    """Keep useful failure details without exposing local component names."""
+    text = f"{error_type}: {message}" if message else error_type
+    for name in ("parakeet", "silero", "ten-vad", "kokoro", "dora",
+                 "qwen", "ollama", "llama.cpp", "llama-server"):
+        text = re.sub(re.escape(name), "componente local", text, flags=re.IGNORECASE)
+    return text
 
 
 def _update_mode(cfg):
@@ -193,7 +204,7 @@ def daemon_is_running():
             return False
         accepted_images = {"python.exe", "pythonw.exe", "instant2.exe"}
         if getattr(sys, "frozen", False):
-            accepted_images.add(os.path.basename(sys.executable).lower())
+            accepted_images.add(ntpath.basename(sys.executable).lower())
         for row in result.stdout.splitlines():
             columns = [part.strip().strip('"') for part in row.split('","')]
             if len(columns) > 1 and columns[1] == str(pid):
@@ -608,9 +619,9 @@ class PanelLogic(PanelReadingActions):
             "busy": False,
             "canceling": False,
             "percent": 100 if tts_is_ready else 0,
-            "message": ("Kokoro está listo en este equipo."
+            "message": ("La voz está lista en este equipo."
                         if tts_is_ready else
-                        "La primera lectura descargará Kokoro y la voz Dora (aprox. 326 MB)."),
+                        "La primera lectura descargará los componentes de voz (aprox. 326 MB)."),
         }
         self.update_button = "Buscar actualizaciones"
         self.settings_status = ""
@@ -712,7 +723,7 @@ class PanelLogic(PanelReadingActions):
                            if not self.model_ready
                            and (self.model_status.startswith("No se pudo")
                                 or self.model_status.startswith("Descarga cancelada"))
-                           else "Descargar modelo"),
+                           else "Preparar reconocimiento"),
             },
             "vocab": {
                 "profiles": list(configured),
@@ -775,14 +786,14 @@ class PanelLogic(PanelReadingActions):
             if marker not in self._advanced_warned:
                 self._advanced_warned.add(marker)
                 self.toast("Detector de voz no válido",
-                           "Se usa silero hasta que elijas silero o ten.",
+                           "Se usa la opción liviana hasta que elijas una opción válida.",
                            level="warn")
 
     def _checklist(self):
-        """Checklist de Inicio: modelos/mic/tecla con link a su sección."""
+        """Checklist de Inicio con accesos al reconocimiento, micrófono y tecla."""
         key_ok = bool((self.key_value or "").strip())
         return [
-            {"id": "models", "label": "Modelos de voz",
+            {"id": "models", "label": "Reconocimiento",
              "ok": bool(self.model_ready),
              "hint": ("listos" if self.model_ready
                       else "falta descargar ~670 MB"),
@@ -804,7 +815,7 @@ class PanelLogic(PanelReadingActions):
         if self._last_daemon_running:
             return ""
         if not self.model_ready:
-            return "Completá la descarga del modelo para habilitar el dictado."
+            return "Completá la preparación del reconocimiento para habilitar el dictado."
         if self._selected_device() is None:
             if not self._microphones_loaded or self._microphones_refreshing:
                 return "Buscando micrófonos…"
@@ -900,8 +911,8 @@ class PanelLogic(PanelReadingActions):
         elif key == "llm_model":
             value = str(value or "").strip()
             if len(value) > 200 or any(ord(char) < 32 for char in value):
-                self.toast("Modelo no válido",
-                           "Usá el nombre del modelo tal como aparece en tu servidor.",
+                self.toast("Identificador no válido",
+                           "Usá el identificador que muestra tu servicio.",
                            level="warn")
                 return
             self.cfg["llm_model"] = value
@@ -916,7 +927,7 @@ class PanelLogic(PanelReadingActions):
         elif key in ("llm_server_path", "llm_model_path"):
             value = str(value or "").strip()
             if len(value) > 2048 or any(ord(char) < 32 for char in value):
-                self.toast("Ruta no válida", "Revisá la ruta del ejecutable o del modelo.",
+                self.toast("Ruta no válida", "Revisá la ruta del servicio o del archivo de lenguaje.",
                            level="warn")
                 return
             self.cfg[key] = value
@@ -977,7 +988,7 @@ class PanelLogic(PanelReadingActions):
             value = str(value or "").strip().lower()
             if value not in ("silero", "ten"):
                 self.toast("Detector de voz no válido",
-                           "Elegí silero (liviano) o ten (más preciso).",
+                           "Elegí la opción liviana o la de mayor precisión.",
                            level="warn")
                 return
             self.cfg["vad_model"] = value
@@ -1642,8 +1653,8 @@ class PanelLogic(PanelReadingActions):
                 or self._last_daemon_running):
             return False
         if not self.model_ready:
-            self.toast("Modelos pendientes",
-                       "Descargá los modelos de voz antes de iniciar Instant2.",
+            self.toast("Voz pendiente",
+                       "Prepará los componentes de voz antes de iniciar Instant2.",
                        level="warn")
             return False
         if save_settings:
@@ -1811,7 +1822,7 @@ class PanelLogic(PanelReadingActions):
             self.model_status = "Voz lista en este equipo."
             self.model_progress = {"visible": False, "percent": 100}
         else:
-            self.model_status = "Falta descargar el modelo."
+            self.model_status = "Falta preparar el reconocimiento."
             self.model_progress = {"visible": False, "percent": 0}
 
     def download_models(self):
@@ -1850,7 +1861,7 @@ class PanelLogic(PanelReadingActions):
             step, done, total = event
             if not total:
                 return
-            label = "el modelo" if step == "parakeet" else "el detector de voz"
+            label = "el reconocimiento" if step == "parakeet" else "la detección de voz"
             self.model_status = (f"Descargando {label}: {done / total:.0%} "
                                  f"({done / 1e6:.0f}/{total / 1e6:.0f} MB)")
             self.model_progress = {"visible": True,
@@ -1880,7 +1891,7 @@ class PanelLogic(PanelReadingActions):
                     "puedes reanudarla al reintentar.")
                 self.push_state()
                 return
-            self.model_status = "No se pudo descargar el modelo."
+            self.model_status = "No se pudieron preparar los componentes de voz."
             self.push_state()
             _toast_error(self, "Descarga fallida", error)
 
@@ -1939,8 +1950,7 @@ class PanelLogic(PanelReadingActions):
             self._diagnostic_running = False
             cause, action = _friendly_error(error)
             raw = str(error) if error is not None else ""
-            detail = (f"{type(error).__name__}: {raw}" if raw
-                      else type(error).__name__)
+            detail = _public_error_detail(type(error).__name__, raw)
             log.warning("diagnóstico fallido: %s", detail, exc_info=True)
             self._diagnostics_text = f"Diagnóstico fallido: {cause} {action} (Detalle: {detail})"
             self.push_state()
@@ -2355,8 +2365,8 @@ class PanelLogic(PanelReadingActions):
         if self.page != "home" or self.model_ready:
             return
         self.toast("Dictado pendiente",
-                   "Para dictar, descargá Parakeet desde Ajustes. Mientras tanto, "
-                   "podés usar Leer texto con Kokoro sin instalar Parakeet.",
+                   "Para dictar, prepará el reconocimiento desde Ajustes. Mientras tanto, "
+                   "podés usar Leer texto en voz alta.",
                    level="warn")
 
     def close(self):

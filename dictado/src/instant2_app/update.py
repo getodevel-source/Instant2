@@ -11,6 +11,7 @@ restaura solo si el nuevo no pasa el health-check (existe+ejecutable).
 """
 import hashlib
 import json
+import ntpath
 import os
 import re
 import shutil
@@ -43,8 +44,11 @@ def current_version():
 
 
 def normalize(tag):
-    """'v0.1.0' -> '0.1.0' (tolerante con mayúsculas y espacios)."""
-    return tag.strip().lstrip("vV")
+    """Normalize a SemVer tag, including Instant2's collision-safe prefix."""
+    value = tag.strip()
+    if value[:10].casefold() == "instant2-v":
+        return value[10:]
+    return value.lstrip("vV")
 
 
 def _parts(version):
@@ -364,7 +368,8 @@ def download_release_package(info, download_dir, progress=None):
     for item in files:
         name = item.get("name") or ""
         url = item.get("url") or ""
-        if not url or not name or os.path.basename(name) != name:
+        if (not url or not name or os.path.basename(name) != name
+                or ntpath.basename(name) != name):
             raise ValueError("el release contiene una ruta de asset inválida")
     os.makedirs(download_dir, exist_ok=True)
     known_sizes = [max(0, int(item.get("size") or 0)) for item in files]

@@ -15,6 +15,8 @@ class VersionTests(unittest.TestCase):
     def test_normalize_tolerates_v_prefix(self):
         self.assertEqual(update_module.normalize("v0.1.0"), "0.1.0")
         self.assertEqual(update_module.normalize("  V2.0  "), "2.0")
+        self.assertEqual(update_module.normalize("instant2-v0.1.1"), "0.1.1")
+        self.assertEqual(update_module.normalize(" Instant2-V0.1.1 "), "0.1.1")
 
     def test_is_newer_compares_numbers_not_strings(self):
         self.assertTrue(update_module.is_newer("0.1.0", "0.0.9"))
@@ -23,7 +25,7 @@ class VersionTests(unittest.TestCase):
         self.assertFalse(update_module.is_newer("0.1.0", "0.2.0"))
 
     def test_check_detects_update_with_mocked_api(self):
-        payload = {"tag_name": "v9.9.9", "body": "notas",
+        payload = {"tag_name": "instant2-v9.9.9", "body": "notas",
                    "assets": [{"name": "Instant2.exe",
                                "browser_download_url": "https://x/Instant2.exe"}]}
         with patch.object(update_module, "fetch_json", return_value=payload), \

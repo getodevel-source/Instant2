@@ -45,11 +45,11 @@ Window {
     FileDialog {
         id: runtimeFileDialog
         title: host.fileDialogKind === "llm_model_path"
-            ? "Elegir modelo local (GGUF)" : "Elegir ejecutable llama-server"
+            ? "Elegir archivo de lenguaje" : "Elegir archivo del servicio"
         fileMode: FileDialog.OpenFile
         nameFilters: host.fileDialogKind === "llm_model_path"
-            ? ["Modelos GGUF (*.gguf)", "Todos los archivos (*)"]
-            : ["Ejecutables (*.exe)", "Todos los archivos (*)"]
+            ? ["Archivos de lenguaje (*)", "Todos los archivos (*)"]
+            : ["Archivos ejecutables (*.exe)", "Todos los archivos (*)"]
         onAccepted: {
             if (host.bridgeObject)
                 host.bridgeObject.fileSelected(host.fileDialogKind, selectedFile.toLocalFile())

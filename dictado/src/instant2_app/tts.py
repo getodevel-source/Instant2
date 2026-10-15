@@ -219,7 +219,7 @@ def ensure_model(data_dir, progress=None, cancel_event=None):
             def report(done, _total, base=this_file_base):
                 if progress is not None:
                     progress(base + done, MODEL_TOTAL_BYTES,
-                             f"Descargando Kokoro ({index} de {len(pending)} archivos)…")
+                             f"Descargando componentes de voz ({index} de {len(pending)})…")
 
             models._fetch(url, target, expected, report, cancel_event=cancel_event)
             done_before += expected[0]
@@ -237,7 +237,7 @@ def ensure_model(data_dir, progress=None, cancel_event=None):
         except OSError:
             pass
         if progress is not None:
-            progress(MODEL_TOTAL_BYTES, MODEL_TOTAL_BYTES, "Modelo Kokoro verificado.")
+            progress(MODEL_TOTAL_BYTES, MODEL_TOTAL_BYTES, "Componentes de voz verificados.")
     return paths
 
 

@@ -303,7 +303,12 @@ def download_models(data_dir, progress=None, include_ten_vad=False,
                                       if os.path.isfile(target + ".part") else 0))
                 for _url, target, expected in jobs)
         elif progress is None:
-            print(f"  {step}: ya presente y verificado.")
+            label = {
+                "parakeet": "reconocimiento",
+                "vad": "detección de voz",
+                "ten-vad": "detección de voz avanzada",
+            }.get(step, "componente de voz")
+            print(f"  {label}: ya presente y verificado.")
 
     if not steps:
         return data_dir

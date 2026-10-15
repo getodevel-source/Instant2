@@ -535,7 +535,7 @@ class LogicSettingsTests(unittest.TestCase):
                       "value": "model\nsecret"})
         self.assertEqual(logic.cfg.get("llm_model", ""), "")
         titles = [payload["title"] for kind, payload in emitted if kind == "toast"]
-        self.assertIn("Modelo no válido", titles)
+        self.assertIn("Identificador no válido", titles)
 
     def test_set_advanced_llm_token_never_echoed(self):
         logic, _emitted = make_logic()
@@ -566,7 +566,7 @@ class LogicSettingsTests(unittest.TestCase):
         logic.model_ready = False
         state = logic.state_payload()
         self.assertTrue(state["status"]["disabled_reason"])
-        self.assertIn("modelo", state["status"]["disabled_reason"].casefold())
+        self.assertIn("reconocimiento", state["status"]["disabled_reason"].casefold())
         pages = {item["id"]: item["page"] for item in state["checklist"]}
         self.assertEqual(pages, {"models": "home", "mic": "audio", "key": "settings"})
 
@@ -594,6 +594,13 @@ class LogicSettingsTests(unittest.TestCase):
         toast = next(payload for kind, payload in emitted if kind == "toast")
         self.assertIn("Detalle:", toast["message"])
         self.assertNotEqual(toast["message"].strip(), "sin red")
+
+    def test_public_error_detail_hides_local_component_names(self):
+        from instant2_app.gui import _public_error_detail
+        detail = _public_error_detail(
+            "RuntimeError", "Kokoro failed while loading Qwen with llama.cpp")
+        self.assertNotRegex(detail.lower(), r"kokoro|qwen|llama\.cpp")
+        self.assertIn("componente local", detail)
 
     def test_cancelled_model_download_is_recoverable(self):
         logic, _emitted = make_logic()

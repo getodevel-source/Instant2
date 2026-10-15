@@ -43,6 +43,21 @@ INT_KEYS = ("threads",)
 FLOAT_KEYS = ("max_seg", "blank_penalty")
 
 
+def parse_vad_mode(value):
+    """Accept public descriptions while preserving older internal flag values."""
+    normalized = " ".join(str(value).strip().casefold().replace("_", " ").split())
+    aliases = {
+        "liviano": "silero", "liviana": "silero", "silero": "silero",
+        "más preciso": "ten", "mas preciso": "ten",
+        "más precisa": "ten", "mas precisa": "ten",
+        "ten": "ten",
+    }
+    try:
+        return aliases[normalized]
+    except KeyError as exc:
+        raise ValueError("elegí «liviana» o «más precisa».") from exc
+
+
 def _read_json(path):
     with open(path, encoding="utf-8") as f:
         value = json.load(f)

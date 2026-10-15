@@ -825,7 +825,7 @@ class Daemon:
             # TTS libraries include the input text in their error messages.
             log.warning("falló la lectura por F10 (%s)", type(exc).__name__)
             self.overlay.reading_error_for(
-                sid, "No se pudo leer la selección. Revisá Kokoro y la salida de audio.")
+                sid, "No se pudo leer la selección. Revisá la lectura y la salida de audio.")
         finally:
             with self.lock:
                 if self._tts_session == sid:
@@ -1340,8 +1340,8 @@ def cmd_check(cfg):
         eng = Engine(threads=cfg.get("threads", 4), max_seg=cfg.get("max_seg", 20.0))
         eng.recognizer()
         eng.vad()
-    except FileNotFoundError as e:
-        print(f"  SIN MODELOS: {e}")
+    except FileNotFoundError:
+        print("  COMPONENTES DE VOZ INCOMPLETOS: preparalos desde Inicio y reintentá.")
         return 2
     dt = time.time() - t0
     print(f"  boot mic+warmup: {dt:.1f}s ({'OK <5s' if dt < 5 else 'LENTO >5s'})")

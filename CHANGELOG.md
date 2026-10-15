@@ -4,9 +4,25 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 El proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 Instant2 se desarrolla en su propio repositorio, a partir de la base de Instant.
-Las entradas 0.6.x que siguen describen la base heredada de Instant; no son
-versiones publicadas de Instant2. Las versiones, los ajustes, los datos y las
-publicaciones de Instant2 comienzan por separado.
+Las dos primeras entradas documentan versiones de Instant2. El historial que
+sigue corresponde al Instant heredado y sus versiones no son releases de
+Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z`.
+
+## [0.1.1] - 2026-10-14
+
+### Mejorado
+- La interfaz identifica las funciones por su uso y oculta los nombres de los
+  componentes locales y sus archivos.
+- El modo automático informa que descarga en segundo plano y solicita confirmar
+  la instalación y el reinicio.
+- El README de la aplicación incluye capturas propias de Instant2 y pasos de
+  instalación para sus tres plataformas.
+
+### Validación
+- Audita el flujo de actualización, con cobertura de descarga, SHA256, reintento,
+  confirmación y rutas de instalación, además de la suite multiplataforma del
+  workflow de release. El tag `instant2-v0.1.1` evita reutilizar tags heredados
+  de Instant y el actualizador interpreta su versión como `0.1.1`.
 
 ## [0.1.0] - 2026-10-12
 
@@ -22,6 +38,8 @@ publicaciones de Instant2 comienzan por separado.
 
 ### Validaci?n
 - A?ade comprobaciones del flujo de dictado, runtime local, errores y privacidad.
+
+## Historial heredado de Instant
 
 ## [0.6.1] - 2026-10-12
 

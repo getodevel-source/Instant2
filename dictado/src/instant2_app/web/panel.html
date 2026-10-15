@@ -376,7 +376,7 @@ table.vocab th:nth-child(2) { width: 47%; }
 
           <div class="dictation-card" aria-labelledby="dictationTitle">
             <span class="dictation-card-title" id="dictationTitle"><span class="dictation-glyph" aria-hidden="true"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M8 22h8"/></svg></span>Dictado mejorado<kbd class="dictation-key" id="dictationKey">F9</kbd></span>
-            <small>Parakeet reconoce la voz; el LLM revisa el texto si est&aacute; disponible.</small>
+            <small>El motor de voz convierte lo que dec&iacute;s en texto; la revisi&oacute;n de lenguaje es opcional.</small>
             <p class="dictation-action">Manten&eacute; <kbd id="dictationActionKey">F9</kbd> mientras habl&aacute;s; solt&aacute; para pegar.</p>
           </div>
           <div class="selection-hint"><kbd>F10</kbd><div><p class="dictation-description">Seleccion&aacute; texto en cualquier aplicaci&oacute;n para escucharlo. Presion&aacute; otra vez para detener.</p><button class="link" data-page="read">Preferencias de lectura &rarr;</button></div></div>
@@ -404,17 +404,17 @@ table.vocab th:nth-child(2) { width: 47%; }
           <p class="small" id="runBtnReason" role="status" aria-live="polite"></p>
         </div>
 
-        <aside class="home-aside" aria-label="Resumen de motores y dispositivos">
+        <aside class="home-aside" aria-label="Resumen de voz y dispositivos">
           <h2 class="home-aside-title">En este equipo</h2>
           <div class="home-stat">
             <span class="stat-symbol" aria-hidden="true"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4M9 9h6v6H9Z"/></svg></span>
-            <div class="home-stat-copy"><small>RECONOCIMIENTO LOCAL</small><strong id="speechModelHome">Parakeet · preparado</strong></div>
+            <div class="home-stat-copy"><small>RECONOCIMIENTO</small><strong id="speechModelHome">Preparado en este equipo</strong></div>
             <button class="link" data-page="audio" aria-label="Configurar micr&oacute;fono">Ver</button>
           </div>
           <div class="home-stat" id="llmHomeCard">
             <span class="stat-symbol" aria-hidden="true"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M4 10h16M4 15h10M4 20h7m5-2 2 2 4-5"/></svg></span>
             <div class="home-stat-copy"><small>REVISI&Oacute;N DE TEXTO</small><strong id="llmHomeStatus">LLM sin configurar</strong></div>
-            <button class="link" id="llmHomeSettings" data-page="settings" aria-label="Configurar el modelo de lenguaje">Configurar</button>
+            <button class="link" id="llmHomeSettings" data-page="settings" aria-label="Configurar el servicio de lenguaje">Configurar</button>
           </div>
           <div class="home-stat">
             <span class="stat-symbol" aria-hidden="true"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M8 22h8"/></svg></span>
@@ -478,33 +478,33 @@ table.vocab th:nth-child(2) { width: 47%; }
             <div class="advanced-grid">
               <div class="field"><label for="overlayStyleSelect">Indicador de voz</label><select id="overlayStyleSelect"><option value="orbital">Espectro reactivo</option><option value="classic">Barras cl&aacute;sicas</option></select><small>Se muestra durante el dictado.</small></div>
               <div class="field"><label for="threadsSelect">Hilos de CPU</label><select id="threadsSelect"><option value="1">1 hilo</option><option value="2">2 hilos</option><option value="4">4 hilos</option><option value="6">6 hilos</option><option value="8">8 hilos</option></select><small>Controla el reconocimiento y la lectura local. M&aacute;s hilos pueden acelerar la inferencia y usar m&aacute;s CPU.</small></div>
-              <div class="field"><label for="resourceModeSelect">Prioridad de recursos</label><select id="resourceModeSelect"><option value="speed">M&aacute;xima rapidez (mantener en memoria)</option><option value="balanced">Equilibrado (liberar tras 5 minutos)</option><option value="memory">Menor uso de memoria (liberar tras 90 segundos)</option></select><small>Controla ASR y Kokoro; el LLM administrado descansa si llama.cpp admite reposo. Servicios externos mantienen su propia pol&iacute;tica.</small></div>
-              <div class="field"><label for="vadModelSelect">Detector de voz</label><select id="vadModelSelect"><option value="silero">Silero (liviano)</option><option value="ten">TEN (m&aacute;s preciso)</option></select><small>TEN baja ~126 KB extra una sola vez. Requiere reiniciar el dictado.</small></div>
+              <div class="field"><label for="resourceModeSelect">Prioridad de recursos</label><select id="resourceModeSelect"><option value="speed">M&aacute;xima rapidez (mantener en memoria)</option><option value="balanced">Equilibrado (liberar tras 5 minutos)</option><option value="memory">Menor uso de memoria (liberar tras 90 segundos)</option></select><small>Controla el reconocimiento y la lectura. El servicio de lenguaje administrado descansa si admite reposo; los servicios externos conservan su propia pol&iacute;tica.</small></div>
+              <div class="field"><label for="vadModelSelect">Detecci&oacute;n de voz</label><select id="vadModelSelect"><option value="silero">Liviana</option><option value="ten">M&aacute;s precisa</option></select><small>La opci&oacute;n m&aacute;s precisa descarga un componente peque&ntilde;o una sola vez. Requiere reiniciar el dictado.</small></div>
               <div class="field"><label for="blankPenaltyInput">Penalidad al silencio</label><input id="blankPenaltyInput" type="number" min="0" max="1" step="0.05" inputmode="decimal" aria-describedby="blankPenaltyHelp blankPenaltyError"><small id="blankPenaltyHelp">0 = apagada. Tocarla solo con error medido.</small><span class="inline-error" id="blankPenaltyError" role="alert"></span></div>
               <div class="field"><label for="maxSegmentInput">Duraci&oacute;n m&aacute;xima por segmento</label><input id="maxSegmentInput" type="number" min="1" max="60" step="1" inputmode="numeric" aria-describedby="maxSegmentHelp maxSegmentError"><small id="maxSegmentHelp">El audio largo se divide en segmentos.</small><span class="inline-error" id="maxSegmentError" role="alert"></span></div>
               <div class="field"><span class="field-title">Confirmaci&oacute;n sonora</span><label class="check"><input id="soundCheck" type="checkbox">Emitir un tono al terminar</label><small>El tono se reproduce en este equipo.</small></div>
-              <div class="field"><label for="updateModeSelect">Actualizaciones</label><select id="updateModeSelect"><option value="notify">Avisarme antes de descargar</option><option value="auto">Descargar solas</option><option value="off">Apagadas</option></select><small>Con aviso, nada se descarga sin tu clic. Apagadas no consulta versiones.</small></div>
+              <div class="field"><label for="updateModeSelect">Actualizaciones</label><select id="updateModeSelect"><option value="notify">Avisarme antes de descargar</option><option value="auto">Descargar autom&aacute;ticamente</option><option value="off">Apagadas</option></select><small>En autom&aacute;tico, Instant2 busca y descarga en segundo plano. Para instalarla y reiniciar, siempre te pide confirmaci&oacute;n. Con aviso, espera tu clic para descargar.</small></div>
             </div>
             <div class="field">
-              <label for="llmUrlInput">Servidor de lenguaje (recomendado: local)</label>
+              <label for="llmUrlInput">Servidor de lenguaje</label>
               <input id="llmUrlInput" type="url" placeholder="http://127.0.0.1:8080" spellcheck="false" autocomplete="off" aria-describedby="llmUrlHelp llmUrlError">
               <small id="llmDestination" role="status" aria-live="polite">Sin servidor configurado.</small>
-              <small id="llmUrlHelp">Conect&aacute; Ollama, llama.cpp u otro servidor compatible con OpenAI. Recomendamos uno local. El modelo recibe solo texto, nunca audio; si el servidor es remoto, el texto dictado sale del equipo.</small>
+              <small id="llmUrlHelp">Conect&aacute; un servicio compatible con la API de OpenAI. Si us&aacute;s uno remoto, el texto dictado sale de este equipo; el audio no se env&iacute;a.</small>
               <span class="inline-error" id="llmUrlError" role="alert"></span>
             </div>
             <div class="field">
-              <label for="llmModelInput">Nombre del modelo</label>
-              <input id="llmModelInput" type="text" maxlength="200" placeholder="Ej.: qwen3.5:2b-q4_K_M" spellcheck="false" autocomplete="off">
-              <small>Us&aacute; el nombre exacto del servidor. La instalaci&oacute;n completa trae Qwen local ya preparado.</small>
+              <label for="llmModelInput">Identificador del servicio</label>
+              <input id="llmModelInput" type="text" maxlength="200" placeholder="Identificador indicado por el servicio" spellcheck="false" autocomplete="off">
+              <small>Si el servicio lo requiere, ingres&aacute; el identificador que muestra su configuraci&oacute;n.</small>
             </div>
             <div class="field">
               <span class="field-title">Servidor local administrado</span>
-              <p class="small">El proceso de dictado administra el LLM local mientras trabaja. Si no responde y elegiste los archivos locales de runtime y modelo, los inicia y recupera autom&aacute;ticamente. El perfil de recursos decide cu&aacute;ndo duerme el modelo.</p>
-              <small>El instalador completo incluye Qwen y llama-server. En el portable o desde el c&oacute;digo fuente, eleg&iacute; archivos locales ya instalados. Los servidores remotos quedan disponibles por separado.</small>
+              <p class="small">Instant2 puede administrar el servicio local mientras dict&aacute;s. Si deja de responder, intenta iniciarlo y recuperarlo. El perfil de recursos decide cu&aacute;ndo entra en reposo.</p>
+              <small>La instalaci&oacute;n completa lo deja preparado. En el portable o desde el c&oacute;digo fuente, pod&eacute;s elegir los archivos instalados. Tambi&eacute;n pod&eacute;s usar un servicio remoto.</small>
             </div>
             <div class="advanced-grid">
-              <div class="field"><label for="llmServerPathInput">Ejecutable llama-server</label><div class="path-control-row"><input id="llmServerPathInput" type="text" placeholder="Ruta a llama-server.exe" spellcheck="false" autocomplete="off"><button class="btn" type="button" data-pick="llm_server_path">Examinar</button></div><small>Se completa al instalar el paquete completo; pod&eacute;s elegir otro runtime.</small></div>
-              <div class="field"><label for="llmModelPathInput">Archivo local del modelo</label><div class="path-control-row"><input id="llmModelPathInput" type="text" placeholder="Ruta a un modelo .gguf" spellcheck="false" autocomplete="off"><button class="btn" type="button" data-pick="llm_model_path">Examinar</button></div><small>Qwen viene incluido en la instalaci&oacute;n completa; tambi&eacute;n admite otra ruta.</small></div>
+              <div class="field"><label for="llmServerPathInput">Archivo del servicio</label><div class="path-control-row"><input id="llmServerPathInput" type="text" placeholder="Eleg&iacute; el archivo del servicio" spellcheck="false" autocomplete="off"><button class="btn" type="button" data-pick="llm_server_path">Examinar</button></div><small>La instalaci&oacute;n completa lo configura autom&aacute;ticamente; tambi&eacute;n pod&eacute;s elegir otro archivo.</small></div>
+              <div class="field"><label for="llmModelPathInput">Archivo de lenguaje</label><div class="path-control-row"><input id="llmModelPathInput" type="text" placeholder="Archivo configurado" spellcheck="false" autocomplete="off"><button class="btn" type="button" data-pick="llm_model_path">Examinar</button><button class="btn" id="llmModelPathClear" type="button" hidden>Quitar</button></div><small>El archivo queda guardado en este equipo. Su nombre no se muestra en el panel.</small></div>
               <div class="field"><label for="llmAccelerationSelect">Uso de GPU y CPU</label><select id="llmAccelerationSelect"><option value="auto">Autom&aacute;tico (GPU y fallback a CPU)</option><option value="cpu">Solo CPU</option></select><small>En autom&aacute;tico se usa un dispositivo que el runtime detecte; si no inicia, se prueba CPU.</small></div>
             </div>
             <div class="field runtime-status-field">
@@ -515,12 +515,12 @@ table.vocab th:nth-child(2) { width: 47%; }
             <div class="field">
               <span class="field-title">Dictado mejorado</span>
               <label class="check"><input id="llmNormalCheck" type="checkbox">Pedir al LLM que revise cada dictado mejorado</label>
-              <small>Qwen puede corregir palabras que Parakeet reconoció mal. Si Qwen falla o no está disponible, Instant2 conserva el texto local.</small>
+              <small>La revisión puede corregir errores de reconocimiento. Si no está disponible, Instant2 conserva el texto preparado en este equipo.</small>
             </div>
             <div class="field">
               <span class="field-title">Recursos de este equipo</span>
               <small id="llmResources" role="status" aria-live="polite">Detectando CPU, RAM y GPU…</small>
-              <small>Instant2 muestra una recomendaci&oacute;n; el motor local confirma el uso de GPU/CPU. El instalador completo incluye Qwen y llama.cpp; el portable permite elegir archivos locales.</small>
+              <small>Instant2 muestra una recomendaci&oacute;n y el servicio confirma el uso de GPU o CPU. La instalaci&oacute;n completa lo deja preparado; en el portable pod&eacute;s elegir los archivos.</small>
             </div>
             <div class="field">
               <label for="llmTokenInput">Token del servidor (opcional)</label>
@@ -557,7 +557,7 @@ table.vocab th:nth-child(2) { width: 47%; }
 
     <section class="page-view" id="sec-read" aria-labelledby="readTitle" hidden>
       <header class="page-head">
-        <p class="eyebrow">VOZ LOCAL · KOKORO</p>
+        <p class="eyebrow">LECTURA EN VOZ ALTA</p>
         <h1 id="readTitle" tabindex="-1">Leer texto en voz alta</h1>
         <p>Peg&aacute; o escrib&iacute; un texto para escucharlo. Con Instant2 activo, seleccion&aacute; texto en otra aplicaci&oacute;n y presion&aacute; F10; otra vez para detener. Usa la voz y velocidad elegidas aqu&iacute;.</p>
       </header>
@@ -573,7 +573,7 @@ table.vocab th:nth-child(2) { width: 47%; }
           <div class="field">
             <label for="readVoice">Voz en espa&ntilde;ol</label>
             <select id="readVoice">
-              <option value="ef_dora">Dora · femenina</option>
+              <option value="ef_dora">Espa&ntilde;ol · femenina</option>
             </select>
           </div>
           <div class="read-speed">
@@ -584,15 +584,15 @@ table.vocab th:nth-child(2) { width: 47%; }
         </div>
         <div class="read-status" role="status" aria-live="polite">
           <span class="dot checking" id="readStatusDot" aria-hidden="true"></span>
-          <span id="readStatus">La primera lectura descarga Kokoro y la voz Dora (aprox. 326 MB).</span>
+          <span id="readStatus">La primera lectura descarga los componentes de voz (aprox. 326 MB).</span>
         </div>
         <div class="read-meter" id="readProgressWrap" hidden>
-          <div class="meter" role="progressbar" aria-label="Descarga del modelo Kokoro" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="readProgressFill"></div></div>
+          <div class="meter" role="progressbar" aria-label="Descarga de componentes de voz" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="readProgressFill"></div></div>
         </div>
         </div>
         </div>
         <div class="read-actions">
-          <p class="read-privacy"><strong>Procesamiento local.</strong> Kokoro usa el procesador de este equipo; no se env&iacute;a ni se guarda el texto. Si falta, el modelo se descarga una vez. Se carga al comenzar y se libera seg&uacute;n la prioridad de recursos elegida en Ajustes.</p>
+          <p class="read-privacy"><strong>Procesamiento en este equipo.</strong> El texto no se env&iacute;a ni se guarda. Los componentes se descargan una vez si hacen falta, se cargan al comenzar y se liberan seg&uacute;n la prioridad de recursos elegida en Ajustes.</p>
           <div class="row">
             <button class="btn primary" id="readPlay" type="button" disabled>Leer en voz alta</button>
             <button class="btn" id="readStop" type="button" disabled>Detener</button>
@@ -617,7 +617,7 @@ table.vocab th:nth-child(2) { width: 47%; }
 <div class="overlay" id="diagModal" hidden>
 <div class="modal" role="dialog" aria-modal="true" aria-labelledby="diagModalTitle">
 <h2 id="diagModalTitle">Diagnóstico</h2>
-<p class="small">Micrófono, tecla y modelos</p>
+<p class="small">Micrófono, tecla y voz</p>
 <pre id="diagText">Ejecutando comprobaciones…</pre>
 <div class="row"><button class="btn" id="diagClose">Cerrar</button></div>
 </div>
@@ -658,7 +658,7 @@ const autostart = $("autostart"), overlayStyleSelect = $("overlayStyleSelect");
 const llmDestination = $("llmDestination");
 const llmModelInput = $("llmModelInput"), llmNormalCheck = $("llmNormalCheck");
 const llmServerPathInput = $("llmServerPathInput");
-const llmModelPathInput = $("llmModelPathInput"), llmAccelerationSelect = $("llmAccelerationSelect");
+const llmModelPathInput = $("llmModelPathInput"), llmModelPathClear = $("llmModelPathClear"), llmAccelerationSelect = $("llmAccelerationSelect");
 const llmRuntimeStatus = $("llmRuntimeStatus"), llmRuntimeRetry = $("llmRuntimeRetry");
 const llmResources = $("llmResources");
 const resourceModeSelect = $("resourceModeSelect");
@@ -750,15 +750,15 @@ function updateLLMDestination(value) {
     llmDestination.textContent = "La dirección del servicio no es válida.";
   }
 }
-function updateLLMHomeStatus(value, model, runtime, managed) {
+function updateLLMHomeStatus(value, _model, runtime, managed) {
   const address = (value || "").trim();
   const state = runtime?.status || "configured";
   llmHomeSettings.textContent = !address || state === "needs_setup" ? "Configurar"
     : state === "error" ? "Revisar" : "Ajustes";
   llmHomeStatus.dataset.state = state;
   if (!address) {
-    llmHomeStatus.textContent = managed ? "Configurar LLM local" : "Sin LLM configurado";
-    llmHomeStatus.title = managed ? (runtime?.detail || "Indic&aacute; el runtime y el modelo en Ajustes.")
+    llmHomeStatus.textContent = managed ? "Servicio local sin configurar" : "Sin servicio configurado";
+    llmHomeStatus.title = managed ? "Complet&aacute; la configuraci&oacute;n del servicio en Ajustes."
       : "El dictado sigue disponible con reconocimiento y correcciones locales.";
     return;
   }
@@ -767,16 +767,15 @@ function updateLLMHomeStatus(value, model, runtime, managed) {
     const host = parsed.hostname.replace(/^\[|\]$/g, "");
     const local = host === "localhost" || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host);
     if (!local) {
-      llmHomeStatus.textContent = "LLM remoto · texto sale del equipo";
+      llmHomeStatus.textContent = "Servicio remoto · el texto sale del equipo";
       llmHomeStatus.title = `Destino remoto: ${host}. El audio permanece local.`;
     } else {
-      const labels = {ready:"LLM local listo", sleeping:"LLM local en reposo",
-        starting:"Iniciando LLM local…",
-        recovering:"Recuperando LLM local", error:"LLM local no responde",
-        needs_setup:"Completar LLM local", configured:"LLM local configurado",
-        disabled:"LLM local configurado"};
-      llmHomeStatus.textContent = labels[state] || "LLM local configurado";
-      llmHomeStatus.title = runtime?.detail || `Modelo: ${model || "sin identificar"}.`;
+      const labels = {ready:"Servicio listo", sleeping:"Servicio en reposo",
+        starting:"Iniciando servicio…", recovering:"Recuperando servicio",
+        error:"El servicio no responde", needs_setup:"Completar configuración",
+        configured:"Servicio configurado", disabled:"Servicio configurado"};
+      llmHomeStatus.textContent = labels[state] || "Servicio configurado";
+      llmHomeStatus.title = "Estado del servicio local administrado por Instant2.";
     }
   } catch (_) {
     llmHomeStatus.textContent = "Dirección de servicio no válida";
@@ -938,13 +937,13 @@ function onState(raw) {
   if (s.model) {
     const m = s.model;
     const downloading = !!(m.progress && m.progress.visible);
-    speechModelHome.textContent = m.ready ? "Parakeet · listo en este equipo"
+    speechModelHome.textContent = m.ready ? "Preparado en este equipo"
       : downloading ? "Descargando reconocimiento…" : "Falta preparar reconocimiento";
     modelSetup.hidden = !!m.ready;
     modelDot.className = `dot ${downloading ? "starting" : "down"}`;
-    modelStatus.textContent = m.status || "Falta descargar el modelo de reconocimiento.";
+    modelStatus.textContent = m.status || "Falta preparar el reconocimiento.";
     modelDownloadNote.hidden = !!m.ready;
-    modelBtn.textContent = downloading ? "Descargando…" : (m.button || "Descargar modelo");
+    modelBtn.textContent = downloading ? "Descargando…" : (m.button || "Preparar reconocimiento");
     modelBtn.disabled = downloading;
     modelCancelBtn.hidden = !downloading;
     modelCancelBtn.disabled = !!m.canceling;
@@ -955,7 +954,7 @@ function onState(raw) {
     modelProgFill.style.setProperty("--progress", String(modelPercent / 100));
     modelProgWrap.querySelector("[role='progressbar']")
       .setAttribute("aria-valuenow", String(modelPercent));
-    modelProgText.textContent = downloading ? (m.status || "Descargando el modelo…") : "";
+    modelProgText.textContent = downloading ? (m.status || "Descargando reconocimiento…") : "";
   }
   if (s.vocab) {
     const v = s.vocab;
@@ -1012,12 +1011,12 @@ function onState(raw) {
         updateReadSpeed();
       }
     }
-    readStatus.textContent = t.message || "Kokoro está listo para leer.";
+    readStatus.textContent = t.message || "La voz está lista para leer.";
     readStatus.dataset.state = t.status || "missing";
     readStatus.closest(".read-status").dataset.state = t.status || "missing";
     readStatusDot.className = `dot ${t.busy ? "starting" : t.status === "error" ? "down" : "ok"}`;
     readPlay.disabled = !!t.busy || !readText.value.trim();
-    readPlay.textContent = t.busy ? (t.status === "downloading" ? "Descargando Kokoro…"
+    readPlay.textContent = t.busy ? (t.status === "downloading" ? "Descargando componentes…"
       : t.status === "playing" ? "Leyendo…" : "Preparando…") : "Leer en voz alta";
     readStop.disabled = !t.busy || !!t.canceling;
     readStop.textContent = t.canceling ? "Deteniendo…"
@@ -1032,9 +1031,20 @@ function onState(raw) {
   if (s.advanced) {
     const a = s.advanced;
     llmNormalCheck.checked = a.llm_normal_enabled !== false;
-    if (document.activeElement !== llmModelInput) llmModelInput.value = a.llm_model || "";
+    const modelNameIsLocal = !!a.llm_model_path
+      || /^(http:\/\/)?(localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::|\/|$)/i.test((a.llm_url || "").trim());
+    if (document.activeElement !== llmModelInput) {
+      llmModelInput.value = modelNameIsLocal ? "" : (a.llm_model || "");
+      llmModelInput.placeholder = modelNameIsLocal && a.llm_model
+        ? "Identificador configurado" : "Identificador indicado por el servicio";
+    }
     if (document.activeElement !== llmServerPathInput) llmServerPathInput.value = a.llm_server_path || "";
-    if (document.activeElement !== llmModelPathInput) llmModelPathInput.value = a.llm_model_path || "";
+    if (document.activeElement !== llmModelPathInput) {
+      llmModelPathInput.value = "";
+      llmModelPathInput.placeholder = a.llm_model_path ? "Archivo configurado" : "Eleg&iacute; un archivo";
+      llmModelPathInput.dataset.configured = a.llm_model_path ? "true" : "false";
+      llmModelPathClear.hidden = !a.llm_model_path;
+    }
     if (document.activeElement !== llmAccelerationSelect) llmAccelerationSelect.value = a.llm_acceleration || "auto";
     if (document.activeElement !== resourceModeSelect) resourceModeSelect.value = a.resource_mode || "balanced";
     llmResources.textContent = a.llm_resources || "No pude detectar los recursos de este equipo.";
@@ -1056,12 +1066,22 @@ function onState(raw) {
       llmTokenInput.placeholder = a.llm_token_set ? "Token guardado (escribí para reemplazarlo)" : "Solo si el servidor pide autenticación";
   }
   if (s.llm_runtime) {
-    llmRuntimeStatus.textContent = s.llm_runtime.detail || "Estado local sin información.";
-    llmRuntimeStatus.dataset.state = s.llm_runtime.status || "disabled";
-    const remoteConfigured = s.llm_runtime.status === "configured"
-      && /remoto/i.test(s.llm_runtime.detail || "");
-    const externalLocal = s.llm_runtime.status === "configured"
-      && /no administra/i.test(s.llm_runtime.detail || "");
+    const runtimeState = s.llm_runtime.status || "disabled";
+    const runtimeDetail = s.llm_runtime.detail || "";
+    const runtimeRemote = runtimeState === "configured" && /remoto/i.test(runtimeDetail);
+    const runtimeExternal = runtimeState === "configured" && /no administra/i.test(runtimeDetail);
+    const runtimeLabels = {ready:"Servicio listo.", sleeping:"Servicio en reposo.",
+      starting:"Iniciando servicio…", recovering:"Recuperando servicio…",
+      error:"El servicio no responde. Revis&aacute; los ajustes.",
+      needs_setup:"Eleg&iacute; los archivos del servicio en Ajustes.",
+      configured:"Servicio local configurado.", disabled:"Administraci&oacute;n local apagada.",
+      stopped:"Servicio detenido."};
+    llmRuntimeStatus.textContent = runtimeRemote ? "Servicio remoto configurado."
+      : runtimeExternal ? "Servicio local externo configurado."
+      : runtimeLabels[runtimeState] || "Estado del servicio no disponible.";
+    llmRuntimeStatus.dataset.state = runtimeState;
+    const remoteConfigured = runtimeRemote;
+    const externalLocal = runtimeExternal;
     llmRuntimeRetry.disabled = ["starting", "recovering", "needs_setup", "disabled"].includes(s.llm_runtime.status)
       || remoteConfigured || externalLocal;
     llmRuntimeRetry.textContent = ["ready", "sleeping"].includes(s.llm_runtime.status)
@@ -1396,7 +1416,7 @@ document.querySelectorAll("[data-page]").forEach((el) => {
       goToPage(page, {focus:true, notify:true, force:true});
       requestAnimationFrame(() => {
         const target = !llmServerPathInput.value ? llmServerPathInput
-          : !llmModelPathInput.value ? llmModelPathInput : llmUrlInput;
+          : llmModelPathInput.dataset.configured !== "true" ? llmModelPathInput : llmUrlInput;
         target.focus();
       });
       return;
@@ -1415,7 +1435,22 @@ autostart.addEventListener("change", () => send({op:"set_autostart", value:autos
 overlayStyleSelect.addEventListener("change", () => send({op:"set_advanced", key:"overlay_style", value:overlayStyleSelect.value}));
 llmModelInput.addEventListener("change", () => send({op:"set_advanced", key:"llm_model", value:llmModelInput.value}));
 llmServerPathInput.addEventListener("change", () => send({op:"set_advanced", key:"llm_server_path", value:llmServerPathInput.value}));
-llmModelPathInput.addEventListener("change", () => send({op:"set_advanced", key:"llm_model_path", value:llmModelPathInput.value}));
+llmModelPathInput.addEventListener("change", () => {
+  const value = llmModelPathInput.value;
+  if (!value.trim() && llmModelPathInput.dataset.configured !== "true") return;
+  send({op:"set_advanced", key:"llm_model_path", value});
+  llmModelPathInput.value = "";
+  llmModelPathInput.placeholder = value.trim() ? "Archivo configurado" : "Eleg&iacute; un archivo";
+  llmModelPathInput.dataset.configured = value.trim() ? "true" : "false";
+  llmModelPathClear.hidden = !value.trim();
+});
+llmModelPathClear.addEventListener("click", () => {
+  send({op:"set_advanced", key:"llm_model_path", value:""});
+  llmModelPathInput.value = "";
+  llmModelPathInput.placeholder = "Eleg&iacute; un archivo";
+  llmModelPathInput.dataset.configured = "false";
+  llmModelPathClear.hidden = true;
+});
 llmAccelerationSelect.addEventListener("change", () => send({op:"set_advanced", key:"llm_acceleration", value:llmAccelerationSelect.value}));
 document.querySelectorAll("[data-pick]").forEach((button) => {
   button.addEventListener("click", () => send({op:"choose_runtime_file", kind:button.dataset.pick}));

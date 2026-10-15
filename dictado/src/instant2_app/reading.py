@@ -63,7 +63,7 @@ class PanelReadingActions:
             "busy": True,
             "canceling": False,
             "percent": 0 if not ready else 100,
-            "message": ("Descargando Kokoro por primera vez…" if not ready else
+            "message": ("Descargando componentes de voz…" if not ready else
                         "Preparando la voz local…"),
         })
         if self._tts_reader is None:
@@ -85,7 +85,7 @@ class PanelReadingActions:
                 status = "downloading"
             elif str(detail).startswith("Leyendo"):
                 status = "playing"
-            elif str(detail).startswith("Modelo Kokoro verificado"):
+            elif str(detail).startswith("Componentes de voz verificados"):
                 status = "preparing"
             self._tts_state.update({
                 "status": status,
@@ -122,11 +122,11 @@ class PanelReadingActions:
                           "Descarga detenida. El avance se conserva; podés reintentar.")
             elif isinstance(exc, ModelIntegrityError):
                 status, detail = "error", (
-                    "No se pudo descargar o verificar Kokoro. Revisá la conexión y reintentá."
+                    "No se pudieron descargar o verificar los componentes de voz. Revisá la conexión y reintentá."
                 )
             elif isinstance(exc, (ImportError, ModuleNotFoundError)):
                 status, detail = "error", (
-                    "Falta un componente de voz local. Reinstalá Instant2 y reintentá."
+                    "Falta un componente de voz. Reinstalá Instant2 y reintentá."
                 )
             elif isinstance(exc, OSError):
                 status, detail = "error", (

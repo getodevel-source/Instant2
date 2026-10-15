@@ -14,7 +14,7 @@ class ProductIdentityTests(unittest.TestCase):
         self.assertEqual(APP_NAME, "Instant2")
         self.assertEqual(APP_COMMAND, "instant2")
         self.assertEqual(APP_SLUG, "instant2")
-        self.assertEqual(__version__, "0.1.0")
+        self.assertEqual(__version__, "0.1.1")
 
 
 if __name__ == "__main__":

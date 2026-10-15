@@ -7,6 +7,11 @@ import sys
 from instant2_app.identity import APP_COMMAND
 
 
+def _parse_vad_mode(value):
+    from instant2_app.config import parse_vad_mode
+    return parse_vad_mode(value)
+
+
 def _log_setup():
     from logging.handlers import RotatingFileHandler
 
@@ -73,8 +78,9 @@ def main(argv=None):
     p_setup.add_argument("--no-autostart", action="store_true",
                          help="desactiva el arranque con el sistema")
     p_setup.add_argument("--no-meter", action="store_true")
-    p_setup.add_argument("--vad-model", default=None, choices=("silero", "ten"),
-                         help="detector de voz: silero (liviano) o ten (más preciso)")
+    p_setup.add_argument("--vad-model", default=None, type=_parse_vad_mode,
+                         metavar="MODO",
+                         help="detección liviana o más precisa (componente adicional)")
     p_setup.add_argument("--blank-penalty", type=float, default=None,
                          help="penalidad al silencio 0..1 (default 0)")
     p_setup.add_argument("--no-probe", action="store_true")
@@ -84,7 +90,7 @@ def main(argv=None):
                          help="autoinstala lo permitido por el SO y re-chequea")
     sub.add_parser("run", help="daemon hold-to-talk")
     sub.add_parser("stop", help="frena el daemon en ejecución (deja todo limpio)")
-    sub.add_parser("check", help="diagnóstico de teclado, micrófono y modelos")
+    sub.add_parser("check", help="diagnóstico de teclado, micrófono y voz")
     sub.add_parser("diagnostics", help="abre el diagnóstico visual")
     p_update = sub.add_parser("update", help="busca una versión nueva en GitHub")
     p_update.add_argument("--download", metavar="DIR", default=None,

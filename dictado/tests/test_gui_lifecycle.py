@@ -243,7 +243,7 @@ class PanelLifecycleTests(unittest.TestCase):
             self.assertFalse(logic._start_daemon(save_settings=False))
         self.assertEqual(daemon_spawns(launch), [])
         titles = [payload["title"] for kind, payload in emitted if kind == "toast"]
-        self.assertIn("Modelos pendientes", titles)
+        self.assertIn("Voz pendiente", titles)
 
     def test_daemon_start_timeout_sets_recovery_copy(self):
         scheduled = []

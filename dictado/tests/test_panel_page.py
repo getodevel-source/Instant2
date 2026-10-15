@@ -4,6 +4,7 @@ Los hosts de QML ya se rompieron una vez por olvidar `webChannel: channel`
 (el canal queda sin transporte y la página lo avisa con un título). Acá queda
 anclado ese contrato, además de la paleta y las piezas puras de gui.py.
 """
+import html
 import os
 import re
 import sys
@@ -53,11 +54,27 @@ class PanelPageContractTests(unittest.TestCase):
                          "ESTADO DEL DICTADO", "Servidor local administrado",
                          "Guardar cambios", "A&ntilde;adir perfil", "Eliminar perfil",
                          "A&ntilde;adir t&eacute;rmino", "Descargar reconocimiento", "Cambiar tecla",
-                         "Leer texto en voz alta", "Kokoro usa el procesador de este equipo",
+                         "Leer texto en voz alta", "El texto no se env&iacute;a ni se guarda.",
                          "Iniciar con el sistema", "Diagnóstico",
                          "Buscar actualizaciones", "La prueba mide el nivel; no guarda audio.",
                          "Dictado mejorado"):
             self.assertIn(expected, source)
+
+    def test_page_hides_bundled_model_and_runtime_names(self):
+        source = self._source()
+        visible = re.sub(r"<script\b[^>]*>.*?</script>", " ", source,
+                         flags=re.IGNORECASE | re.DOTALL)
+        visible = html.unescape(re.sub(r"<[^>]+>", " ", visible)).casefold()
+        for name in ("parakeet", "kokoro", "qwen", "silero", "ten (",
+                     "ollama", "llama.cpp", "llama-server", "dora ·",
+                     "modelo local", "modelos", "el modelo"):
+            self.assertNotIn(name, visible)
+
+    def test_automatic_updates_download_in_background_and_confirm_install(self):
+        source = self._source()
+        self.assertIn("Descargar autom&aacute;ticamente", source)
+        self.assertIn("busca y descarga en segundo plano", source)
+        self.assertIn("siempre te pide confirmaci&oacute;n", source)
 
     def test_reader_offers_only_the_spanish_dora_voice(self):
         source = self._source()

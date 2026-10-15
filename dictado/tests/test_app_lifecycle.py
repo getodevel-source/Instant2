@@ -267,6 +267,26 @@ class AppLifecycleTests(unittest.TestCase):
             self.assertEqual(entry.main(["diagnostics"]), 0)
         check.assert_called_once_with({})
 
+    def test_voice_diagnostics_hide_internal_component_names(self):
+        import io
+        from contextlib import redirect_stdout
+
+        from instant2_app import daemon
+        engine = Mock()
+        engine.recognizer.side_effect = FileNotFoundError(
+            "modelo Parakeet incompleto")
+        output = io.StringIO()
+        with patch("instant2_app.daemon.hotkey.create",
+                   return_value=SimpleNamespace(stop=Mock())), \
+                patch("instant2_app.daemon.audio.resolve_mic", return_value=None), \
+                patch("instant2_app.daemon.audio.probe", return_value=True), \
+                patch("instant2_app.daemon.Engine", return_value=engine), \
+                redirect_stdout(output):
+            self.assertEqual(daemon.cmd_check({"key": "f9"}), 2)
+
+        self.assertIn("COMPONENTES DE VOZ INCOMPLETOS", output.getvalue())
+        self.assertNotIn("Parakeet", output.getvalue())
+
     def test_stop_command_reports_daemon_state(self):
         import io
         from contextlib import redirect_stdout
