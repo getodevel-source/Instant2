@@ -69,6 +69,21 @@ class VersionTests(unittest.TestCase):
         self.assertLessEqual(len(cleaned.splitlines()), 8)
 
 
+class WindowsUpdaterScriptTests(unittest.TestCase):
+    def test_portable_restart_resets_pyinstaller_onefile_environment(self):
+        script = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), "..", "..", "scripts",
+            "instant2-update.bat"))
+        with open(script, encoding="utf-8") as handle:
+            content = handle.read().casefold()
+
+        reset = content.index('set "pyinstaller_reset_environment=1"')
+        daemon = content.index('start "" "%dst%" run')
+        panel = content.index('start "" "%dst%" setup')
+        self.assertLess(reset, daemon)
+        self.assertLess(reset, panel)
+
+
 class InstallModeTests(unittest.TestCase):
     def test_source_mode_when_not_frozen(self):
         self.assertEqual(update_module.install_mode(), "source")

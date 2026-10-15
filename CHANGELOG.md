@@ -8,6 +8,21 @@ Las dos primeras entradas documentan versiones de Instant2. El historial que
 sigue corresponde al Instant heredado y sus versiones no son releases de
 Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z`.
 
+## [0.1.3] - 2026-10-15
+
+### Corregido
+- El helper de actualizaciÃ³n portable reinicia el binario onefile con una
+  extracciÃ³n PyInstaller independiente; evita que v0.1.2 intente cargar
+  `python312.dll` desde la carpeta temporal eliminada al cerrar la versiÃ³n
+  anterior.
+
+### ValidaciÃ³n
+- La actualizaciÃ³n desde Ajustes descargÃ³ y verificÃ³ v0.1.2, pero su primer
+  arranque fallÃ³ al cargar `python312.dll`; el rollback restaurÃ³ la versiÃ³n
+  anterior.
+- Una prueba de regresiÃ³n verifica que el helper fija la extracciÃ³n
+  independiente antes de arrancar el daemon y volver a abrir el panel.
+
 ## [0.1.2] - 2026-10-15
 
 ### Corregido
