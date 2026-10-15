@@ -36,17 +36,24 @@
     target: { level: 0, pitch: 0.5, bands: new Array(9).fill(0) },
     level: 0, pitch: 0.5, bands: new Array(9).fill(0)
   };
-  let running = false, lastMs = 0, timeS = 0, frameTimer = 0;
-  let entranceStartMs = 0, exitStartMs = 0, modeStartMs = 0;
+  // Presentation only: events and state lifetimes still belong to the daemon.
+  const MOTION = { enter: 180, exit: 130, content: 120, attack: .045, release: .12 };
+  const BUSY_MODES = ['starting', 'processing', 'read_preparing', 'read_stopping'];
+  const AUDIO_MODES = ['listening', 'read_speaking'];
+  let running = false, lastMs = 0, timeS = 0;
+  let modeStartMs = 0;
+  let visibility = 0, visibilityFrom = 0, visibilityTarget = 0, visibilityStartMs = 0;
+  let visibilityDuration = 0;
   let lastVisibleMode = 'idle', lastVisibleMessage = '';
   const motionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
   let reducedMotion = !!(motionQuery && motionQuery.matches);
   if (motionQuery) {
     const updateMotionPreference = (event) => {
       reducedMotion = !!event.matches;
-      entranceStartMs = 0;
-      exitStartMs = 0;
-      if (state.mode !== 'idle') start();
+      visibility = visibilityFrom = visibilityTarget = state.mode === 'idle' ? 0 : 1;
+      visibilityDuration = 0;
+      // Also clear an interrupted exit when the preference changes in idle.
+      start();
     };
     if (motionQuery.addEventListener) motionQuery.addEventListener('change', updateMotionPreference);
     else if (motionQuery.addListener) motionQuery.addListener(updateMotionPreference);
@@ -70,6 +77,7 @@
     canvas.width = Math.round(window.innerWidth * dpr);
     canvas.height = Math.round(window.innerHeight * dpr);
     C.setTransform(dpr, 0, 0, dpr, 0, 0);
+    start();
   }
   window.addEventListener('resize', resize);
   resize();
@@ -79,6 +87,7 @@
 
   window.pushFrame = function (f) {
     const previousMode = state.mode;
+    const previousMessage = state.message, previousKey = state.keyLabel, previousStyle = state.style;
     if (f.level !== undefined) state.target.level = f.level;
     if (f.pitch !== undefined) state.target.pitch = f.pitch;
     if (f.mode !== undefined) state.mode = f.mode;
@@ -87,16 +96,17 @@
     if (state.mode !== previousMode) {
       const changedAt = performance.now();
       modeStartMs = changedAt;
-      if (previousMode === 'idle' && state.mode !== 'idle') {
-        entranceStartMs = changedAt;
-      }
+      // Sample the current envelope before reversing it; rapid F9/F10 events
+      // never restart a fade from zero or flash an unfinished entry at full alpha.
+      visibilityFrom = sampleVisibility(changedAt);
+      visibilityTarget = state.mode === 'idle' ? 0 : 1;
+      visibilityStartMs = changedAt;
+      visibilityDuration = reducedMotion ? 0 : Math.abs(visibilityTarget - visibilityFrom)
+        * (visibilityTarget ? MOTION.enter : MOTION.exit);
       if (state.mode === 'idle' && previousMode !== 'idle') {
-        exitStartMs = changedAt;
         lastVisibleMode = previousMode;
         lastVisibleMessage = state.message;
       }
-      if (state.mode !== 'idle')
-        exitStartMs = 0;
       if (!['listening', 'starting', 'read_speaking'].includes(state.mode)) {
         state.target.level = 0;
         state.target.pitch = 0.5;
@@ -116,11 +126,15 @@
       state.target.pitch = 0.5;
       state.target.bands.fill(0);
     }
-    if (state.mode !== previousMode || f.message !== undefined) {
+    const contentChanged = state.mode !== previousMode || state.message !== previousMessage
+      || state.keyLabel !== previousKey || state.style !== previousStyle;
+    if (state.mode !== previousMode || state.message !== previousMessage) {
       document.getElementById('announcement').textContent = state.mode === 'idle' ? ''
         : (MODE_LABELS[state.mode] || '') + (state.message ? ': ' + state.message : '');
     }
-    start();
+    // Static reduced-motion signals and dismissed overlays do not need audio
+    // redraws. Real audio wakes the renderer only when its signal changes.
+    if (contentChanged || (!reducedMotion && AUDIO_MODES.includes(state.mode) && hasPending())) start();
   };
   if (typeof qt !== 'undefined' && qt.webChannelTransport) {
     new QWebChannel(qt.webChannelTransport, function (channel) {
@@ -203,6 +217,11 @@
   const clamp01 = (value) => Math.max(0, Math.min(1, value));
   const easeOut = (value) => 1 - Math.pow(1 - clamp01(value), 3);
 
+  function sampleVisibility(now) {
+    const progress = visibilityDuration ? easeOut((now - visibilityStartMs) / visibilityDuration) : 1;
+    return visibilityFrom + (visibilityTarget - visibilityFrom) * progress;
+  }
+
   function fitText(text, width) {
     if (C.measureText(text).width <= width) return text;
     const characters = Array.from(text);
@@ -267,7 +286,7 @@
   }
 
   function drawSignal(cx, cy, mode, color) {
-    const processing = ['starting', 'processing', 'read_preparing', 'read_stopping'].includes(mode);
+    const processing = BUSY_MODES.includes(mode);
     C.save();
     if (processing) {
       C.strokeStyle = rgba(color, .15);
@@ -305,7 +324,7 @@
     const reading = mode.startsWith('read_');
     const feedback = ['notice', 'error', 'read_notice', 'read_error'].includes(mode);
     const success = mode === 'success' || mode === 'read_success';
-    const processing = ['starting', 'processing', 'read_preparing', 'read_stopping'].includes(mode);
+    const processing = BUSY_MODES.includes(mode);
     const statusColor = mode === 'error' || mode === 'read_error' ? PALETTE.red
       : feedback ? PALETTE.amber : success ? PALETTE.green
       : processing ? PALETTE.working : PALETTE.accent;
@@ -318,28 +337,27 @@
     const card = {x: (window.innerWidth - w) / 2, y: window.innerHeight - MARGIN - h, w, h, r: 17};
     const cx = card.x + w / 2;
     const cy = card.y + h / 2;
-    let alpha = 1, scale = 1, offsetY = 0;
-    if (!reducedMotion && exiting && exitStartMs) {
-      const progress = easeOut((now - exitStartMs) / 160);
-      alpha = 1 - progress; scale = 1 - progress * .015; offsetY = progress * 3;
-    } else if (!reducedMotion && entranceStartMs) {
-      const progress = easeOut((now - entranceStartMs) / 220);
-      alpha = progress; scale = .985 + progress * .015; offsetY = (1 - progress) * 4;
-      if (progress >= 1) entranceStartMs = 0;
-    }
+    const alpha = reducedMotion ? 1 : visibility;
+    const scale = .99 + alpha * .01;
+    const offsetY = (1 - alpha) * 3;
     C.save();
     C.globalAlpha = alpha;
     C.translate(cx, cy + offsetY); C.scale(scale, scale); C.translate(-cx, -cy);
     drawGlass(card);
 
     // Only state content enters; the surface stays steady between operations.
-    const stateProgress = reducedMotion || exiting ? 1 : easeOut((now - modeStartMs) / 150);
-    C.globalAlpha *= .55 + stateProgress * .45;
-    C.translate(0, (1 - stateProgress) * 2);
+    const stateProgress = reducedMotion || exiting ? 1 : easeOut((now - modeStartMs) / MOTION.content);
+    // Keep labels fully legible as soon as the event arrives. Only the existing
+    // icon settles, without bouncing or moving the surface and its text.
     const iconY = feedback ? card.y + 26 : cy;
     roundRect(card.x + 12, iconY - 16, 32, 32, 11);
     C.fillStyle = rgba(statusColor, .075); C.fill();
-    drawStateIcon(card.x + 28, iconY, statusColor, mode);
+    C.save();
+    C.translate(card.x + 28, iconY);
+    const iconScale = .94 + stateProgress * .06;
+    C.scale(iconScale, iconScale);
+    drawStateIcon(0, 0, statusColor, mode);
+    C.restore();
     C.textAlign = 'left'; C.textBaseline = 'middle';
     C.fillStyle = feedback ? statusColor : PALETTE.text;
     C.font = '600 10px "Segoe UI", system-ui, sans-serif';
@@ -386,40 +404,39 @@
         state.pitch = 0.5;
         state.bands.fill(0.18);
       } else {
-        state.level += (state.target.level - state.level) * (1 - Math.exp(-dt / 0.090));
+        const levelTau = state.target.level > state.level ? MOTION.attack : MOTION.release;
+        state.level += (state.target.level - state.level) * (1 - Math.exp(-dt / levelTau));
         state.pitch += (state.target.pitch - state.pitch) * (1 - Math.exp(-dt / 0.140));
         for (let i = 0; i < state.bands.length; i++) {
           const target = state.target.bands[i] || 0;
-          const tau = target > state.bands[i] ? 0.055 : 0.135;
+          const tau = target > state.bands[i] ? MOTION.attack : MOTION.release;
           state.bands[i] += (target - state.bands[i]) * (1 - Math.exp(-dt / tau));
         }
       }
 
       C.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      visibility = sampleVisibility(now);
       if (state.mode !== 'idle') {
         drawIndicator(now);
-      } else if (exitStartMs && !reducedMotion) {
-        if (now - exitStartMs < 160)
-          drawIndicator(now, true);
-        else
-          exitStartMs = 0;
-      } else if (reducedMotion) {
-        exitStartMs = 0;
-      }
+      } else if (!reducedMotion && visibility > .001) drawIndicator(now, true);
     } catch (e) {
       // Un frame corrupto no mata el loop: se vuelve a idle limpio.
-      exitStartMs = 0;
+      visibility = visibilityFrom = visibilityTarget = 0;
+      visibilityDuration = 0;
       state.mode = 'idle';
       try { C.clearRect(0, 0, window.innerWidth, window.innerHeight); } catch (ignored) {}
     }
 
-    // In reduced-motion mode, draw once for each real state/audio update.
-    // start() coalesces updates to at most 25 fps; no state keeps a render loop.
+    // Reduced motion draws once per content change. Feedback and silent audio
+    // also sleep once settled; only a busy spinner needs continuous frames.
     if (reducedMotion) {
       running = false;
       return;
     }
-    if (state.mode === 'idle' && !exitStartMs && !hasPending()) {
+    const transitioning = now - visibilityStartMs < visibilityDuration;
+    const contentMoving = state.mode !== 'idle' && now - modeStartMs < MOTION.content;
+    if (!transitioning && !contentMoving && !BUSY_MODES.includes(state.mode)
+        && !(AUDIO_MODES.includes(state.mode) && hasPending())) {
       running = false;
       return;
     }
@@ -427,8 +444,9 @@
   }
 
   function hasPending() {
-    return state.target.level > 0.001 || state.target.pitch !== 0.5
-      || state.target.bands.some((b) => b > 0.001);
+    return Math.abs(state.target.level - state.level) > .001
+      || Math.abs(state.target.pitch - state.pitch) > .001
+      || state.target.bands.some((b, i) => Math.abs(b - state.bands[i]) > .001);
   }
 
   function start() {
@@ -436,18 +454,11 @@
       return;
     running = true;
     lastMs = 0;
-    if (reducedMotion && state.mode !== 'idle')
-      scheduleNextFrame();
-    else
-      requestAnimationFrame(frame);
+    requestAnimationFrame(frame);
   }
   function scheduleNextFrame() {
     if (!running) return;
-    if (frameTimer) window.clearTimeout(frameTimer);
-    frameTimer = window.setTimeout(() => {
-      frameTimer = 0;
-      requestAnimationFrame(frame);
-    }, reducedMotion ? 40 : 33);
+    requestAnimationFrame(frame);
   }
   start();
 })();

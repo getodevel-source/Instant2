@@ -78,15 +78,13 @@ class ComposePageTests(unittest.TestCase):
             source = handle.read()
         self.assertIn("prefers-reduced-motion: reduce", source)
         self.assertIn("let reducedMotion", source)
-        self.assertIn("}, reducedMotion ? 40 : 33);", source)
         self.assertIn("C.fillStyle = rgba(statusColor, 0.5);", source)
         self.assertNotIn("Math.sin(timeS * 4.2", source)
         self.assertNotIn("Math.sin(timeS * 3.2", source)
-        self.assertIn("if (!reducedMotion && exiting", source)
+        self.assertIn("else if (!reducedMotion && visibility", source)
         self.assertIn("state.level = 0;", source)
         self.assertIn("state.bands.fill(0.18);", source)
-        self.assertIn("if (reducedMotion && state.mode !== 'idle')", source)
-        self.assertIn("if (reducedMotion && state.mode !== 'idle')\n      scheduleNextFrame();", source)
+        self.assertIn("if (contentChanged || (!reducedMotion", source)
         frame = source[source.index("function frame(now)"):]
         frame = frame[:frame.index("function hasPending")]
         self.assertIn("if (reducedMotion) {\n      running = false;\n      return;\n    }", frame)

@@ -48,10 +48,16 @@ lleguen a la aplicación que está debajo.
 | Navegar | Opacidad y desplazamiento de 5 px | 200 ms |
 | Abrir un modal | Opacidad y desplazamiento breve | 180 ms |
 | Desplegar opciones | Opacidad y desplazamiento de 4 px | 160 ms |
-| Mostrar el indicador | Opacidad, escala 0,985 → 1 y desplazamiento de 4 px | 220 ms |
-| Cambiar estado de voz | Superficie estable, entrada del contenido | 150 ms |
-| Ocultar el indicador | Opacidad y desplazamiento de 3 px | 160 ms |
-| Recibir audio | Ataque y caída suavizados de bandas reales | 55 / 135 ms |
+| Mostrar el indicador | Opacidad, escala 0,99 → 1 y desplazamiento de 3 px | 180 ms |
+| Cambiar estado de voz | Superficie y textos estables, asentamiento del icono | 120 ms |
+| Ocultar el indicador | Opacidad y desplazamiento de 3 px | 130 ms |
+| Recibir audio | Ataque y caída suavizados de bandas reales | 45 / 120 ms |
+
+Las entradas y salidas interrumpidas retoman la opacidad actual, sin reiniciar
+desde cero. Los cambios de estado muestran su etiqueta inmediatamente; solo
+el icono existente pasa de escala 0,94 a 1 con desaceleración, sin rebote.
+Estos tiempos son de presentación y no modifican la permanencia de los estados
+ni los eventos que los activan.
 
 La referencia [Motion Framer](https://github.com/freshtechbro/claudedesignskills/blob/main/.claude/skills/motion-framer/SKILL.md)
 orientó el movimiento por estado y la continuidad de entrada/salida. La
@@ -62,10 +68,15 @@ revisión final, adaptando sus recomendaciones a una herramienta de escritorio.
 ## Accesibilidad y rendimiento
 
 - `prefers-reduced-motion` elimina entradas, desplazamientos y giros. La señal
-  de audio permanece estática y solo se redibuja al recibir actualizaciones.
+  de audio permanece estática; solo los cambios de contenido o tamaño requieren
+  un redibujo. La preferencia puede cambiar con el indicador visible o inactivo.
 - El Canvas anuncia estados en una región `aria-live`; no es la única fuente
   de información. Los colores se acompañan de iconos y etiquetas.
 - El dibujo se detiene al quedar inactivo, incluso con un paquete de audio tardío.
+- El Canvas usa `requestAnimationFrame` mientras hay movimiento visible. También
+  se detiene en confirmaciones, avisos, errores y señal de audio ya estabilizada;
+  las nuevas muestras reanudan la interpolación. Solo el giro de procesamiento
+  requiere dibujo continuo mientras ese estado permanezca visible.
 - Los medidores usan transformaciones de escala, sin animar dimensiones de layout.
 - Se mantienen foco visible, colores forzados y preferencia de mayor contraste.
 - Las consultas de contenedor adaptan la composición al ancho efectivo con zoom.
@@ -93,3 +104,24 @@ Las verificaciones usan datos controlados para no modificar ajustes personales.
 No equivalen a una sesión de dictado humano, una prueba de selección y lectura
 en cada aplicación externa, ni una validación de Linux/Wayland/macOS. El respaldo
 Tk conserva su comportamiento previo cuando QtWebEngine no está disponible.
+
+## Verificación del ajuste de movimiento de F9/F10
+
+El ajuste posterior, limitado al Canvas del indicador, se revisó en el host real
+QtWebEngine de Windows: 12 estados visibles por cada estilo, más inactividad,
+con movimiento normal y reducido (52 capturas). Se comprobaron interrupciones
+de entrada/salida, reaparición durante una salida, cambio de preferencia de
+movimiento en actividad/inactividad y suspensión del dibujo al estabilizarse.
+Los paquetes de audio no provocaron redibujos en modo reducido ni tras ocultarse.
+
+La comparación con la versión anterior produjo imágenes idénticas píxel a píxel
+para éxito, aviso, error e inactividad de F9 y F10 en ambos estilos (14 pares).
+La suite completa terminó con 376 pruebas, seis omitidas y ningún fallo;
+incluye las regresiones de atajos, secuencias del daemon y lectura/cancelación F10.
+También pasaron la comprobación de nombres de Python y el arranque de la CLI.
+
+La evidencia local está en `.ui-review/motion-f9-f10/`. Las muestras de audio y
+los eventos de la revisión visual fueron controlados. El modo reducido se validó
+forzando la preferencia de Chromium y ejercitando su manejador de cambio, sin
+alterar la configuración del sistema. Esta revisión no cubre dictado humano,
+selección en aplicaciones externas, el respaldo Tk ni otros sistemas operativos.
