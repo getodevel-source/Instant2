@@ -73,7 +73,7 @@ class PanelPageContractTests(unittest.TestCase):
     def test_automatic_updates_download_in_background_and_confirm_install(self):
         source = self._source()
         self.assertIn("Descargar autom&aacute;ticamente", source)
-        self.assertIn("busca y descarga en segundo plano", source)
+        self.assertIn("La descarga autom&aacute;tica no instala la actualizaci&oacute;n", source)
         self.assertIn("siempre te pide confirmaci&oacute;n", source)
 
     def test_reader_offers_only_the_spanish_dora_voice(self):
