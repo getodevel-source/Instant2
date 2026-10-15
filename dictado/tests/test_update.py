@@ -78,8 +78,10 @@ class WindowsUpdaterScriptTests(unittest.TestCase):
             content = handle.read().casefold()
 
         reset = content.index('set "pyinstaller_reset_environment=1"')
+        stop = content.index('echo [2/6] frenando daemon...')
         daemon = content.index('start "" "%dst%" run')
         panel = content.index('start "" "%dst%" setup')
+        self.assertLess(reset, stop)
         self.assertLess(reset, daemon)
         self.assertLess(reset, panel)
 

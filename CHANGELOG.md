@@ -8,6 +8,16 @@ Las dos primeras entradas documentan versiones de Instant2. El historial que
 sigue corresponde al Instant heredado y sus versiones no son releases de
 Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z`.
 
+## [0.1.4] - 2026-10-15
+
+### Corregido
+- El helper define la extracciÃ³n independiente de PyInstaller antes de cada
+  subproceso del actualizador, incluido el comando `stop`.
+
+### ValidaciÃ³n
+- La prueba de regresiÃ³n verifica que la variable de entorno se defina antes de
+  detener el daemon, arrancar el daemon nuevo y reabrir el panel.
+
 ## [0.1.3] - 2026-10-15
 
 ### Corregido

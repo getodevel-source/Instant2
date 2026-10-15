@@ -31,6 +31,10 @@ goto :hashfail
 :hashok
 echo Hash OK.
 
+REM Cada proceso portable onefile debe extraer sus propios recursos, incluso
+REM los subprocesos stop/run/setup que viven fuera del proceso anterior.
+set "PYINSTALLER_RESET_ENVIRONMENT=1"
+
 echo [2/6] Frenando daemon...
 if exist "%~dp0instant2-stop.bat" (
   call "%~dp0instant2-stop.bat" >nul 2>&1
@@ -51,9 +55,6 @@ copy /Y "%~1" "%DST%" >nul
 if errorlevel 1 goto :copyfail
 
 echo [5/6] Arrancando daemon nuevo...
-REM El reinicio sobrevive al proceso onefile anterior; necesita extraer sus
-REM propios recursos porque el directorio _MEI del proceso anterior se borra.
-set "PYINSTALLER_RESET_ENVIRONMENT=1"
 start "" "%DST%" run
 ping -n 9 127.0.0.1 >nul 2>nul
 set "NEWPID="
