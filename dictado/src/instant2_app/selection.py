@@ -111,8 +111,8 @@ def _send_copy():
 def copy_selected_text(timeout=0.9):
     """Copy the foreground selection, restore prior plain text, return in RAM.
 
-    The F10 shortcut is consumed before this function runs, so F10 itself does
-    not move focus or open the foreground app's menu. The selection is copied
+    The configured reading shortcut is consumed before this function runs, so
+    it does not move focus or open the foreground app's menu. The selection is copied
     with Ctrl+C, read without logging, and the previous text clipboard is
     restored if it has not changed independently in the meantime.
     """

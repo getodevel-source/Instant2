@@ -369,33 +369,172 @@ def create(key_name):
 
 
 class WindowsPressHotkey:
-    """Suppressed one-shot shortcut; keeps keys such as F10 from reaching apps."""
+    """Consume one global Windows key press before reading the selection."""
 
     def __init__(self, key_name):
         key_name = _key_name(key_name)
         if not is_valid_key(key_name):
             raise ValueError(f"tecla {key_name!r} no soportada en Windows")
         self.key_name = key_name
+        self.vk = _windows_vk(key_name)
         self._handle = None
+        self._thread = None
+        self._thread_id = None
+        self._ready = threading.Event()
+        self._startup_error = None
+        self._on_press = None
+        self._down = False
+        self._error_callback = None
+        self._ready_callback = None
+
+    def set_error_callback(self, callback):
+        self._error_callback = callback
+
+    def set_ready_callback(self, callback):
+        self._ready_callback = callback
+
+    def _report_error(self, message):
+        if self._error_callback is not None:
+            try:
+                self._error_callback(message)
+            except Exception:
+                log.debug("no pude informar el error del atajo de lectura", exc_info=True)
+
+    def _run_hook(self):
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        self._thread_id = kernel32.GetCurrentThreadId()
+
+        class Point(ctypes.Structure):
+            _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
+
+        class Message(ctypes.Structure):
+            _fields_ = [("hwnd", wintypes.HWND), ("message", wintypes.UINT),
+                        ("wParam", wintypes.WPARAM), ("lParam", wintypes.LPARAM),
+                        ("time", wintypes.DWORD), ("pt", Point),
+                        ("lPrivate", wintypes.DWORD)]
+
+        class KeyboardEvent(ctypes.Structure):
+            _fields_ = [("vkCode", wintypes.DWORD), ("scanCode", wintypes.DWORD),
+                        ("flags", wintypes.DWORD), ("time", wintypes.DWORD),
+                        ("dwExtraInfo", ctypes.c_size_t)]
+
+        callback_type = ctypes.WINFUNCTYPE(
+            ctypes.c_ssize_t, ctypes.c_int, ctypes.c_size_t, ctypes.c_void_p)
+
+        def callback(code, message, data):
+            if code >= 0:
+                event = ctypes.cast(data, ctypes.POINTER(KeyboardEvent)).contents
+                # Ignore keyboard events injected by Instant2 itself (Ctrl+C
+                # for copying the current selection), or a letter shortcut
+                # could recursively trigger while the selection is copied.
+                if event.vkCode == self.vk and not (event.flags & 0x10):
+                    if message in (0x0100, 0x0104):  # WM_KEYDOWN / WM_SYSKEYDOWN
+                        if not self._down:
+                            self._down = True
+                            try:
+                                self._on_press()
+                            except Exception:
+                                log.exception("atajo de lectura: falló on_press")
+                        return 1
+                    if message in (0x0101, 0x0105):  # WM_KEYUP / WM_SYSKEYUP
+                        self._down = False
+                        return 1
+            return user32.CallNextHookEx(self._handle, code, message, data)
+
+        self._callback = callback_type(callback)  # keep the native callback alive
+        try:
+            user32.SetWindowsHookExW.argtypes = [
+                ctypes.c_int, callback_type, ctypes.c_void_p, wintypes.DWORD]
+            user32.SetWindowsHookExW.restype = ctypes.c_void_p
+            user32.CallNextHookEx.argtypes = [
+                ctypes.c_void_p, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
+            user32.CallNextHookEx.restype = ctypes.c_ssize_t
+            user32.UnhookWindowsHookEx.argtypes = [ctypes.c_void_p]
+            user32.UnhookWindowsHookEx.restype = wintypes.BOOL
+            kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+            kernel32.GetModuleHandleW.restype = ctypes.c_void_p
+            user32.GetMessageW.argtypes = [
+                ctypes.POINTER(Message), wintypes.HWND, wintypes.UINT, wintypes.UINT]
+            user32.GetMessageW.restype = wintypes.BOOL
+            user32.PeekMessageW.argtypes = [
+                ctypes.POINTER(Message), wintypes.HWND, wintypes.UINT,
+                wintypes.UINT, wintypes.UINT]
+            user32.PeekMessageW.restype = wintypes.BOOL
+            user32.TranslateMessage.argtypes = [ctypes.POINTER(Message)]
+            user32.DispatchMessageW.argtypes = [ctypes.POINTER(Message)]
+            user32.PostThreadMessageW.argtypes = [
+                wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+            user32.PostThreadMessageW.restype = wintypes.BOOL
+
+            self._handle = user32.SetWindowsHookExW(
+                13, self._callback, kernel32.GetModuleHandleW(None), 0)
+            if not self._handle:
+                raise OSError("Windows no permitió registrar el atajo global")
+            # Force creation of the message queue before start() returns, so
+            # stop() can reliably post WM_QUIT even on an immediate shutdown.
+            queued_message = Message()
+            user32.PeekMessageW(ctypes.byref(queued_message), None, 0, 0, 0)
+        except Exception as exc:
+            self._startup_error = exc
+            self._ready.set()
+            self._report_error(str(exc))
+            return
+
+        self._ready.set()
+        if self._ready_callback is not None:
+            try:
+                self._ready_callback(f"Atajo de lectura activo: {key_label(self.key_name)}")
+            except Exception:
+                log.debug("no pude informar que el atajo de lectura quedó activo",
+                          exc_info=True)
+        try:
+            message = Message()
+            while user32.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
+                user32.TranslateMessage(ctypes.byref(message))
+                user32.DispatchMessageW(ctypes.byref(message))
+        except Exception as exc:
+            log.exception("bucle del atajo de lectura falló")
+            self._report_error(str(exc))
+        finally:
+            handle, self._handle = self._handle, None
+            if handle:
+                user32.UnhookWindowsHookEx(handle)
 
     def start(self, on_press, on_release=None, interval=0.01):
         del on_release, interval
-        if self._handle is not None:
+        if self._thread is not None and self._thread.is_alive():
             return
-        import keyboard
-        self._handle = keyboard.add_hotkey(
-            self.key_name, on_press, suppress=True,
-            trigger_on_release=False, timeout=0.1)
+        self._ready.clear()
+        self._startup_error = None
+        self._on_press = on_press
+        self._down = False
+        self._thread = threading.Thread(
+            target=self._run_hook, name="instant2-read-hotkey", daemon=True)
+        self._thread.start()
+        if not self._ready.wait(timeout=5):
+            raise RuntimeError("Windows no confirmó el inicio del atajo de lectura")
+        if self._startup_error is not None:
+            raise RuntimeError("no se pudo registrar el atajo de lectura") from self._startup_error
 
     def stop(self):
-        handle, self._handle = self._handle, None
-        if handle is None:
+        thread = self._thread
+        if thread is None:
             return
         try:
-            import keyboard
-            keyboard.remove_hotkey(handle)
+            import ctypes
+            if self._thread_id is not None:
+                ctypes.windll.user32.PostThreadMessageW(
+                    self._thread_id, 0x0012, 0, 0)  # WM_QUIT
+            thread.join(timeout=1.0)
+            if not thread.is_alive():
+                self._thread = None
+                self._thread_id = None
         except Exception:
-            log.debug("no pude retirar el hotkey de lectura", exc_info=True)
+            log.debug("no pude retirar el atajo de lectura", exc_info=True)
 
 
 def create_press(key_name):

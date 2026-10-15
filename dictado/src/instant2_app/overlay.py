@@ -96,20 +96,25 @@ class OverlayTransitions:
 
 class Overlay:
     """Thread-safe semantic overlay API; platform renderer owns all UI objects."""
-    def __init__(self, key_label="F9", style="classic"):
+    def __init__(self, key_label="F9", style="classic", read_key_label="F10"):
         self._transitions = OverlayTransitions()
         self._lock = threading.Lock()
-        self._renderer = self._make_renderer(key_label, style)
+        self._renderer = self._make_renderer(key_label, read_key_label, style)
 
     @staticmethod
-    def _make_renderer(key_label, style):
+    def _make_renderer(key_label, read_key_label, style):
         """Web (QtWebEngine) primero; Tk solo si Qt no puede abrir."""
         try:
             from instant2_app.overlay_web import _WebOverlay
-            return _WebOverlay(key_label, style=style)
+            if read_key_label == "F10":
+                return _WebOverlay(key_label, style=style)
+            return _WebOverlay(key_label, style=style,
+                               read_key_label=read_key_label)
         except Exception:
             log.warning("el overlay web no abri?; se usa el de Tk", exc_info=True)
-            return _TkOverlay(key_label)
+            if read_key_label == "F10":
+                return _TkOverlay(key_label)
+            return _TkOverlay(key_label, read_key_label)
 
     def _send(self, session, state, text="", color=None, milliseconds=0):
         color = color or PALETTE["amber"]
@@ -250,8 +255,9 @@ class _TkOverlay:
     _TEXT = PALETTE["text"]
     _LINE = PALETTE["line"]
 
-    def __init__(self, key_label):
+    def __init__(self, key_label, read_key_label="F10"):
         self.key_label = key_label
+        self.read_key_label = read_key_label
         self.record_color = PALETTE["accent"]
         self.q = queue.Queue()
         self._current_token = -1
@@ -402,7 +408,7 @@ class _TkOverlay:
                     text="LEER TEXTO" if self._reading else self._mode_label())
                 self.canvas.itemconfigure(
                     self.keycap_text_id,
-                    text="F10" if self._reading else self.key_label)
+                    text=self.read_key_label if self._reading else self.key_label)
                 if state in ("starting", "listening"):
                     self._show_state("recording")
                 elif state == "read_speaking":

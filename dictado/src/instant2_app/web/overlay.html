@@ -20,7 +20,7 @@
    comparten anatomía y usan exclusivamente el audio real del micrófono
    o la salida de Kokoro. El movimiento reducido conserva una señal estática.
    Protocolo con el daemon (QWebChannel): pushFrame(json) con
-   {mode, message, keyLabel, style, level?, pitch?, bands?}. La paleta se resuelve
+   {mode, message, keyLabel, readKeyLabel, style, level?, pitch?, bands?}. La paleta se resuelve
    desde instant2_app/branding.py (ver tests/test_overlay_palette.py). */
 (() => {
   const PI = Math.PI;
@@ -32,7 +32,7 @@
   const canvas = document.getElementById('c');
   const C = canvas.getContext('2d');
   const state = {
-    mode: 'idle', message: '', keyLabel: 'F9', style: 'classic',
+    mode: 'idle', message: '', keyLabel: 'F9', readKeyLabel: 'F10', style: 'classic',
     target: { level: 0, pitch: 0.5, bands: new Array(9).fill(0) },
     level: 0, pitch: 0.5, bands: new Array(9).fill(0)
   };
@@ -87,7 +87,8 @@
 
   window.pushFrame = function (f) {
     const previousMode = state.mode;
-    const previousMessage = state.message, previousKey = state.keyLabel, previousStyle = state.style;
+    const previousMessage = state.message, previousKey = state.keyLabel,
+        previousReadKey = state.readKeyLabel, previousStyle = state.style;
     if (f.level !== undefined) state.target.level = f.level;
     if (f.pitch !== undefined) state.target.pitch = f.pitch;
     if (f.mode !== undefined) state.mode = f.mode;
@@ -96,7 +97,7 @@
     if (state.mode !== previousMode) {
       const changedAt = performance.now();
       modeStartMs = changedAt;
-      // Sample the current envelope before reversing it; rapid F9/F10 events
+      // Sample the current envelope before reversing it; rapid hotkey events
       // never restart a fade from zero or flash an unfinished entry at full alpha.
       visibilityFrom = sampleVisibility(changedAt);
       visibilityTarget = state.mode === 'idle' ? 0 : 1;
@@ -119,6 +120,7 @@
       lastVisibleMessage = state.message;
     }
     if (f.keyLabel) state.keyLabel = f.keyLabel;
+    if (f.readKeyLabel) state.readKeyLabel = f.readKeyLabel;
     if (f.style) state.style = f.style;
     // A late audio flush must not keep the renderer running after dismissal.
     if (state.mode === 'idle') {
@@ -127,7 +129,8 @@
       state.target.bands.fill(0);
     }
     const contentChanged = state.mode !== previousMode || state.message !== previousMessage
-      || state.keyLabel !== previousKey || state.style !== previousStyle;
+      || state.keyLabel !== previousKey || state.readKeyLabel !== previousReadKey
+      || state.style !== previousStyle;
     if (state.mode !== previousMode || state.message !== previousMessage) {
       document.getElementById('announcement').textContent = state.mode === 'idle' ? ''
         : (MODE_LABELS[state.mode] || '') + (state.message ? ': ' + state.message : '');
@@ -369,13 +372,16 @@
       C.fillStyle = PALETTE.text;
       lines.forEach((line, index) => C.fillText(line, card.x + 55, card.y + 42 + index * 16));
     } else {
-      let subtitle = reading ? 'Lectura · F10 para detener' : 'Dictado · soltá para pegar';
+      // Default behavior: Lectura · F10 para detener; settings can change it.
+      let subtitle = reading
+        ? `Lectura · ${state.readKeyLabel} para detener`
+        : 'Dictado · soltá para pegar';
       if (success) subtitle = reading ? 'Lectura finalizada' : 'Copiado';
       else if (processing) subtitle = message || (reading ? 'Preparando la voz local…' : 'Procesando tu voz…');
       C.fillText(fitText(subtitle, 160), card.x + 55, card.y + 37);
       if (!success) {
         const voice = mixHex(statusColor, PALETTE.working, state.pitch * .25);
-        const key = reading ? 'F10' : (state.keyLabel || 'F9');
+        const key = reading ? (state.readKeyLabel || 'F10') : (state.keyLabel || 'F9');
         C.font = '600 10px "Segoe UI", system-ui, sans-serif';
         const chipW = Math.min(52, Math.max(32, C.measureText(key).width + 14));
         drawSignal(card.x + w - chipW - 50, cy, mode, voice);

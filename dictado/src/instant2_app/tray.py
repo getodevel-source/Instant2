@@ -44,9 +44,10 @@ class TrayIcon:
         menu = self._build_menu(pystray)
         cfg = config.load()
         normal_key = hotkey.key_label(cfg.get("key", "f9"))
+        read_key = hotkey.key_label(cfg.get("read_key", "f10"))
         self.icon = pystray.Icon(
             "instant2", create_icon_image(64),
-            f"Instant2 · Dictado {normal_key} · Leer selección F10", menu)
+            f"Instant2 · Dictado {normal_key} · Leer selección {read_key}", menu)
         original_notify = tray_win32.Shell_NotifyIcon
         tray_win32.Shell_NotifyIcon = _checked_shell_notify_icon(
             original_notify, tray_win32.NIM_ADD, self._on_icon_added)

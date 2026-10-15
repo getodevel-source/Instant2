@@ -574,7 +574,7 @@ class KokoroReader:
                             item = next_audio()
                     except SpeechCancelled:
                         # stop() drains buffered audio; abort() drops it so
-                        # F10 does not keep speaking after cancellation.
+                        # The reading shortcut does not keep speaking after cancellation.
                         stream.abort()
                         raise
             finally:

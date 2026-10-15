@@ -13,6 +13,7 @@ DEFAULTS = {
     "mic_hint": "",
     "mic_index": None,
     "key": "f9",
+    "read_key": "f10",
     "lang": "es",
     "threads": 4,
     "sound": False,
@@ -150,6 +151,7 @@ def load():
             cfg[k] = v
     # Env pisa archivo.
     env_map = {"INSTANT2_MIC": "mic_hint", "INSTANT2_KEY": "key",
+               "INSTANT2_READ_KEY": "read_key",
                "INSTANT2_THREADS": "threads", "INSTANT2_SOUND": "sound",
                "INSTANT2_MAX_SEG": "max_seg", "INSTANT2_VAD": "vad_model",
                "INSTANT2_BLANK": "blank_penalty",
@@ -198,7 +200,7 @@ def load():
             v = v.strip().lower()
             cfg[k] = v if v in ("silero", "ten") else "silero"
         else:
-            cfg[k] = v.lower() if k == "key" else v
+            cfg[k] = v.lower() if k in ("key", "read_key") else v
     if cfg.get("update_mode") not in ("notify", "auto", "off"):
         cfg["update_mode"] = "notify"
     tok = cfg.get("llm_token", "")
@@ -215,8 +217,7 @@ def load():
     cfg["llm_normal_enabled"] = cfg.get("llm_normal_enabled") is not False
     if cfg.get("resource_mode") not in ("speed", "balanced", "memory"):
         cfg["resource_mode"] = "balanced"
-    normal_key = str(cfg.get("key", "f9") or "f9").strip().lower()
-    cfg["key"] = normal_key
+    _normalize_hotkeys(cfg)
     if (os.environ.get("INSTANT2_NO_UPDATE") or "").strip().lower() in (
             "1", "true", "yes", "y", "on", "si", "s"):
         cfg["update_mode"] = "off"
@@ -233,6 +234,7 @@ def load():
 def save(cfg):
     from instant2_app.paths import ensure_private_dir, restrict_file
 
+    _normalize_hotkeys(cfg)
     path = config_path()
     directory = os.path.dirname(path) or "."
     ensure_private_dir(directory)
@@ -273,6 +275,27 @@ def save(cfg):
                 pass
     log.info("config guardada en %s", path)
     return path
+
+
+def _normalize_hotkeys(cfg):
+    """Keep the dictation and reading shortcuts valid and physically distinct."""
+    from instant2_app import hotkey
+
+    dictation = str(cfg.get("key", "f9") or "f9").strip().lower()
+    if not hotkey.is_valid_key(dictation):
+        dictation = "f9"
+    reading = str(cfg.get("read_key", "f10") or "f10").strip().lower()
+    if not hotkey.is_valid_key(reading):
+        reading = "f10"
+    if hotkey.same_binding(dictation, reading):
+        candidates = ("f10", "f11", "f12", "f9", "f8", "f7", "f6",
+                      "f5", "f4", "f3", "f2", "f1")
+        reading = next((candidate for candidate in candidates
+                        if hotkey.is_valid_key(candidate)
+                        and not hotkey.same_binding(dictation, candidate)),
+                       "f10")
+    cfg["key"] = dictation
+    cfg["read_key"] = reading
 
 
 def _initialize_bundled_llm(cfg):

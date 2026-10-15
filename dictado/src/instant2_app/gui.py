@@ -595,9 +595,11 @@ class PanelLogic(PanelReadingActions):
         self._toast_callbacks = {}
         self._advanced_warned = set()
         self._key_capturing = False
+        self._key_capture_target = "dictation"
         self.mic_labels = []
         self.mic_selected = None
         self.key_value = hotkey.key_label(self.cfg.get("key", "f9"))
+        self.read_key_value = hotkey.key_label(self.cfg.get("read_key", "f10"))
         self.status_var = "Listo para dictar"
         self.status_detail = STATUS_DETAIL.format(key=self.key_value)
         self.meter = {"percent": 0, "text": "La prueba no guarda audio."}
@@ -675,6 +677,7 @@ class PanelLogic(PanelReadingActions):
                                  and not self._daemon_stop_pending),
             },
             "key_label": self.key_value,
+            "read_key_label": self.read_key_value,
             "autostart": bool(self._autostart_enabled),
             "advanced": {
                 "llm_url": self.cfg.get("llm_url", ""),
@@ -882,7 +885,7 @@ class PanelLogic(PanelReadingActions):
         self.test_microphone()
 
     def _op_key_capture_open(self, message):
-        self.begin_key_capture()
+        self.begin_key_capture(message.get("target"))
 
     def _op_key_captured(self, message):
         self.key_captured(message.get("code"), message.get("name"))
@@ -1235,16 +1238,17 @@ class PanelLogic(PanelReadingActions):
                 self.cfg.get("llm_server_path", ""),
                 self.cfg.get("llm_model_path", ""),
                 self.cfg.get("llm_acceleration", "auto"),
-                self.cfg.get("resource_mode", "balanced"))
+                self.cfg.get("resource_mode", "balanced"),
+                str(self.cfg.get("read_key", "f10")).strip().lower())
 
     @staticmethod
     def _restart_signature(snapshot):
-        # El token y la preferencia de actualizaci?n no exigen reinicio.
+        # El token y la preferencia de actualizacion no exigen reinicio.
         return (snapshot[0], snapshot[1], snapshot[3], snapshot[4], snapshot[5],
                 snapshot[6], snapshot[7], snapshot[8], snapshot[9],
                 snapshot[10], snapshot[11], snapshot[14], snapshot[15],
                 snapshot[16], snapshot[17], snapshot[18], snapshot[19],
-                snapshot[20])
+                snapshot[20], snapshot[21])
 
     def _same_settings(self, left, right):
         return (self.catalog.same_identity(left[0], right[0])
@@ -1407,9 +1411,10 @@ class PanelLogic(PanelReadingActions):
 
     # ------------------------------------------------------------------ tecla
 
-    def begin_key_capture(self):
+    def begin_key_capture(self, target="dictation"):
+        self._key_capture_target = "read" if target == "read" else "dictation"
         self._key_capturing = True
-        self.emit("key_capture", {"state": "open"})
+        self.emit("key_capture", {"state": "open", "target": self._key_capture_target})
 
     def key_captured(self, code, name):
         name = (name or "").strip().lower().replace(" ", "_")
@@ -1425,7 +1430,7 @@ class PanelLogic(PanelReadingActions):
             else:
                 self.emit("key_result", {
                     "ok": False,
-                    "message": "No pude identificar esa tecla; prob? otra.",
+                    "message": "No pude identificar esa tecla; prob\u00e1 otra.",
                 })
                 return
         elif hotkey.is_valid_key(name):
@@ -1433,22 +1438,34 @@ class PanelLogic(PanelReadingActions):
         else:
             self.emit("key_result", {
                 "ok": False,
-                "message": "No pude identificar esa tecla; prob? otra.",
+                "message": "No pude identificar esa tecla; prob\u00e1 otra.",
             })
             return
-        if hotkey.same_binding(value, "f10"):
+        target = self._key_capture_target
+        other_key = (self.cfg.get("key", "f9") if target == "read"
+                     else self.cfg.get("read_key", "f10"))
+        if hotkey.same_binding(value, other_key):
             self.emit("key_result", {
                 "ok": False,
-                "message": "F10 queda reservado para leer el texto seleccionado.",
+                "message": "Esa tecla ya está asignada al otro atajo. Elegí una distinta.",
             })
             return
         self._key_capturing = False
-        self._set_key(value)
+        if target == "read":
+            self._set_read_key(value)
+        else:
+            self._set_key(value)
         self.emit("key_result", {"ok": True, "message": ""})
 
     def _set_key(self, key):
         self.cfg["key"] = key
         self.key_value = hotkey.key_label(key)
+        self._update_settings_status()
+        self.push_state()
+
+    def _set_read_key(self, key):
+        self.cfg["read_key"] = key
+        self.read_key_value = hotkey.key_label(key)
         self._update_settings_status()
         self.push_state()
 
@@ -1584,6 +1601,7 @@ class PanelLogic(PanelReadingActions):
         snapshot = self._snapshot()
         self.cfg["key"], self.cfg["lang"], self.cfg["autostart"] = (
             snapshot[1], "es", snapshot[2])
+        self.cfg["read_key"] = snapshot[21]
         self.cfg["llm_url"] = snapshot[5]
         self.cfg["threads"], self.cfg["sound"] = snapshot[6], snapshot[7]
         self.cfg["overlay_style"], self.cfg["max_seg"] = snapshot[8], snapshot[9]

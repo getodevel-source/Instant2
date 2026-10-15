@@ -37,10 +37,13 @@ _PAGE_PLACEHOLDER = "<!--QWEBCHANNEL-->"
 _PAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 
 
-def frame_payload(mode, message, key_label, style, level=None, pitch=None, bands=None):
+def frame_payload(mode, message, key_label, style, level=None, pitch=None,
+                  bands=None, read_key_label="F10"):
     """JSON parcial de estado consumido por el overlay."""
     payload = {"mode": mode, "message": message or "", "keyLabel": key_label,
                "style": style}
+    if read_key_label != "F10":
+        payload["readKeyLabel"] = read_key_label
     if level is not None:
         payload["level"] = round(float(level), 4)
     if pitch is not None:
@@ -89,7 +92,7 @@ def write_page(directory=None):
 class _WebOverlay:
     """Renderer del daemon sobre QtWebEngine; interfaz identica a la de Qt Quick."""
 
-    def __init__(self, key_label, style="classic"):
+    def __init__(self, key_label, style="classic", read_key_label="F10"):
         qtcore = importlib.import_module("PySide6.QtCore")
         qtgui = importlib.import_module("PySide6.QtGui")
         qtqml = importlib.import_module("PySide6.QtQml")
@@ -113,6 +116,7 @@ class _WebOverlay:
 
         self.style = style if style in WINDOW_SIZES else "classic"
         self.key_label = key_label
+        self.read_key_label = read_key_label
         self._dispatch_lock = threading.Lock()
         self._latest_token = -1
         self._pending_lock = threading.Lock()
@@ -222,7 +226,8 @@ class _WebOverlay:
     def _push_frame(self):
         try:
             self.bridge.frame.emit(frame_payload(
-                self._mode, self._message, self.key_label, self.style))
+                self._mode, self._message, self.key_label, self.style,
+                read_key_label=self.read_key_label))
         except Exception:
             log.debug("frame de estado descartado", exc_info=True)
 
@@ -235,7 +240,7 @@ class _WebOverlay:
         try:
             self.bridge.frame.emit(frame_payload(
                 self._mode, self._message, self.key_label, self.style,
-                **pending))
+                read_key_label=self.read_key_label, **pending))
         except Exception:
             log.debug("frame de nivel descartado", exc_info=True)
 

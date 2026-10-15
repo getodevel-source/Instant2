@@ -466,8 +466,10 @@ class Daemon:
                              vad_model=cfg.get("vad_model", "silero"),
                              blank_penalty=cfg.get("blank_penalty", 0.0),
                              save_wavs_dir=os.environ.get("INSTANT2_SAVE_WAVS", "") or None)
+        self.read_key_label = hotkey.key_label(cfg.get("read_key", "f10"))
         self.overlay = Overlay(
             hotkey.key_label(cfg.get("key", "f9")),
+            read_key_label=self.read_key_label,
             style=cfg.get("overlay_style", "orbital")
             if cfg.get("overlay_style") in ("classic", "orbital") else "orbital")
         self.mic = audio.resolve_mic(
@@ -475,15 +477,14 @@ class Daemon:
             strict_hint=bool(cfg.get("mic_hint")))
         self.key_label = hotkey.key_label(cfg.get("key", "f9"))
         self.hk = hotkey.create(cfg.get("key", "f9"))
-        self.read_key_label = "F10"
         self._read_hotkey_conflict = hotkey.same_binding(
-            cfg.get("key", "f9"), "f10")
+            cfg.get("key", "f9"), cfg.get("read_key", "f10"))
         try:
             self.read_hotkey = (None if self._read_hotkey_conflict else
-                                hotkey.create_press("f10"))
+                                hotkey.create_press(cfg.get("read_key", "f10")))
         except Exception as exc:
-            log.warning("no pude preparar la tecla F10 (%s); el dictado sigue disponible",
-                        type(exc).__name__)
+            log.warning("no pude preparar la tecla %s (%s); el dictado sigue disponible",
+                        self.read_key_label, type(exc).__name__)
             self.read_hotkey = None
         self.rec = {"sid": 0, "grabando": False, "frames": [], "t_start": 0.0,
                     "done": None, "busy": False}
@@ -807,7 +808,7 @@ class Daemon:
                 self.overlay.reading_success_for(sid)
         except selection.SelectionUnavailable:
             self.overlay.reading_notice_for(
-                sid, "No encontré texto seleccionado. Seleccioná texto y volvé a presionar F10.")
+                sid, f"No encontré texto seleccionado. Seleccioná texto y volvé a presionar {getattr(self, 'read_key_label', 'F10')}.")
         except selection.SelectionAccessError:
             self.overlay.reading_error_for(
                 sid, "No pude copiar la selección. Revisá los permisos del teclado y portapapeles.")
@@ -823,7 +824,8 @@ class Daemon:
         except Exception as exc:
             # Never log selection text or provider exception details: some
             # TTS libraries include the input text in their error messages.
-            log.warning("falló la lectura por F10 (%s)", type(exc).__name__)
+            log.warning("falló la lectura por %s (%s)", self.read_key_label,
+                        type(exc).__name__)
             self.overlay.reading_error_for(
                 sid, "No se pudo leer la selección. Revisá la lectura y la salida de audio.")
         finally:
@@ -1227,8 +1229,9 @@ class Daemon:
             except Exception:
                 log.exception("no pude iniciar el icono de bandeja")
             self._schedule_model_idle_unload()
-            keys = f"Dictado mejorado: {self.key_label}; leer selección: F10"
-            log.info("listo. Manten? %s para dictar. Solt? para transcribir. Ctrl+C sale.", keys)
+            keys = (f"Dictado mejorado: {self.key_label}; "
+                    f"leer selección: {self.read_key_label}")
+            log.info("listo. Manten\u00e9 %s para dictar. Solt\u00e1 para transcribir. Ctrl+C sale.", keys)
             set_hotkey_error = getattr(self.hk, "set_error_callback", None)
             if set_hotkey_error is not None:
                 set_hotkey_error(lambda message: self.overlay.show_error_for(
@@ -1247,20 +1250,22 @@ class Daemon:
                 try:
                     self.read_hotkey.start(self.on_read_press, lambda: None)
                 except Exception as exc:
-                    log.warning("no pude activar la lectura con F10 (%s); "
-                                "el dictado sigue disponible", type(exc).__name__)
+                    log.warning("no pude activar la lectura con %s (%s); "
+                                "el dictado sigue disponible", self.read_key_label,
+                                type(exc).__name__)
                     try:
                         self.read_hotkey.stop()
                     except Exception:
                         pass
                     self.read_hotkey = None
                     self.overlay.reading_error_for(
-                        0, "No pude activar F10. El dictado sigue disponible.",
+                        0, f"No pude activar {self.read_key_label}. El dictado sigue disponible.",
                         milliseconds=6000)
             else:
-                message = ("F10 queda reservado para leer. Elegí otra tecla para dictar."
+                message = (f"{self.read_key_label} queda reservado para leer. "
+                           "Elegí otra tecla para dictar."
                            if self._read_hotkey_conflict else
-                           "No pude activar F10. El dictado sigue disponible.")
+                           f"No pude activar {self.read_key_label}. El dictado sigue disponible.")
                 self.overlay.show_notice_for(0, message, milliseconds=6000)
             if not self.overlay.run_event_loop(
                     self._shutdown, lambda: log.info("vivo, esperando atajos %s...", keys)):
