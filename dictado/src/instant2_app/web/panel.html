@@ -156,9 +156,17 @@ input[type="checkbox"]:disabled { cursor: not-allowed; }
 .setting-row:first-child { padding-top: 0; }
 .setting-copy b { display: block; font-size: 12px; font-weight: 600; }
 .setting-copy span { display: block; max-width: 460px; margin-top: 4px; color: var(--faint); font-size: 10px; }
-.details-settings summary { padding: 20px 0 0; color: var(--accent-soft); font-size: 11px; font-weight: 550; cursor: pointer; }
-.details-body { display: grid; gap: 24px; padding: 24px 0 0; }
+.details-settings > summary { padding: 20px 0 0; color: var(--accent-soft); font-size: 11px; font-weight: 600; cursor: pointer; }
+.details-body { display: grid; gap: 18px; padding: 18px 0 0; }
 .details-settings[open] > .details-body { animation: details-arrive 160ms var(--curve) both; }
+.settings-intro { margin: 0; color: var(--faint); font-size: 10px; }
+.settings-group { border-top: 1px solid var(--line-soft); }
+.settings-group > summary { padding: 15px 0 0; color: var(--text); font-size: 11px; font-weight: 600; cursor: pointer; }
+.settings-group-body { display: grid; gap: 18px; padding: 16px 0 0; }
+.settings-technical { border: 1px solid var(--line-soft); border-radius: 10px; padding: 0 14px 14px; }
+.settings-technical > summary { padding: 12px 0; color: var(--muted); font-size: 10px; font-weight: 600; cursor: pointer; }
+.settings-technical[open] > .settings-group-body { padding-top: 2px; }
+.privacy-copy { max-width: 660px; }
 @keyframes details-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 .advanced-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 22px; }
 .path-control-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
@@ -339,7 +347,7 @@ table.vocab th:nth-child(2) { width: 47%; }
     <button class="nav-link" data-page="read" aria-controls="sec-read"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="m11 5-6 5H2v4h3l6 5ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14"/></svg><span>Leer texto</span></button>
   </nav>
   <div class="sidebar-bottom">
-    <div class="privacy-note"><b>Audio local</b><span>El LLM recibe solo texto. Ajustes indica si el servicio es local o remoto.</span></div>
+    <div class="privacy-note"><b>Audio local</b><span>El audio queda en este equipo. Un servicio remoto recibe solo el texto.</span></div>
     <button class="link" id="diagBtn">Abrir diagn&oacute;stico</button>
     <div class="sidebar-meta"><span id="version"></span></div>
   </div>
@@ -379,7 +387,7 @@ table.vocab th:nth-child(2) { width: 47%; }
             <small>El motor de voz convierte lo que dec&iacute;s en texto; la revisi&oacute;n de lenguaje es opcional.</small>
             <p class="dictation-action">Manten&eacute; <kbd id="dictationActionKey">F9</kbd> mientras habl&aacute;s; solt&aacute; para pegar.</p>
           </div>
-          <div class="selection-hint"><kbd>F10</kbd><div><p class="dictation-description">Seleccion&aacute; texto en cualquier aplicaci&oacute;n para escucharlo. Presion&aacute; otra vez para detener.</p><button class="link" data-page="read">Preferencias de lectura &rarr;</button></div></div>
+          <div class="selection-hint"><kbd id="selectionActionKey">F10</kbd><div><p class="dictation-description">Seleccion&aacute; texto en cualquier aplicaci&oacute;n para escucharlo. Presion&aacute; otra vez para detener.</p><button class="link" data-page="read">Preferencias de lectura &rarr;</button></div></div>
 
           <div class="model-setup" id="modelSetup" hidden>
             <div class="model-setup-copy">
@@ -413,8 +421,8 @@ table.vocab th:nth-child(2) { width: 47%; }
           </div>
           <div class="home-stat" id="llmHomeCard">
             <span class="stat-symbol" aria-hidden="true"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M4 10h16M4 15h10M4 20h7m5-2 2 2 4-5"/></svg></span>
-            <div class="home-stat-copy"><small>REVISI&Oacute;N DE TEXTO</small><strong id="llmHomeStatus">LLM sin configurar</strong></div>
-            <button class="link" id="llmHomeSettings" data-page="settings" aria-label="Configurar el servicio de lenguaje">Configurar</button>
+            <div class="home-stat-copy"><small>REVISI&Oacute;N DE TEXTO</small><strong id="llmHomeStatus">Servicio sin configurar</strong></div>
+            <button class="link" id="llmHomeSettings" data-page="settings" aria-label="Configurar la revisión del texto">Configurar</button>
           </div>
           <div class="home-stat">
             <span class="stat-symbol" aria-hidden="true"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3M8 22h8"/></svg></span>
@@ -461,8 +469,8 @@ table.vocab th:nth-child(2) { width: 47%; }
           <div class="control-row"><span class="badge" id="keyValue">F9</span><button class="btn" id="keyBtn" aria-label="Cambiar tecla de Dictado mejorado">Cambiar tecla</button></div>
         </div>
         <div class="setting-row">
-          <div class="setting-copy"><b>Leer texto seleccionado</b><span>Con Instant2 activo, seleccion&aacute; texto en otra aplicaci&oacute;n y presion&aacute; F10. Volv&eacute; a presionarlo para detener la lectura.</span></div>
-          <span class="badge">F10</span>
+          <div class="setting-copy"><b>Leer texto seleccionado</b><span>Con Instant2 activo, seleccion&aacute; texto en otra aplicaci&oacute;n y presion&aacute; <kbd id="settingsReadKey">F10</kbd>. Volv&eacute; a presionarla para detener la lectura.</span></div>
+          <div class="control-row"><span class="badge" id="readKeyValue">F10</span><button class="btn" id="readKeyBtn" aria-label="Cambiar tecla de lectura">Cambiar tecla</button></div>
         </div>
         <div class="setting-row">
           <div class="setting-copy"><b>Inicio de sesi&oacute;n</b><span>Iniciar Instant2 autom&aacute;ticamente cuando inici&aacute;s sesi&oacute;n en tu equipo.</span></div>
@@ -473,60 +481,96 @@ table.vocab th:nth-child(2) { width: 47%; }
           <div class="field"><label class="sr-only" for="uiScaleSelect">Tama&ntilde;o de la interfaz</label><select id="uiScaleSelect"><option value="1">100 %</option><option value="1.25">125 %</option><option value="1.5">150 %</option></select></div>
         </div>
         <details class="details-settings">
-          <summary>Voz, rendimiento y privacidad avanzada</summary>
+          <summary>M&aacute;s opciones</summary>
           <div class="details-body">
-            <div class="advanced-grid">
-              <div class="field"><label for="overlayStyleSelect">Indicador de voz</label><select id="overlayStyleSelect"><option value="orbital">Espectro reactivo</option><option value="classic">Barras cl&aacute;sicas</option></select><small>Se muestra durante el dictado.</small></div>
-              <div class="field"><label for="threadsSelect">Hilos de CPU</label><select id="threadsSelect"><option value="1">1 hilo</option><option value="2">2 hilos</option><option value="4">4 hilos</option><option value="6">6 hilos</option><option value="8">8 hilos</option></select><small>Controla el reconocimiento y la lectura local. M&aacute;s hilos pueden acelerar la inferencia y usar m&aacute;s CPU.</small></div>
-              <div class="field"><label for="resourceModeSelect">Prioridad de recursos</label><select id="resourceModeSelect"><option value="speed">M&aacute;xima rapidez (mantener en memoria)</option><option value="balanced">Equilibrado (liberar tras 5 minutos)</option><option value="memory">Menor uso de memoria (liberar tras 90 segundos)</option></select><small>Controla el reconocimiento y la lectura. El servicio de lenguaje administrado descansa si admite reposo; los servicios externos conservan su propia pol&iacute;tica.</small></div>
-              <div class="field"><label for="vadModelSelect">Detecci&oacute;n de voz</label><select id="vadModelSelect"><option value="silero">Liviana</option><option value="ten">M&aacute;s precisa</option></select><small>La opci&oacute;n m&aacute;s precisa descarga un componente peque&ntilde;o una sola vez. Requiere reiniciar el dictado.</small></div>
-              <div class="field"><label for="blankPenaltyInput">Penalidad al silencio</label><input id="blankPenaltyInput" type="number" min="0" max="1" step="0.05" inputmode="decimal" aria-describedby="blankPenaltyHelp blankPenaltyError"><small id="blankPenaltyHelp">0 = apagada. Tocarla solo con error medido.</small><span class="inline-error" id="blankPenaltyError" role="alert"></span></div>
-              <div class="field"><label for="maxSegmentInput">Duraci&oacute;n m&aacute;xima por segmento</label><input id="maxSegmentInput" type="number" min="1" max="60" step="1" inputmode="numeric" aria-describedby="maxSegmentHelp maxSegmentError"><small id="maxSegmentHelp">El audio largo se divide en segmentos.</small><span class="inline-error" id="maxSegmentError" role="alert"></span></div>
-              <div class="field"><span class="field-title">Confirmaci&oacute;n sonora</span><label class="check"><input id="soundCheck" type="checkbox">Emitir un tono al terminar</label><small>El tono se reproduce en este equipo.</small></div>
-              <div class="field"><label for="updateModeSelect">Actualizaciones</label><select id="updateModeSelect"><option value="notify">Avisarme antes de descargar</option><option value="auto">Descargar autom&aacute;ticamente</option><option value="off">Apagadas</option></select><small>En autom&aacute;tico, Instant2 busca y descarga en segundo plano. Para instalarla y reiniciar, siempre te pide confirmaci&oacute;n. Con aviso, espera tu clic para descargar.</small></div>
-            </div>
-            <div class="field">
-              <label for="llmUrlInput">Servidor de lenguaje</label>
-              <input id="llmUrlInput" type="url" placeholder="http://127.0.0.1:8080" spellcheck="false" autocomplete="off" aria-describedby="llmUrlHelp llmUrlError">
-              <small id="llmDestination" role="status" aria-live="polite">Sin servidor configurado.</small>
-              <small id="llmUrlHelp">Conect&aacute; un servicio compatible con la API de OpenAI. Si us&aacute;s uno remoto, el texto dictado sale de este equipo; el audio no se env&iacute;a.</small>
-              <span class="inline-error" id="llmUrlError" role="alert"></span>
-            </div>
-            <div class="field">
-              <label for="llmModelInput">Identificador del servicio</label>
-              <input id="llmModelInput" type="text" maxlength="200" placeholder="Identificador indicado por el servicio" spellcheck="false" autocomplete="off">
-              <small>Si el servicio lo requiere, ingres&aacute; el identificador que muestra su configuraci&oacute;n.</small>
-            </div>
-            <div class="field">
-              <span class="field-title">Servidor local administrado</span>
-              <p class="small">Instant2 puede administrar el servicio local mientras dict&aacute;s. Si deja de responder, intenta iniciarlo y recuperarlo. El perfil de recursos decide cu&aacute;ndo entra en reposo.</p>
-              <small>La instalaci&oacute;n completa lo deja preparado. En el portable o desde el c&oacute;digo fuente, pod&eacute;s elegir los archivos instalados. Tambi&eacute;n pod&eacute;s usar un servicio remoto.</small>
-            </div>
-            <div class="advanced-grid">
-              <div class="field"><label for="llmServerPathInput">Archivo del servicio</label><div class="path-control-row"><input id="llmServerPathInput" type="text" placeholder="Eleg&iacute; el archivo del servicio" spellcheck="false" autocomplete="off"><button class="btn" type="button" data-pick="llm_server_path">Examinar</button></div><small>La instalaci&oacute;n completa lo configura autom&aacute;ticamente; tambi&eacute;n pod&eacute;s elegir otro archivo.</small></div>
-              <div class="field"><label for="llmModelPathInput">Archivo de lenguaje</label><div class="path-control-row"><input id="llmModelPathInput" type="text" placeholder="Archivo configurado" spellcheck="false" autocomplete="off"><button class="btn" type="button" data-pick="llm_model_path">Examinar</button><button class="btn" id="llmModelPathClear" type="button" hidden>Quitar</button></div><small>El archivo queda guardado en este equipo. Su nombre no se muestra en el panel.</small></div>
-              <div class="field"><label for="llmAccelerationSelect">Uso de GPU y CPU</label><select id="llmAccelerationSelect"><option value="auto">Autom&aacute;tico (GPU y fallback a CPU)</option><option value="cpu">Solo CPU</option></select><small>En autom&aacute;tico se usa un dispositivo que el runtime detecte; si no inicia, se prueba CPU.</small></div>
-            </div>
-            <div class="field runtime-status-field">
-              <span class="field-title">Estado del servicio local</span>
-              <small id="llmRuntimeStatus" data-state="starting" role="status" aria-live="polite">Comprobando el servicio local&hellip;</small>
-              <button class="btn" id="llmRuntimeRetry" type="button">Iniciar o reintentar</button>
-            </div>
-            <div class="field">
-              <span class="field-title">Dictado mejorado</span>
-              <label class="check"><input id="llmNormalCheck" type="checkbox">Pedir al LLM que revise cada dictado mejorado</label>
-              <small>La revisión puede corregir errores de reconocimiento. Si no está disponible, Instant2 conserva el texto preparado en este equipo.</small>
-            </div>
-            <div class="field">
-              <span class="field-title">Recursos de este equipo</span>
-              <small id="llmResources" role="status" aria-live="polite">Detectando CPU, RAM y GPU…</small>
-              <small>Instant2 muestra una recomendaci&oacute;n y el servicio confirma el uso de GPU o CPU. La instalaci&oacute;n completa lo deja preparado; en el portable pod&eacute;s elegir los archivos.</small>
-            </div>
-            <div class="field">
-              <label for="llmTokenInput">Token del servidor (opcional)</label>
-              <input id="llmTokenInput" type="password" placeholder="Solo si el servidor pide autenticación" spellcheck="false" autocomplete="off">
-              <small>Viaja en el encabezado Authorization y nunca queda en los registros. Se guarda solo en este equipo.</small>
-            </div>
+            <p class="settings-intro">Los valores actuales sirven para la mayor&iacute;a. Abr&iacute; un apartado solo si necesit&aacute;s cambiar algo.</p>
+
+            <details class="settings-group">
+              <summary>Voz y rendimiento</summary>
+              <div class="settings-group-body">
+                <div class="advanced-grid">
+                  <div class="field"><label for="overlayStyleSelect">Indicador durante el dictado</label><select id="overlayStyleSelect"><option value="orbital">Esfera animada</option><option value="classic">Barras</option></select></div>
+                  <div class="field"><label for="resourceModeSelect">Uso de memoria</label><select id="resourceModeSelect"><option value="speed">M&aacute;s rapidez</option><option value="balanced">Equilibrado</option><option value="memory">Ahorrar memoria</option></select><small>M&aacute;s rapidez mantiene los modelos cargados. Equilibrado libera memoria tras 5 minutos sin uso; Ahorrar memoria, tras 90 segundos.</small></div>
+                  <div class="field"><label for="vadModelSelect">Detecci&oacute;n al hablar</label><select id="vadModelSelect"><option value="silero">Est&aacute;ndar</option><option value="ten">M&aacute;s precisa</option></select><small>La opci&oacute;n m&aacute;s precisa descarga un componente una sola vez. Reinici&aacute; el dictado despu&eacute;s de cambiarla.</small></div>
+                  <div class="field"><span class="field-title">Aviso sonoro</span><label class="check"><input id="soundCheck" type="checkbox">Tocar un tono al terminar</label></div>
+                </div>
+                <details class="settings-technical">
+                  <summary>Ajustes t&eacute;cnicos</summary>
+                  <div class="advanced-grid">
+                    <div class="field"><label for="threadsSelect">Uso del procesador</label><select id="threadsSelect"><option value="1">1 hilo</option><option value="2">2 hilos</option><option value="4">4 hilos</option><option value="6">6 hilos</option><option value="8">8 hilos</option></select><small>M&aacute;s hilos pueden acelerar el reconocimiento y usar m&aacute;s CPU.</small></div>
+                    <div class="field"><label for="maxSegmentInput">M&aacute;ximo por fragmento (segundos)</label><input id="maxSegmentInput" type="number" min="1" max="60" step="1" inputmode="numeric" aria-describedby="maxSegmentHelp maxSegmentError"><small id="maxSegmentHelp">El audio largo se procesa en fragmentos.</small><span class="inline-error" id="maxSegmentError" role="alert"></span></div>
+                    <div class="field"><label for="blankPenaltyInput">Filtro de silencio</label><input id="blankPenaltyInput" type="number" min="0" max="1" step="0.05" inputmode="decimal" aria-describedby="blankPenaltyHelp blankPenaltyError"><small id="blankPenaltyHelp">Dejalo en 0 salvo que est&eacute;s ajustando un problema de reconocimiento.</small><span class="inline-error" id="blankPenaltyError" role="alert"></span></div>
+                  </div>
+                </details>
+              </div>
+            </details>
+
+            <details class="settings-group" id="llmPrivacyGroup">
+              <summary>Revisi&oacute;n del dictado y privacidad</summary>
+              <div class="settings-group-body">
+                <div class="field privacy-copy">
+                  <span class="field-title">Revisi&oacute;n del texto</span>
+                  <label class="check"><input id="llmNormalCheck" type="checkbox">Revisar autom&aacute;ticamente cada dictado mejorado</label>
+                  <small>El audio se procesa en este equipo. Si activ&aacute;s la revisi&oacute;n, se env&iacute;a solo el texto al servicio indicado. El dictado sigue funcionando si la apag&aacute;s o el servicio no est&aacute; disponible.</small>
+                </div>
+                <div class="field">
+                  <span class="field-title">Destino actual</span>
+                  <small id="llmDestination" role="status" aria-live="polite">Sin servicio configurado.</small>
+                </div>
+                <details class="settings-technical" id="llmConnectionDetails">
+                  <summary>Configurar el servicio de revisi&oacute;n</summary>
+                  <div class="settings-group-body">
+                    <div class="field">
+                      <label for="llmUrlInput">Direcci&oacute;n del servicio</label>
+                      <input id="llmUrlInput" type="url" placeholder="http://127.0.0.1:8080/v1" spellcheck="false" autocomplete="off" aria-describedby="llmUrlHelp llmUrlError">
+                      <small id="llmUrlHelp">Solo cambiala si configuraste otro servicio. Si es remoto, el texto dictado se comparte con ese servicio; el audio no se env&iacute;a.</small>
+                      <span class="inline-error" id="llmUrlError" role="alert"></span>
+                    </div>
+                    <div class="field">
+                      <label for="llmModelInput">Nombre del modelo (si te lo dieron)</label>
+                      <input id="llmModelInput" type="text" maxlength="200" placeholder="Nombre indicado por el servicio" spellcheck="false" autocomplete="off">
+                      <small>La mayor&iacute;a de los servicios no necesita este dato.</small>
+                    </div>
+                    <div class="field">
+                      <label for="llmTokenInput">Clave de acceso (si el servicio la pide)</label>
+                      <input id="llmTokenInput" type="password" placeholder="Clave del servicio" spellcheck="false" autocomplete="off">
+                      <small>Se guarda en este equipo y no aparece en los registros.</small>
+                    </div>
+                    <details class="settings-technical" id="llmLocalDetails">
+                      <summary>Archivos del servicio local</summary>
+                      <div class="settings-group-body">
+                        <p class="small">La instalaci&oacute;n completa configura esto por vos. Cambialo solo si us&aacute;s la versi&oacute;n portable o necesit&aacute;s resolver un problema.</p>
+                        <div class="advanced-grid">
+                          <div class="field"><label for="llmServerPathInput">Programa del servicio</label><div class="path-control-row"><input id="llmServerPathInput" type="text" placeholder="Eleg&iacute; el programa del servicio" spellcheck="false" autocomplete="off"><button class="btn" type="button" data-pick="llm_server_path">Examinar</button></div></div>
+                          <div class="field"><label for="llmModelPathInput">Modelo de lenguaje</label><div class="path-control-row"><input id="llmModelPathInput" type="text" placeholder="Modelo configurado" spellcheck="false" autocomplete="off"><button class="btn" type="button" data-pick="llm_model_path">Examinar</button><button class="btn" id="llmModelPathClear" type="button" hidden>Quitar</button></div><small>El archivo queda guardado en este equipo.</small></div>
+                          <div class="field"><label for="llmAccelerationSelect">Aceleraci&oacute;n</label><select id="llmAccelerationSelect"><option value="auto">Autom&aacute;tica (preferir GPU)</option><option value="cpu">Solo CPU</option></select><small>Si no puede usar la GPU, Instant2 intenta usar el procesador.</small></div>
+                        </div>
+                        <div class="field runtime-status-field">
+                          <span class="field-title">Estado del servicio local</span>
+                          <small id="llmRuntimeStatus" data-state="starting" role="status" aria-live="polite">Comprobando el servicio local&hellip;</small>
+                          <button class="btn" id="llmRuntimeRetry" type="button">Iniciar o reintentar</button>
+                        </div>
+                        <div class="field">
+                          <span class="field-title">Recursos detectados</span>
+                          <small id="llmResources" role="status" aria-live="polite">Detectando CPU, RAM y GPU&hellip;</small>
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+                </details>
+              </div>
+            </details>
+
+            <details class="settings-group">
+              <summary>Actualizaciones</summary>
+              <div class="settings-group-body">
+                <div class="field">
+                  <label for="updateModeSelect">Buscar y descargar actualizaciones</label>
+                  <select id="updateModeSelect"><option value="notify">Avisarme antes de descargar</option><option value="auto">Descargar autom&aacute;ticamente</option><option value="off">No buscar autom&aacute;ticamente</option></select>
+                  <small>La descarga autom&aacute;tica no instala la actualizaci&oacute;n: Instant2 siempre te pide confirmaci&oacute;n para instalarla y reiniciar.</small>
+                </div>
+              </div>
+            </details>
           </div>
         </details>
       </div>
@@ -559,7 +603,7 @@ table.vocab th:nth-child(2) { width: 47%; }
       <header class="page-head">
         <p class="eyebrow">LECTURA EN VOZ ALTA</p>
         <h1 id="readTitle" tabindex="-1">Leer texto en voz alta</h1>
-        <p>Peg&aacute; o escrib&iacute; un texto para escucharlo. Con Instant2 activo, seleccion&aacute; texto en otra aplicaci&oacute;n y presion&aacute; F10; otra vez para detener. Usa la voz y velocidad elegidas aqu&iacute;.</p>
+        <p>Peg&aacute; o escrib&iacute; un texto para escucharlo. Con Instant2 activo, seleccion&aacute; texto en otra aplicaci&oacute;n y presion&aacute; <kbd id="readPageKey">F10</kbd>; otra vez para detener. Usa la voz y velocidad elegidas aqu&iacute;.</p>
       </header>
       <div class="panel-block read-compose">
         <div class="reader-body">
@@ -650,7 +694,7 @@ const homeStatusLine = $("homeStatusLine");
 const dictationKey = $("dictationKey"), dictationActionKey = $("dictationActionKey");
 const llmHomeStatus = $("llmHomeStatus"), speechModelHome = $("speechModelHome");
 const llmHomeSettings = $("llmHomeSettings");
-const keyValue = $("keyValue");
+const keyValue = $("keyValue"), readKeyValue = $("readKeyValue");
 const runBtn = $("runBtn"), stopBtn = $("stopBtn"), runBtnReason = $("runBtnReason");
 const quickMic = $("quickMic"), checklist = $("checklist");
 const micCombo = $("micCombo"), meterWrap = $("meterWrap"), meterFill = $("meterFill"), meterText = $("meterText");
@@ -736,7 +780,7 @@ function updateLLMDestination(value) {
   if (!llmDestination) return;
   const address = (value || "").trim();
   if (!address) {
-    llmDestination.textContent = "Sin servidor configurado: el dictado sigue disponible con correcciones locales.";
+    llmDestination.textContent = "Sin dirección de servicio configurada. El dictado local sigue disponible.";
     return;
   }
   try {
@@ -744,8 +788,8 @@ function updateLLMDestination(value) {
     const host = parsed.hostname.replace(/^\[|\]$/g, "");
     const local = host === "localhost" || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host);
     llmDestination.textContent = local
-      ? `Servicio local administrado por Instant2 · ${host}${parsed.port ? ":" + parsed.port : ""}`
-      : `Destino remoto · ${host}${parsed.port ? ":" + parsed.port : ""}`;
+      ? `Servicio en este equipo · ${host}${parsed.port ? ":" + parsed.port : ""}`
+      : `Servicio remoto · ${host}${parsed.port ? ":" + parsed.port : ""}`;
   } catch (_) {
     llmDestination.textContent = "La dirección del servicio no es válida.";
   }
@@ -767,15 +811,15 @@ function updateLLMHomeStatus(value, _model, runtime, managed) {
     const host = parsed.hostname.replace(/^\[|\]$/g, "");
     const local = host === "localhost" || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host);
     if (!local) {
-      llmHomeStatus.textContent = "Servicio remoto · el texto sale del equipo";
-      llmHomeStatus.title = `Destino remoto: ${host}. El audio permanece local.`;
+      llmHomeStatus.textContent = "Servicio remoto · envía el texto";
+      llmHomeStatus.title = `El texto se envía a ${host}. El audio permanece local.`;
     } else {
       const labels = {ready:"Servicio listo", sleeping:"Servicio en reposo",
         starting:"Iniciando servicio…", recovering:"Recuperando servicio",
         error:"El servicio no responde", needs_setup:"Completar configuración",
         configured:"Servicio configurado", disabled:"Servicio configurado"};
       llmHomeStatus.textContent = labels[state] || "Servicio configurado";
-      llmHomeStatus.title = "Estado del servicio local administrado por Instant2.";
+      llmHomeStatus.title = "Estado del servicio local.";
     }
   } catch (_) {
     llmHomeStatus.textContent = "Dirección de servicio no válida";
@@ -867,6 +911,11 @@ function onState(raw) {
     }
   }
   const key = s.key_label || "F9";
+  const readKey = s.read_key_label || "F10";
+  readKeyValue.textContent = readKey;
+  $("selectionActionKey").textContent = readKey;
+  $("settingsReadKey").textContent = readKey;
+  $("readPageKey").textContent = readKey;
   if (s.status) {
     statusDot.className = `dot ${s.status.state}`;
     const state = s.status.state;
@@ -1281,6 +1330,7 @@ function onDiagnostics(raw) {
 
 // --- dialogs and hotkey capture ---
 let keyOpen = false;
+let keyCaptureTarget = "dictation";
 const overlays = [keyModal, diagModal, profileAddModal, profileRemoveModal];
 const modalReturnFocus = new WeakMap();
 function openModal(modal, focusTarget) {
@@ -1301,13 +1351,17 @@ function closeActiveModal(modal) {
   if (modal === diagModal) send({op:"diagnostics_close"});
   closeModal(modal);
 }
-function openKeyModal() {
+function openKeyModal(target = "dictation") {
   keyOpen = true;
+  keyCaptureTarget = target === "read" ? "read" : "dictation";
   keyMsg.textContent = "";
-  keyModalTitle.textContent = "Tecla para Dictado mejorado";
-  keyModalHelp.textContent = "Apretá la tecla que quieras asignar al dictado";
+  const reading = keyCaptureTarget === "read";
+  keyModalTitle.textContent = reading ? "Tecla para Leer texto seleccionado" : "Tecla para Dictado mejorado";
+  keyModalHelp.textContent = reading
+    ? "Apretá la tecla que quieras asignar a la lectura"
+    : "Apretá la tecla que quieras asignar al dictado";
   openModal(keyModal, $("keyWait"));
-  send({op:"key_capture_open"});
+  send({op:"key_capture_open", target:keyCaptureTarget});
 }
 function closeKeyModal() {
   keyOpen = false;
@@ -1402,7 +1456,8 @@ function onKeyCapture(raw) {
   // Python avisa el estado de la captura; la página es dueña del modal y
   // solo reacciona a la apertura remota (el cierre local ya notifica).
   const message = parse(raw);
-  if (message && message.state === "open" && keyModal.hidden) openKeyModal();
+  if (message && message.state === "open" && keyModal.hidden)
+    openKeyModal(message.target || "dictation");
 }
 
 // --- wiring ---
@@ -1413,10 +1468,24 @@ document.querySelectorAll("[data-page]").forEach((el) => {
     if (el.id === "llmHomeSettings") {
       const advanced = document.querySelector(".details-settings");
       if (advanced) advanced.open = true;
+      const privacyGroup = $("llmPrivacyGroup");
+      if (privacyGroup) privacyGroup.open = true;
+      const connectionDetails = $("llmConnectionDetails");
+      if (connectionDetails) connectionDetails.open = true;
       goToPage(page, {focus:true, notify:true, force:true});
       requestAnimationFrame(() => {
-        const target = !llmServerPathInput.value ? llmServerPathInput
+        let remoteService = false;
+        try {
+          const host = new URL(llmUrlInput.value.trim()).hostname.replace(/^\[|\]$/g, "");
+          remoteService = host !== "localhost" && host !== "::1" && !/^127(?:\.\d{1,3}){3}$/.test(host);
+        } catch (_) {}
+        const target = remoteService ? llmUrlInput
+          : !llmServerPathInput.value ? llmServerPathInput
           : llmModelPathInput.dataset.configured !== "true" ? llmModelPathInput : llmUrlInput;
+        if (target !== llmUrlInput) {
+          const localDetails = $("llmLocalDetails");
+          if (localDetails) localDetails.open = true;
+        }
         target.focus();
       });
       return;
@@ -1430,6 +1499,7 @@ $("micRefresh").addEventListener("click", () => send({op:"refresh_mics"}));
 $("micTest").addEventListener("click", () => send({op:"test_mic"}));
 micCombo.addEventListener("change", () => send({op:"select_mic", label:micCombo.value}));
 $("keyBtn").addEventListener("click", () => openKeyModal());
+$("readKeyBtn").addEventListener("click", () => openKeyModal("read"));
 $("keyCancel").addEventListener("click", () => closeActiveModal(keyModal));
 autostart.addEventListener("change", () => send({op:"set_autostart", value:autostart.checked}));
 overlayStyleSelect.addEventListener("change", () => send({op:"set_advanced", key:"overlay_style", value:overlayStyleSelect.value}));
