@@ -28,3 +28,10 @@ upstream archive for the included OpenMP runtime.
 
 The app uses CPU when no compatible Vulkan device is available. Vulkan
 acceleration depends on the graphics driver installed on the user's computer.
+
+Interface typography
+Manrope variable font, Copyright 2018 The Manrope Project Authors.
+Source: https://github.com/google/fonts/tree/main/ofl/manrope
+License: SIL Open Font License 1.1, included at
+dictado/src/instant2_app/web/Manrope-OFL.txt (instant2_app/web in packaged builds).
+The font is bundled locally and does not require a network connection.

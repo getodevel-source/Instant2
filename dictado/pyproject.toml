@@ -50,7 +50,7 @@ where = ["src"]
 # El overlay Qt Quick se carga por ruta (overlay.py): sin esto, un
 # `pip install` de instant2 no lleva los .qml y el overlay no levanta.
 [tool.setuptools.package-data]
-instant2_app = ["qml/*.qml", "web/*.html"]
+instant2_app = ["qml/*.qml", "web/*.html", "web/*.ttf", "web/*-OFL.txt"]
 
 [tool.setuptools.dynamic]
 version = { attr = "instant2_app.__version__" }

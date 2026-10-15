@@ -15,7 +15,7 @@ Window {
     height: 140
     color: "transparent"
     flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
-           | Qt.WindowDoesNotAcceptFocus
+           | Qt.WindowDoesNotAcceptFocus | Qt.WindowTransparentForInput
     visible: true
 
     property url pageUrl

@@ -9,6 +9,8 @@ permiten. `paste("")` es no-op.
 import logging
 import time
 
+from instant2_app.clipboard import restore_text, sequence_number
+
 log = logging.getLogger("instant2")
 
 # Espera de pegado: el Ctrl+V necesita que el clipboard ya este escrito.
@@ -67,6 +69,7 @@ def _paste_windows(text):
         raise RuntimeError(
             "No pude confirmar que el dictado estuviera en el portapapeles. "
             "Probá Ctrl+V manualmente.")
+    owned_sequence = sequence_number()
     sent = False
     try:
         # keyboard.press_and_release() emite Ctrl/V down/up casi sin pausa.
@@ -88,10 +91,8 @@ def _paste_windows(text):
             # El navegador procesa WM_PASTE después de recibir Ctrl+V. Darle
             # margen antes de restaurar evita que lea el clipboard anterior.
             time.sleep(_WINDOWS_PASTE_SETTLE_S)
-            try:
-                pyperclip.copy(prev)
-            except Exception:
-                pass
+            restore_text(prev, text, pyperclip.paste, pyperclip.copy,
+                         owned_sequence)
 
 
 def _paste_linux(text):
@@ -129,34 +130,35 @@ def _paste_linux(text):
         raise RuntimeError(
             "falta xdotool: sudo apt install xdotool "
             "(solo X11; en Wayland no pega teclas; no se piso el clipboard)")
+    read_command = ([tool, "-selection", "clipboard", "-o"] if tool.endswith("xclip")
+                    else [tool, "--clipboard", "--output"])
+    write_command = ([tool, "-selection", "clipboard"] if tool.endswith("xclip")
+                     else [tool, "--clipboard", "--input"])
+
+    def read():
+        result = subprocess.run(read_command, capture_output=True, timeout=10)
+        if result.returncode:
+            raise RuntimeError("clipboard unavailable")
+        return result.stdout
+
+    def write(value):
+        subprocess.run(write_command, input=value, check=True, timeout=10)
+
     try:
-        prev = subprocess.run(
-            [tool, "-selection", "clipboard", "-o"] if tool.endswith("xclip")
-            else [tool, "--clipboard", "--output"],
-            capture_output=True, timeout=10).stdout
+        prev = read()
     except Exception:
         prev = None
-    if tool.endswith("xclip"):
-        subprocess.run([tool, "-selection", "clipboard"], input=text.encode("utf-8"),
-                       check=True, timeout=10)
-    else:
-        subprocess.run([tool, "--clipboard", "--input"], input=text.encode("utf-8"),
-                       check=True, timeout=10)
+    encoded = text.encode("utf-8")
+    write(encoded)
     _wait_paste_ready()
+    pasted = False
     try:
         subprocess.run([xdotool, "key", "ctrl+v"], check=True, timeout=10)
+        pasted = True
     finally:
-        if prev is not None:
+        if pasted and prev is not None:
             _wait_paste_ready()
-            try:
-                if tool.endswith("xclip"):
-                    subprocess.run([tool, "-selection", "clipboard"],
-                                   input=prev, check=True, timeout=10)
-                else:
-                    subprocess.run([tool, "--clipboard", "--input"],
-                                   input=prev, check=True, timeout=10)
-            except Exception:
-                pass
+            restore_text(prev, encoded, read, write)
 
 
 def _paste_wayland(text, wl_copy, wl_paste, wtype, subprocess):
@@ -186,37 +188,51 @@ def _paste_wayland(text, wl_copy, wl_paste, wtype, subprocess):
     finally:
         if pasted and prev is not None:
             _wait_paste_ready()
-            try:
+            def read():
+                result = subprocess.run(
+                    [wl_paste, "--no-newline", "--type", "text/plain"],
+                    capture_output=True, timeout=10)
+                if result.returncode:
+                    raise RuntimeError("clipboard unavailable")
+                return result.stdout
+
+            def write(value):
                 subprocess.run([wl_copy, "--type", "text/plain"],
-                               input=prev, check=True, timeout=10)
-            except Exception:
-                log.warning("no pude restaurar el portapapeles previo en Wayland",
-                            exc_info=True)
+                               input=value, check=True, timeout=10)
+
+            restore_text(prev, text.encode("utf-8"), read, write)
 
 
 def _paste_macos(text):
     import subprocess
+    def read():
+        result = subprocess.run(["pbpaste"], capture_output=True, timeout=10)
+        if result.returncode:
+            raise RuntimeError("clipboard unavailable")
+        return result.stdout
+
+    def write(value):
+        subprocess.run(["pbcopy"], input=value, check=True, timeout=10)
+
     try:
-        prev = subprocess.run(["pbpaste"], capture_output=True,
-                              timeout=10).stdout
+        prev = read()
     except Exception:
         prev = None
-    subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True, timeout=10)
+    encoded = text.encode("utf-8")
+    write(encoded)
     _wait_paste_ready()
     try:
         from pynput.keyboard import Controller, Key
     except ImportError:
         raise RuntimeError("falta pynput para pegar en macOS.") from None
     kb = Controller()
+    pasted = False
     try:
         with kb.pressed(Key.cmd):
             kb.press("v")
             kb.release("v")
+        pasted = True
     finally:
-        if prev is not None:
+        if pasted and prev is not None:
             _wait_paste_ready()
-            try:
-                subprocess.run(["pbcopy"], input=prev,
-                               check=True, timeout=10)
-            except Exception:
-                pass
+            restore_text(prev, encoded, read, write)

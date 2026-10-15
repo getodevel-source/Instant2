@@ -8,7 +8,7 @@ import time
 
 import numpy as np
 
-from instant2_app import audio, hotkey, llm
+from instant2_app import audio, hotkey
 from instant2_app.engine import Engine, SILENCE_PEAK
 from instant2_app.overlay import Overlay
 from instant2_app.tray import TrayIcon
@@ -182,10 +182,10 @@ class _LevelTracker:
     """
 
     def __init__(self, sid, overlay):
+        from instant2_app.metering import SpectrumMeter
         self.sid = sid
         self.overlay = overlay
-        self.band_edges = np.logspace(np.log10(80.0), np.log10(7500.0), 10)
-        self.band_max = np.full(9, 1e-3, dtype=np.float64)
+        self.meter = SpectrumMeter(16000, .995)
         self.smooth = 0.0
         self.pitch = 0.5
         # Ventana corrediza de ~60 ms para el espectro: con bloques de 10 ms
@@ -216,15 +216,7 @@ class _LevelTracker:
             # ceros, nunca bandas normalizadas contra un techo colapsado,
             # que era lo que bailaba solo.
             if peak > 0.006 and window.size >= 256:
-                windowed = window * np.hanning(window.size)
-                spectrum = np.abs(np.fft.rfft(windowed))
-                freqs = np.fft.rfftfreq(window.size, 1.0 / 16000.0)
-                vals = np.empty(9)
-                for i in range(9):
-                    mask = (freqs >= self.band_edges[i]) & (freqs < self.band_edges[i + 1])
-                    vals[i] = float(np.mean(spectrum[mask])) if np.any(mask) else 0.0
-                self.band_max = np.maximum(self.band_max * 0.995, vals)
-                bands = np.clip(vals / np.maximum(self.band_max, 1e-9), 0.0, 1.0)
+                bands = self.meter.bands(window)
             else:
                 bands = np.zeros(9)
             raw = float(np.max(bands))
@@ -781,7 +773,7 @@ class Daemon:
                 raise tts.SpeechCancelled()
             self.overlay.reading_start(sid, "Preparando la voz local…")
             if self._tts_reader is None:
-                self._tts_reader = tts.KokoroReader(resolve_data_dir())
+                self._tts_reader = tts.KokoroReader(resolve_data_dir(), threads=self.cfg.get("threads", 4))
             speaking = threading.Event()
             preferences = tts.load_preferences()
 
@@ -1069,62 +1061,67 @@ class Daemon:
         done.set()
 
     def _job(self, wav, dur, sid):
+        stages = {}
         try:
             if dur < self.engine.min_dur:
                 log.info("muy corto (<%.1fs), descarto.", self.engine.min_dur)
                 self.overlay.show_notice_for(
-                    sid, f"Dictado muy corto ? manten? {self.key_label} un poco m?s.")
+                    sid, f"Dictado muy corto. Mantené {self.key_label} un poco más.")
                 return
             peak = float(np.max(np.abs(wav))) if wav.size else 0.0
             if peak < SILENCE_PEAK:
                 log.info("silencio (pico %.4f), descarto sin inferencia.", peak)
-                self.overlay.show_notice_for(sid, "No detect? voz.")
+                self.overlay.show_notice_for(sid, "No detecté voz.")
                 return
             t0 = time.time()
+            phase_start = time.perf_counter()
             recognized = self.engine.transcribe(wav)
+            stages["asr_ms"] = (time.perf_counter() - phase_start) * 1000
             conf = float(getattr(self.engine, "last_conf", 1.0) or 1.0)
-            # The persistent daemon owns the local model. Let its first startup
-            # finish before polishing; later, llama.cpp may wake from idle sleep.
-            initial_ready = getattr(self, "_llm_initial_ready", None)
-            if initial_ready is not None:
-                initial_ready.wait(timeout=15.0)
-            runtime = getattr(self, "_llm_runtime", None)
-            runtime_config = getattr(self, "_llm_runtime_config", None)
-            timeout = (runtime.request_timeout(runtime_config)
-                       if runtime is not None and runtime_config else 8.0)
-            text = llm.maybe_polish(recognized, self.cfg, conf=conf,
-                                    timeout=timeout)
+            from instant2_app.dictation import prepare_text
+            phase_start = time.perf_counter()
+            text = prepare_text(
+                recognized, self.cfg, conf,
+                initial_ready=getattr(self, "_llm_initial_ready", None),
+                runtime=getattr(self, "_llm_runtime", None),
+                runtime_config=getattr(self, "_llm_runtime_config", None))
+            stages["correction_ms"] = (time.perf_counter() - phase_start) * 1000
             dt = time.time() - t0
             if not text:
                 log.info("vacio tras %.1fs audio (%.2fs), nada que pegar.", dur, dt)
                 self.overlay.show_notice_for(
                     sid,
-                    "No pude reconocer el audio. Prob? hablar m?s cerca del micr?fono.",
+                    "No pude reconocer el audio. Probá hablar más cerca del micrófono.",
                     milliseconds=2600)
                 return
-            log.info("[%.1fs audio -> %.2fs, RTF=%.2fx] transcripci?n: %d caracteres",
+            log.info("[%.1fs audio -> %.2fs, RTF=%.2fx] transcripción: %d caracteres",
                      dur, dt, dt / max(dur, 0.1), len(text))
             import instant2_app.paste as _paste_mod
             try:
+                phase_start = time.perf_counter()
                 _paste_mod.paste(text + " ")
+                stages["paste_ms"] = (time.perf_counter() - phase_start) * 1000
             except Exception as e:
                 detail = str(e).strip()
                 log.exception("ERROR pegando sesion %d", sid)
                 self.overlay.show_error_for(
-                    sid, detail or "No se pudo pegar el texto. Abr? Diagn?stico.",
+                    sid, detail or "No se pudo pegar el texto. Abrí Diagnóstico.",
                     milliseconds=6000)
                 return
             if float(getattr(self.engine, "last_clip", 0.0) or 0.0) > 0.02:
                 self.overlay.show_notice_for(
-                    sid, "El micr?fono satura: baj? la ganancia o alejate un poco.")
+                    sid, "El micrófono satura: bajá la ganancia o alejate un poco.")
             else:
                 self.overlay.success_for(sid)
         except Exception:
             log.exception("ERROR transcripcion sesion %d", sid)
             self.overlay.show_error_for(
-                sid, "No se pudo completar el dictado. Abr? Diagn?stico.",
+                sid, "No se pudo completar el dictado. Abrí Diagnóstico.",
                 milliseconds=3000)
         finally:
+            if stages:
+                log.info("dictado etapas (ms): %s",
+                         ", ".join(f"{name}={value:.1f}" for name, value in stages.items()))
             with self.lock:
                 self.rec["busy"] = False
                 self._schedule_model_idle_unload_locked()
@@ -1201,7 +1198,7 @@ class Daemon:
         finally:
             # Libera la referencia pesada cuanto antes; _job recibe su copia.
             del frames
-        log.info("soltado tras %.1fs, %d bloques -> VAD+VoxCore.", dur,
+        log.info("soltado tras %.1fs, %d bloques -> VAD+Parakeet.", dur,
                  len(wav) // 160 if wav.size else 0)
         threading.Thread(target=self._job, args=(wav, dur, sid), daemon=True).start()
 

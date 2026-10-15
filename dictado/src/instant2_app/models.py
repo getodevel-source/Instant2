@@ -1,4 +1,4 @@
-"""Descarga de modelos: VoxCore int8 (~670MB) + Silero VAD (~1MB).
+"""Descarga de modelos: Parakeet int8 (~670MB) + Silero VAD (~1MB).
 
 Cada archivo se verifica con su SHA-256 antes de darlo por bueno. Sin eso, una
 descarga cortada o corrupta deja la aplicación fallando después, al cargar el
@@ -250,7 +250,7 @@ def _fetch(url, destination, expected, report, attempts=None,
 
 def download_models(data_dir, progress=None, include_ten_vad=False,
                     cancel_event=None, preflight=None):
-    """Baja VoxCore int8 (~670MB) + Silero VAD (~1MB).
+    """Baja Parakeet int8 (~670MB) + Silero VAD (~1MB).
 
     Con `include_ten_vad=True` suma TEN-VAD int8 (~126 KB, VAD alternativo
     opt-in por config `vad_model=ten`). progress(step, done, total):

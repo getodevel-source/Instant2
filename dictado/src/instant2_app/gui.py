@@ -20,7 +20,6 @@ import ctypes
 import json
 import logging
 import os
-import queue
 import signal
 import subprocess
 import sys
@@ -521,90 +520,11 @@ class DeviceCatalog:
         return labels, selected, bool(preserve and preferred and selected is None and labels)
 
 
-class TaskRunner:
-    """Trabajo bloqueante en hilos, resultados encolados para el hilo de UI.
-
-    Los hilos NUNCA tocan la UI: encolan y quien llama a `drain()` (el timer
-    del panel, o un test) los aplica en su hilo. `close()` descarta lo que
-    llegue después: una ventana cerrada no recibe resultados tardíos.
-    """
-    def __init__(self):
-        self._queue = queue.Queue()
-        self._lock = threading.Lock()
-        self._handlers = {}
-        self._pending = 0
-        self._closed = False
-        self.on_idle = None
-        self.on_error = None
-
-    @property
-    def pending(self):
-        with self._lock:
-            return self._pending
-
-    def submit(self, fn, on_result=None, on_error=None, on_progress=None):
-        with self._lock:
-            if self._closed:
-                return None
-            token = id(fn) ^ time.monotonic_ns()
-            self._handlers[token] = (on_result, on_error, on_progress)
-            self._pending += 1
-
-        def runner():
-            try:
-                value = fn(lambda payload: self._queue.put(("progress", token, payload)))
-                self._queue.put(("result", token, value))
-            except Exception as exc:  # noqa: BLE001  (cruza el hilo a la UI)
-                self._queue.put(("error", token, exc))
-            finally:
-                self._queue.put(("done", token, None))
-
-        threading.Thread(target=runner, daemon=True).start()
-        return token
-
-    def drain(self):
-        """Aplica los eventos encolados; devuelve cuántos atendió."""
-        applied = 0
-        while True:
-            try:
-                kind, token, value = self._queue.get_nowait()
-            except queue.Empty:
-                break
-            with self._lock:
-                handlers = self._handlers.get(token)
-                closed = self._closed
-            if kind == "done":
-                with self._lock:
-                    self._handlers.pop(token, None)
-                    if self._pending:
-                        self._pending -= 1
-                    idle = self._pending == 0
-                if idle and self.on_idle is not None and not closed:
-                    self.on_idle()
-                continue
-            if closed or handlers is None:
-                continue
-            on_result, on_error, on_progress = handlers
-            if kind == "progress" and on_progress is not None:
-                on_progress(value)
-            elif kind == "result" and on_result is not None:
-                on_result(value)
-            elif kind == "error":
-                if on_error is not None:
-                    on_error(value)
-                elif self.on_error is not None:
-                    self.on_error(value)
-            applied += 1
-        return applied
-
-    def close(self):
-        with self._lock:
-            self._closed = True
-            self._handlers.clear()
-            self._pending = 0
+from instant2_app.tasks import TaskRunner
+from instant2_app.reading import PanelReadingActions
 
 
-class PanelLogic:
+class PanelLogic(PanelReadingActions):
     """Estado y acciones del panel, sin Qt. Ver el docstring del módulo."""
 
     def __init__(self, page="home", autostart_override=None,
@@ -941,177 +861,6 @@ class PanelLogic:
     def _op_stop_daemon(self, _message):
         self.stop_daemon_flow()
 
-    def _schedule_tts_idle_unload(self):
-        from instant2_app.resource_policy import idle_unload_seconds
-
-        seconds = idle_unload_seconds(self.cfg)
-        timer, self._tts_idle_timer = self._tts_idle_timer, None
-        if timer is not None:
-            timer.cancel()
-        if self._closed or seconds <= 0 or self._tts_reader is None:
-            return
-        timer = threading.Timer(seconds, self._unload_tts_if_idle)
-        timer.daemon = True
-        self._tts_idle_timer = timer
-        timer.start()
-
-    def _unload_tts_if_idle(self):
-        if self._closed:
-            return
-        self._tts_idle_timer = None
-        if self._tts_cancel_event is not None or self._tts_state.get("busy"):
-            self._schedule_tts_idle_unload()
-            return
-        reader = self._tts_reader
-        if reader is not None and reader.unload():
-            log.info("modelo de lectura liberado tras el periodo de inactividad.")
-
-    def _op_tts_play(self, message):
-        from instant2_app import tts
-
-        text = message.get("text")
-        if not isinstance(text, str) or not text.strip():
-            self._tts_state.update({
-                "status": "error", "message": "Escribí o pegá un texto para leer.",
-            })
-            self.push_state()
-            return
-        if len(text.strip()) > tts.MAX_TEXT_CHARS:
-            self._tts_state.update({
-                "status": "error", "message": "El texto supera el máximo de 10.000 caracteres.",
-            })
-            self.push_state()
-            return
-        if self._tts_cancel_event is not None:
-            return
-        timer, self._tts_idle_timer = self._tts_idle_timer, None
-        if timer is not None:
-            timer.cancel()
-        voice = str(message.get("voice") or self._tts_preferences["voice"])
-        speed = message.get("speed", self._tts_preferences["speed"])
-        event = threading.Event()
-        self._tts_cancel_event = event
-        ready = tts.model_ready(self.data_dir)
-        self._tts_state.update({
-            "status": "downloading" if not ready else "preparing",
-            "model_ready": ready,
-            "busy": True,
-            "canceling": False,
-            "percent": 0 if not ready else 100,
-            "message": ("Descargando Kokoro por primera vez…" if not ready else
-                        "Preparando la voz local…"),
-        })
-        if self._tts_reader is None:
-            self._tts_reader = tts.KokoroReader(self.data_dir)
-        reader = self._tts_reader
-
-        def work(emit):
-            def report(done, total, detail):
-                emit({"done": done, "total": total, "message": detail})
-            return reader.play(text, voice=voice, speed=speed,
-                               cancel_event=event, progress=report)
-
-        def progressed(payload):
-            if self._closed:
-                return
-            detail = payload.get("message") or "Preparando la voz local…"
-            status = self._tts_state.get("status", "preparing")
-            if str(detail).startswith("Descargando"):
-                status = "downloading"
-            elif str(detail).startswith("Leyendo"):
-                status = "playing"
-            elif str(detail).startswith("Modelo Kokoro verificado"):
-                status = "preparing"
-            self._tts_state.update({
-                "status": status,
-                "model_ready": tts.model_ready(self.data_dir),
-                "message": detail,
-            })
-            if isinstance(payload.get("done"), (int, float)) and isinstance(
-                    payload.get("total"), (int, float)) and payload["total"]:
-                self._tts_state["percent"] = max(0, min(100, int(
-                    payload["done"] * 100 / payload["total"])))
-            self.push_state()
-
-        def completed(_samples):
-            self._tts_cancel_event = None
-            if self._closed:
-                return
-            self._tts_state.update({
-                "status": "ready", "model_ready": tts.model_ready(self.data_dir),
-                "busy": False, "canceling": False,
-                "percent": 100, "message": "Lectura finalizada.",
-            })
-            self.push_state()
-            self._schedule_tts_idle_unload()
-
-        def failed(exc):
-            self._tts_cancel_event = None
-            if self._closed:
-                return
-            from instant2_app.models import ModelIntegrityError
-            if event.is_set() or type(exc).__name__ == "SpeechCancelled":
-                ready = tts.model_ready(self.data_dir)
-                status = "ready" if ready else "missing"
-                detail = ("Lectura detenida." if ready else
-                          "Descarga detenida. El avance se conserva; podés reintentar.")
-            elif isinstance(exc, ModelIntegrityError):
-                status, detail = "error", (
-                    "No se pudo descargar o verificar Kokoro. Revisá la conexión y reintentá."
-                )
-            elif isinstance(exc, (ImportError, ModuleNotFoundError)):
-                status, detail = "error", (
-                    "Falta un componente de voz local. Reinstalá Instant2 y reintentá."
-                )
-            elif isinstance(exc, OSError):
-                status, detail = "error", (
-                    "No se pudo abrir el audio. Revisá el dispositivo de salida."
-                )
-            else:
-                status, detail = "error", (
-                    "No se pudo completar la lectura. Revisá el audio y reintentá."
-                )
-            # No se registra ni se muestra el detalle crudo: un proveedor puede
-            # incluir fragmentos del texto en una excepción de síntesis.
-            self._tts_state.update({
-                "status": status,
-                "model_ready": tts.model_ready(self.data_dir),
-                "busy": False, "canceling": False,
-                "message": detail,
-            })
-            self.push_state()
-            self._schedule_tts_idle_unload()
-
-        self.push_state()
-        token = self.tasks.submit(work, completed, failed, progressed)
-        if token is None:
-            self._tts_cancel_event = None
-            self._tts_state.update({"busy": False, "status": "error",
-                                    "message": "La lectura no pudo iniciarse."})
-            self.push_state()
-
-    def _op_tts_preferences(self, message):
-        from instant2_app import tts
-
-        try:
-            self._tts_preferences = tts.save_preferences(
-                message.get("voice"), message.get("speed"))
-        except OSError:
-            self.toast("No se guardó la voz",
-                       "La lectura puede seguir; revisá los permisos de la configuración.",
-                       level="warn")
-            return
-        self._tts_state.update(self._tts_preferences)
-        self.push_state()
-
-    def _op_tts_stop(self, _message):
-        if self._tts_cancel_event is None:
-            return
-        self._tts_state.update({"status": "stopping", "canceling": True,
-                                "message": "Deteniendo la lectura…"})
-        self._tts_cancel_event.set()
-        self.push_state()
-
     def _op_refresh_mics(self, _message):
         self.refresh_microphones()
 
@@ -1167,7 +916,7 @@ class PanelLogic:
         elif key in ("llm_server_path", "llm_model_path"):
             value = str(value or "").strip()
             if len(value) > 2048 or any(ord(char) < 32 for char in value):
-                self.toast("Ruta no vÃ¡lida", "RevisÃ¡ la ruta del ejecutable o del modelo.",
+                self.toast("Ruta no válida", "Revisá la ruta del ejecutable o del modelo.",
                            level="warn")
                 return
             self.cfg[key] = value
@@ -1176,7 +925,7 @@ class PanelLogic:
         elif key == "llm_acceleration":
             value = str(value or "").strip().lower()
             if value not in ("auto", "cpu"):
-                self.toast("AceleraciÃ³n no vÃ¡lida", "ElegÃ­ automÃ¡tica o CPU.",
+                self.toast("Aceleración no válida", "Elegí automática o CPU.",
                            level="warn")
                 return
             self.cfg[key] = value
@@ -2640,7 +2389,13 @@ def _panel_dir():
 
 
 def compose_panel_page(html, qwebchannel_js):
-    """Inyecta qwebchannel.js en la plantilla (marcador comentado)."""
+    """Resuelve recursos locales e inyecta el canal en la página autónoma."""
+    from pathlib import Path
+    from instant2_app.branding import panel_css_tokens
+
+    base_url = Path(_panel_dir()).as_uri() + "/"
+    html = html.replace("<!--PANEL_ASSETS-->", f'<base href="{base_url}">', 1)
+    html = html.replace("/*PANEL_PALETTE*/", panel_css_tokens(), 1)
     return html.replace("<!--QWEBCHANNEL-->",
                         "<script>\n" + qwebchannel_js + "\n</script>", 1)
 
@@ -2714,6 +2469,7 @@ class _WebPanel:
             raise RuntimeError("WebEngineView not found in panel host")
 
         class Bridge(QObject):
+            tasksReady = Signal()
             state = Signal(str)
             toast = Signal(str)
             meter = Signal(str)
@@ -2748,11 +2504,10 @@ class _WebPanel:
         self.root.setProperty("pageUrl", QUrl.fromLocalFile(write_panel_page()))
         self.root.setProperty("visible", True)
 
-        # Drenaje de resultados de workers + latido de estado del daemon.
-        self._drain_timer = QTimer(self.root)
-        self._drain_timer.setInterval(30)
-        self._drain_timer.timeout.connect(self.logic.tasks.drain)
-        self._drain_timer.start()
+        # Workers wake the UI only when a result/progress event is available.
+        self.bridge.tasksReady.connect(
+            self.logic.tasks.drain, Qt.ConnectionType.QueuedConnection)
+        self.logic.tasks.notify = self.bridge.tasksReady.emit
         self._daemon_timer = QTimer(self.root)
         self._daemon_timer.setInterval(3000)
         self._daemon_timer.timeout.connect(self.logic.refresh_daemon)
@@ -2816,7 +2571,7 @@ class _WebPanel:
                     self.root.openFileDialog(kind)
                 except Exception:
                     self.logic.toast("No se pudo abrir el selector de archivos",
-                                     "PodÃ©s pegar la ruta del archivo en Ajustes.",
+                                     "Podés pegar la ruta del archivo en Ajustes.",
                                      level="warn")
             return
         self.logic.handle(message)

@@ -5,6 +5,8 @@ import subprocess
 import sys
 import time
 
+from instant2_app.clipboard import restore_text, sequence_number
+
 
 class SelectionUnavailable(RuntimeError):
     """No readable text selection was copied by the foreground application."""
@@ -119,10 +121,7 @@ def copy_selected_text(timeout=0.9):
     except Exception:
         raise SelectionAccessError("clipboard unavailable") from None
     windows = sys.platform == "win32"
-    sequence_before = None
-    if windows:
-        import ctypes
-        sequence_before = ctypes.windll.user32.GetClipboardSequenceNumber()
+    sequence_before = sequence_number()
 
     try:
         _send_copy()
@@ -133,9 +132,12 @@ def copy_selected_text(timeout=0.9):
     copied_sequence = None
     while time.monotonic() < deadline:
         try:
+            before_read = sequence_number()
             candidate = _read_clipboard()
-            if windows:
-                sequence = ctypes.windll.user32.GetClipboardSequenceNumber()
+            if windows and sequence_before is not None:
+                sequence = sequence_number()
+                if sequence != before_read:
+                    continue
                 if sequence != sequence_before:
                     copied, copied_sequence = candidate, sequence
                     break
@@ -151,15 +153,6 @@ def copy_selected_text(timeout=0.9):
             return copied
         raise SelectionUnavailable("No readable text selection")
     finally:
-        try:
-            if windows:
-                current_sequence = ctypes.windll.user32.GetClipboardSequenceNumber()
-                if copied_sequence is not None and current_sequence == copied_sequence:
-                    _write_clipboard(previous)
-            else:
-                if copied and _read_clipboard() == copied:
-                    _write_clipboard(previous)
-        except Exception:
-            # The voice feature should still work if the desktop clipboard
-            # manager does not allow restoring its previous text value.
-            pass
+        if copied:
+            restore_text(previous, copied, _read_clipboard, _write_clipboard,
+                         copied_sequence)

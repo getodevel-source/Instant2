@@ -1,62 +1,95 @@
-# Dise?o de UI y animaciones de Instant2
+# Diseño de UI y movimiento de Instant2
 
-**Prop?sito:** que el estado del dictado se entienda de inmediato y que el movimiento corresponda a una operaci?n real.
+## Dirección visual
 
-## Direcci?n visual
+La interfaz mantiene el contexto de una herramienta local de voz: base petróleo,
+verde agua para las acciones y señales de voz, y estados acompañados por texto.
+La composición usa superficies planas, tipografía Manrope incluida localmente,
+iconos de trazo fino y una escala coherente de espaciado, controles y radios.
+No necesita descargar fuentes ni bibliotecas de animación al abrirse.
+Los compositores inyectan los colores del panel y del indicador desde
+`branding.PALETTE`; las páginas no mantienen copias manuales de la paleta.
 
-Instant2 se presenta como una herramienta de voz, no como un panel t?cnico gen?rico. La ventana principal usa una base oscura petr?leo, texto claro y verde agua como se?al de voz. Los estados de espera, advertencia y error usan colores y etiquetas distintos. El overlay conserva una superficie oscura transl?cida para mantener contraste sobre otras aplicaciones y comparte los colores de marca.
+Las cinco vistas conservan sus controles y operaciones por QWebChannel:
 
-Inicio muestra la tecla de dictado, el estado del micr?fono y el estado del servicio de lenguaje. Micr?fono, Ajustes y Vocabulario siguen accesibles desde la navegaci?n persistente. Los ajustes avanzados est?n agrupados para que el uso cotidiano no requiera conocer motores ni par?metros.
+- **Inicio:** estado del dictado, iniciar/detener, atajo elegido, ayuda de F10,
+  reconocimiento, LLM, micrófono y comprobaciones para empezar. Los detalles
+  del equipo son filas de información; el estado y las acciones tienen prioridad.
+- **Micrófono:** selector, actualización de dispositivos, prueba y nivel real.
+- **Ajustes:** atajos, inicio con el sistema y escala. Los ajustes avanzados
+  conservan rendimiento, privacidad, runtime, credenciales y actualizaciones.
+- **Vocabulario:** perfiles y edición de términos, variantes y fonética.
+- **Leer texto:** editor, contador, Dora, velocidad, estado, progreso,
+  reproducción y cancelación. En ventanas amplias, las opciones están junto
+  al editor; con poco ancho o zoom, se ubican debajo.
 
-La tipograf?a usa la familia del sistema. Texto, controles y estados conservan contraste alto, foco de teclado visible y objetivos t?ctiles de al menos 44 px. El color no es la ?nica se?al.
+Los avisos transitorios forman parte del contenido, debajo de la barra superior.
+Conservan sus acciones y duración, y no se superponen a los controles. Los modales
+mantienen navegación de teclado, Escape y restauración del foco.
 
-## Jerarqu?a de Inicio
+## Indicadores de F9 y F10
 
-Inicio debe contestar en este orden:
+Se conserva el comportamiento: mantener F9 para dictar, soltar para procesar;
+presionar F10 para leer la selección y otra vez para detenerla. El atajo de
+dictado sigue siendo configurable.
 
-1. **?Puedo empezar?** Mostrar micr?fono, tecla elegida y estado del reconocimiento.
-2. **?Qu? servicio recibe el texto?** Indicar si el LLM configurado es local o remoto, el modelo cuando se conoce y el estado real. El audio va solamente al reconocedor local.
-3. **?Qu? acci?n sigue?** Iniciar, detener, probar micr?fono o abrir los ajustes necesarios.
+Los dos estilos existentes comparten una cápsula de 344 × 56 px durante el uso
+activo. `classic` muestra nueve barras; `orbital`, diecisiete bandas interpoladas.
+La señal sigue el micrófono o la salida de Kokoro. Los iconos, el estado y el atajo
+distinguen dictado y lectura. Los avisos amplían la superficie hasta 440 px de
+ancho y ajustan el texto en hasta cuatro líneas, sin comprimirlo en una sola.
 
-El servicio local debe comprobarse antes de mostrar ?Listo?. El modelo de voz y el LLM tienen estados separados. El instalador no incluye modelos de lenguaje; el runtime y el modelo se configuran fuera del instalador.
+El indicador se ancla abajo al centro, a 16 px del límite del área de trabajo,
+con un margen interno de 12 px. La ventana no toma foco y permite que los clics
+lleguen a la aplicación que está debajo.
 
-## Movimiento por estado
+| Cambio | Respuesta | Tiempo |
+|---|---|---:|
+| Navegar | Opacidad y desplazamiento de 5 px | 200 ms |
+| Abrir un modal | Opacidad y desplazamiento breve | 180 ms |
+| Desplegar opciones | Opacidad y desplazamiento de 4 px | 160 ms |
+| Mostrar el indicador | Opacidad, escala 0,985 → 1 y desplazamiento de 4 px | 220 ms |
+| Cambiar estado de voz | Superficie estable, entrada del contenido | 150 ms |
+| Ocultar el indicador | Opacidad y desplazamiento de 3 px | 160 ms |
+| Recibir audio | Ataque y caída suavizados de bandas reales | 55 / 135 ms |
 
-Las animaciones tienen una causa observable y un estado final estable. El movimiento usa `transform` y `opacity` con curvas breves. No se animan dimensiones de layout, sombras grandes ni desenfoques.
-
-| Evento real | Respuesta visual | Duraci?n objetivo | Movimiento reducido |
-|---|---|---:|---|
-| Abre o cambia una secci?n | El contenido aparece con un desplazamiento vertical corto; la navegaci?n cambia ?nfasis | 220?280 ms | Mostrar directamente en su posici?n final |
-| Abre configuraci?n desde Inicio | Los ajustes se despliegan y el foco va al primer campo incompleto | 180 ms | Mostrar de inmediato y conservar el foco |
-| Mantiene la tecla y habla | El overlay indica ?Escuchando?; el espectro sigue el nivel real del micr?fono | M?ximo 30 fps | Se?al est?tica sin respiraci?n, giro ni pulso |
-| Reconoce o corrige texto | El overlay cambia a ?Transcribiendo? o ?Revisando texto? | Hasta el final o timeout real | Texto de estado est?tico |
-| Pega el resultado | Confirmaci?n o error textual; no afirma que el campo receptor lo acept? | 140?200 ms | Cambio instant?neo |
-| El servicio falla o se recupera | Aviso claro y cambio solo cuando cambia el estado real | Una transici?n | Sin pulso peri?dico |
-
-Curva principal: `cubic-bezier(.2,.8,.2,1)`. Presionar un bot?n puede escalar hasta `0.985` mientras se mantiene. No hay part?culas, parallax, ?latido de IA? ni loaders que sigan girando despu?s de terminar la operaci?n.
-
-## Responsabilidad de cada superficie
-
-- **Panel:** controles, opciones, estados persistentes y ayuda. El cambio de secci?n y las respuestas de los controles usan transiciones cortas; el reposo no tiene animaciones en bucle.
-- **Overlay:** una se?al compacta de escucha, transcripci?n, correcci?n y entrega. Durante la escucha usa datos reales de audio. Permanece sin foco para no sacar al usuario del campo donde dicta.
-- **Mensajes:** describen el resultado real. ?Pegado enviado? significa que Instant2 envi? la combinaci?n de teclas, no que haya le?do y verificado el contenido del campo destino.
+La referencia [Motion Framer](https://github.com/freshtechbro/claudedesignskills/blob/main/.claude/skills/motion-framer/SKILL.md)
+orientó el movimiento por estado y la continuidad de entrada/salida. La
+implementación usa CSS y Canvas de la arquitectura existente. La skill
+`high-end-visual-design` se aplicó a composición, tipografía, consistencia y
+revisión final, adaptando sus recomendaciones a una herramienta de escritorio.
 
 ## Accesibilidad y rendimiento
 
-- Respetar `prefers-reduced-motion` tanto en CSS como en el renderizador Canvas. En reposo, detener el ciclo de dibujo; con movimiento reducido, redibujar al cambiar datos reales.
-- Mantener navegaci?n completa con teclado, foco visible, `aria-live` para cambios de estado y contraste en temas de alto contraste y colores forzados.
-- El Canvas se limita a 30 cuadros/s durante escucha y transiciones; se detiene al descansar.
-- El espectro reutiliza los datos de audio disponibles; no crea otra captura ni guarda muestras.
-- Los tiempos de carga muestran estados reales, sin porcentajes inventados.
+- `prefers-reduced-motion` elimina entradas, desplazamientos y giros. La señal
+  de audio permanece estática y solo se redibuja al recibir actualizaciones.
+- El Canvas anuncia estados en una región `aria-live`; no es la única fuente
+  de información. Los colores se acompañan de iconos y etiquetas.
+- El dibujo se detiene al quedar inactivo, incluso con un paquete de audio tardío.
+- Los medidores usan transformaciones de escala, sin animar dimensiones de layout.
+- Se mantienen foco visible, colores forzados y preferencia de mayor contraste.
+- Las consultas de contenedor adaptan la composición al ancho efectivo con zoom.
 
-## Criterios visuales
+## Verificación del rediseño
 
-- Una captura de 1100 ? 600 permite identificar el atajo, micr?fono y estado del servicio desde Inicio.
-- El estado del reconocimiento y el estado del LLM son distinguibles sin depender solo del color.
-- A 100 %, 125 % y 150 % se leen t?tulos y se pueden usar los controles principales.
-- El movimiento reducido conserva la misma informaci?n y elimina movimientos no esenciales.
-- Los estados no aparecen como listos antes de que el servicio confirme que responde.
+El 14 de octubre de 2026 se revisó en Windows el host QML/QtWebEngine real:
 
-## Validaci?n manual pendiente
+- 17 capturas del panel: las cinco vistas, lectura activa/error, captura de tecla,
+  ajustes avanzados, vocabulario vacío, modelo ausente, zoom 125/150 % y tamaño
+  mínimo 760 × 480. Sin desbordamiento horizontal ni errores JavaScript detectados.
+- 20 capturas del overlay por cada preferencia de movimiento (40 en total):
+  ambos estilos y estados de dictado, procesamiento, lectura, parada, éxito,
+  aviso y error. Se verificó la señal reactiva/estática y la parada del renderizador.
+- 110 pruebas `unittest` del panel, overlay, ajustes, ciclo de vida, Kokoro y F10,
+  junto con las comprobaciones de regresión de audio, hotkeys y pegado existentes.
+- Tras las ocho mejoras se repitieron esas capturas y la suite completa:
+  376 pruebas correctas y seis omitidas. La evidencia de motores reales,
+  rendimiento y distribución está en [la auditoría](auditoria-ocho-mejoras.md).
+- Manrope y su licencia se incluyen en setuptools, el build local y las tres
+  recetas de distribución de GitHub Actions.
 
-La captura de p?ginas en Windows se puede automatizar con `dictado/bench/web_panel_smoke.py`; el overlay y el pegado requieren probarse en campos reales. Wayland/Omarchy requiere comprobar el atajo global, la ventana sin foco y el pegado en el compositor.
+Las capturas e informes locales están en `.ui-review/` (ignorado por Git).
+Las verificaciones usan datos controlados para no modificar ajustes personales.
+No equivalen a una sesión de dictado humano, una prueba de selección y lectura
+en cada aplicación externa, ni una validación de Linux/Wayland/macOS. El respaldo
+Tk conserva su comportamiento previo cuando QtWebEngine no está disponible.

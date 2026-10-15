@@ -1,4 +1,5 @@
 """Shared residency policy for the ASR, local LLM and Kokoro models."""
+import os
 
 MODE_IDLE_SECONDS = {
     # Keep the models resident while the background dictation daemon is active.
@@ -18,3 +19,12 @@ def resource_mode(config):
 def idle_unload_seconds(config):
     """Seconds before an idle inference model is released; zero means resident."""
     return MODE_IDLE_SECONDS[resource_mode(config)]
+
+
+def inference_threads(value=4):
+    """Apply the existing CPU budget to each local voice inference session."""
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        value = 4
+    return max(1, min(8, os.cpu_count() or 4, value))

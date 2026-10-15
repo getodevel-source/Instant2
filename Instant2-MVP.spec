@@ -13,6 +13,8 @@ datas = [
     (os.path.join(APP, "qml", "panel_web_host.qml"), "instant2_app/qml"),
     (os.path.join(APP, "web", "overlay.html"), "instant2_app/web"),
     (os.path.join(APP, "web", "panel.html"), "instant2_app/web"),
+    (os.path.join(APP, "web", "Manrope.ttf"), "instant2_app/web"),
+    (os.path.join(APP, "web", "Manrope-OFL.txt"), "instant2_app/web"),
     (os.path.join(ROOT, "scripts", "instant2-update.bat"), "."),
 ]
 binaries = []

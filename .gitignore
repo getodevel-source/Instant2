@@ -21,6 +21,8 @@ dist-f10-waves/
 venv/
 .env/
 .herdr-web-ui/
+.ui-review/
+.audit-eight/
 basura/
 
 # Logs

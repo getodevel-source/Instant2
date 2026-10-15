@@ -113,7 +113,13 @@ _daemon.overlay.listening(1)
 _check("late mic-open update cannot reverse release transition",
        _daemon.overlay.events[-1] == ("processing", 1))
 with patch("instant2_app.paste.paste", return_value=None):
-    _deferred_jobs[-1].target(*_deferred_jobs[-1].args)
+    # Finishing release queues a separate recognition worker. Keep both jobs
+    # deterministic instead of racing a live thread against the assertion.
+    with patch("instant2_app.daemon.threading.Thread", _DeferredJob):
+        release_job = _deferred_jobs[-1]
+        release_job.target(*release_job.args)
+    recognition_job = _deferred_jobs[-1]
+    recognition_job.target(*recognition_job.args)
 _check("successful paste produces brief confirmation",
        _daemon.overlay.events[-1] == ("success", 1, 760))
 _daemon.overlay.starting(2)

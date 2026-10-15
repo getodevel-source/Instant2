@@ -90,6 +90,8 @@ jobs:
             --add-data "dictado/src/instant2_app/qml/panel_web_host.qml;instant2_app/qml" \
             --add-data "dictado/src/instant2_app/web/overlay.html;instant2_app/web" \
             --add-data "dictado/src/instant2_app/web/panel.html;instant2_app/web" \
+            --add-data "dictado/src/instant2_app/web/Manrope.ttf;instant2_app/web" \
+            --add-data "dictado/src/instant2_app/web/Manrope-OFL.txt;instant2_app/web" \
             --add-data "scripts/instant2-update.bat;." \
             --hidden-import PySide6.QtWebEngineQuick \
             --hidden-import PySide6.QtWebEngineCore \
@@ -121,6 +123,8 @@ jobs:
             --add-data "dictado/src/instant2_app/qml/panel_web_host.qml;instant2_app/qml" \
             --add-data "dictado/src/instant2_app/web/overlay.html;instant2_app/web" \
             --add-data "dictado/src/instant2_app/web/panel.html;instant2_app/web" \
+            --add-data "dictado/src/instant2_app/web/Manrope.ttf;instant2_app/web" \
+            --add-data "dictado/src/instant2_app/web/Manrope-OFL.txt;instant2_app/web" \
             --add-data "scripts/instant2-update.bat;." \
             --hidden-import PySide6.QtWebEngineQuick \
             --hidden-import PySide6.QtWebEngineCore \
@@ -237,6 +241,8 @@ jobs:
             --add-data "dictado/src/instant2_app/qml/panel_web_host.qml:instant2_app/qml" \
             --add-data "dictado/src/instant2_app/web/overlay.html:instant2_app/web" \
             --add-data "dictado/src/instant2_app/web/panel.html:instant2_app/web" \
+            --add-data "dictado/src/instant2_app/web/Manrope.ttf:instant2_app/web" \
+            --add-data "dictado/src/instant2_app/web/Manrope-OFL.txt:instant2_app/web" \
             --hidden-import PySide6.QtWebEngineQuick \
             --hidden-import PySide6.QtWebEngineCore \
             --hidden-import PySide6.QtWebChannel \

@@ -31,7 +31,7 @@ log = logging.getLogger("instant2")
 # del monitor y el ancho extra es para los avisos largos (no hace falta
 # reposicionar ni animar el tamano de la ventana).
 WINDOW_SIZES = {"classic": (480, 140), "orbital": (480, 140)}
-_OVERLAY_BOTTOM_GAP = 60
+_OVERLAY_BOTTOM_GAP = 16
 _FLUSH_SECONDS = 0.04
 _PAGE_PLACEHOLDER = "<!--QWEBCHANNEL-->"
 _PAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
@@ -51,6 +51,8 @@ def frame_payload(mode, message, key_label, style, level=None, pitch=None, bands
 
 def compose_page(html, qwebchannel_js):
     """Inyecta qwebchannel.js en la plantilla (marcador comentado, una vez)."""
+    from instant2_app.branding import overlay_tokens
+    html = html.replace("/*OVERLAY_PALETTE*/", json.dumps(overlay_tokens()), 1)
     return html.replace(
         _PAGE_PLACEHOLDER, "<script>\n" + qwebchannel_js + "\n</script>", 1)
 

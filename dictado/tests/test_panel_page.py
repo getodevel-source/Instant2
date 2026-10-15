@@ -135,7 +135,7 @@ class PanelPageContractTests(unittest.TestCase):
         self.assertEqual(found - allowed, set(), "panel.html: colores fuera de la paleta")
 
     def test_panel_theme_colors_are_declared_in_branding(self):
-        source = self._source()
+        source = compose_panel_page(self._source(), "")
         for key in ("panel_background", "panel_surface", "panel_text",
                     "panel_accent", "panel_accent_button", "panel_hero_start"):
             self.assertIn(PALETTE[key], source)
@@ -145,6 +145,19 @@ class PanelPageContractTests(unittest.TestCase):
         self.assertIn("<script>", out)
         self.assertIn("window.qt=1;", out)
         self.assertNotIn("<!--QWEBCHANNEL-->", out)
+
+    def test_local_asset_base_is_resolved_for_the_generated_page(self):
+        out = compose_panel_page("<head><!--PANEL_ASSETS--></head>", "")
+        self.assertNotIn("<!--PANEL_ASSETS-->", out)
+        self.assertIn('<base href="file:///', out)
+        self.assertIn('/web/">', out)
+
+    def test_manrope_and_its_license_are_bundled_for_offline_use(self):
+        folder = os.path.dirname(PANEL_PAGE)
+        with open(os.path.join(folder, "Manrope.ttf"), "rb") as handle:
+            self.assertEqual(handle.read(4), b"\x00\x01\x00\x00")
+        with open(os.path.join(folder, "Manrope-OFL.txt"), encoding="utf-8") as handle:
+            self.assertIn("SIL OPEN FONT LICENSE", handle.read())
 
     def test_normalize_key_matches_hotkey_contract(self):
         source = self._source()

@@ -165,10 +165,10 @@ webengine): el daemon nunca se queda sin overlay. El renderer vive en
 Para retocar la interfaz, los colores están en
 [`branding.py`](src/instant2_app/branding.py) (`PALETTE`, única fuente de
 verdad); las páginas [`web/overlay.html`](src/instant2_app/web/overlay.html)
-y [`web/panel.html`](src/instant2_app/web/panel.html) repiten la paleta a
-mano porque se sirven tal cual, sin motor de plantillas;
-`tests/test_overlay_palette.py` y `tests/test_panel_page.py` fallan si se
-despegan. La ventana del overlay se centra con
+y [`web/panel.html`](src/instant2_app/web/panel.html) reciben esos colores
+desde sus compositores de página, sin mantener copias manuales.
+`tests/test_overlay_palette.py` y `tests/test_panel_page.py` comprueban la
+inyección de la paleta. La ventana del overlay se centra con
 `WINDOW_SIZES`/`_OVERLAY_BOTTOM_GAP` en `overlay_web.py`; el panel vive en
 `gui.py` (`PanelLogic` + host `qml/panel_web_host.qml`).
 

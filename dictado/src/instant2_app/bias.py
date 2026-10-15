@@ -1,7 +1,7 @@
 """Diccionario tecnico general + spotter fonetico con gate de confianza.
 
 El perfil de vocabulario (`context.py`) es por usuario: corrige SUS marcas.
-Este modulo es general: corrige los terminos tecnicos ingleses que VoxCore
+Este modulo es general: corrige los terminos tecnicos ingleses que Parakeet
 deforma sistematicamente para TODO hispanohablante dev (commit->comic,
 build->wey/bill, deploy->depliegue...). Misma vara para todos, sin entrenar
 niGPU: es la version portable de la idea de TurboBias/CTC-WS (phrase-boosting
@@ -19,7 +19,7 @@ from instant2_app import context
 
 log = logging.getLogger("instant2")
 
-# termino -> variantes que VoxCore escribe (curado de docs/precision.md +
+# termino -> variantes que Parakeet escribe (curado de docs/precision.md +
 # medicion con voz real + bench FLEURS; se amplia con evidencia, no a ojo).
 # OJO: solo deformaciones que NO son palabra espanola valida ("quemet",
 # "kemite"). Las que si lo son ("comic", "comer") van SOLO al nivel 2 con

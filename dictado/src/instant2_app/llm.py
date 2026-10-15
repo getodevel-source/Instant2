@@ -9,9 +9,12 @@ Seguridad: `http://` en claro solo se permite contra loopback (localhost,
 `INSTANT2_LLM_TOKEN`) viaja en `Authorization: Bearer` y nunca se loguea.
 """
 import ipaddress
+from collections import Counter
+from difflib import SequenceMatcher
 import logging
 import os
 import re
+import time
 import unicodedata
 from urllib.parse import urlsplit
 
@@ -118,7 +121,11 @@ VERIFY_SYSTEM = (
     "el modo/tiempo verbal); '38.000 pesos' -> '42.500 pesos'; 'No envíes "
     "el mensaje' -> 'Envía el mensaje'; 'solo las diferencias' -> 'las "
     "diferencias'. Ante cualquier duda sobre un dato o la intención, responde "
-    "REJECT. Responde exactamente ACCEPT o REJECT, sin explicar."
+    "REJECT. Rechaza también reformulaciones que solo suenen más naturales, "
+    "palabras nuevas inferidas del contexto y cambios de artículos o "
+    "preposiciones cuando la frase original ya sea válida. Una verificación "
+    "de estilo no demuestra que el audio dijera otra cosa. Responde exactamente "
+    "ACCEPT o REJECT, sin explicar."
 )
 
 
@@ -227,6 +234,8 @@ def candidate_preserves_meaning(original, candidate, url, timeout=2.0,
         return bool(original == candidate)
     if _surface_words(original) == _surface_words(candidate):
         return True
+    if not preserves_facts(original, candidate):
+        return False
 
     import json
     import urllib.request
@@ -342,12 +351,16 @@ def maybe_polish(text, cfg=None, url=None, conf=1.0, min_conf=0.85,
         _gen = _bias.terms_for_correction()
         terms = (_terms + "\n" + _gen) if _terms else _gen
         request_timeout = 8.0 if timeout is None else max(0.1, float(timeout))
+        deadline = time.monotonic() + request_timeout
         candidate = polish_candidate(
             corrected, target, context_terms=terms, cfg=cfg,
             timeout=request_timeout)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return corrected
         if not candidate_preserves_meaning(
                 corrected, candidate, target,
-                timeout=min(2.0, request_timeout), cfg=cfg):
+                timeout=min(2.0, remaining), cfg=cfg):
             log.info("LLM candidate rejected by meaning check; keep local text.")
             return corrected
         return candidate
@@ -376,3 +389,29 @@ def _words(text):
 def _surface_words(text):
     """Word tokens that retain accents so meaning-sensitive edits are gated."""
     return re.findall(r"\w+", unicodedata.normalize("NFC", text).casefold())
+
+
+_RESTRICTIONS = frozenset({"no", "ni", "nunca", "jamas", "sin", "solo",
+                            "solamente", "unicamente", "excepto", "salvo"})
+_GRAMMAR_INSERTIONS = frozenset({"a", "al", "de", "del", "el", "la", "los",
+                                  "las", "un", "una", "unos", "unas", "en"})
+
+
+def preserves_facts(original, candidate):
+    """Reject provable data changes before asking the probabilistic verifier.
+
+    The verifier can still judge lexical repairs, repetitions and grammar, but
+    cannot authorize changing a literal number/restriction or inventing content.
+    """
+    original_words, candidate_words = _words(original), _words(candidate)
+    if Counter(word for word in original_words if word in _RESTRICTIONS) != Counter(
+            word for word in candidate_words if word in _RESTRICTIONS):
+        return False
+    if re.findall(r"\d+(?:[.,]\d+)*", original) != re.findall(r"\d+(?:[.,]\d+)*", candidate):
+        return False
+    changes = SequenceMatcher(None, original_words, candidate_words, autojunk=False)
+    for operation, _start, _end, begin, end in changes.get_opcodes():
+        if operation == "insert" and any(word not in _GRAMMAR_INSERTIONS
+                                          for word in candidate_words[begin:end]):
+            return False
+    return True

@@ -1,8 +1,7 @@
 """Identidad gráfica de Instant2, compartida por la ventana y la bandeja.
 
-`PALETTE` es la única fuente de verdad de los colores de la aplicación. El QML
-de la pastilla flotante repite estos valores porque se carga sin motor de
-plantillas (ver `tests/test_overlay_palette.py`, que falla si se desincronizan).
+`PALETTE` es la fuente de los colores de la interfaz web. Sus compositores
+inyectan los tokens del panel y del indicador antes de cargar las páginas.
 """
 
 # Familia de marca: verde agua (marca) sobre azul petróleo profundo.
@@ -37,28 +36,28 @@ PALETTE = {
     "working": "#8fd7e8",
     # Superficies dedicadas al panel principal; el overlay mantiene su piel
     # oscura translúcida y usa los tokens de marca/estado compartidos.
-    "panel_background": "#0b1418",
-    "panel_bg_alt": "#0e1b20",
-    "panel_surface": "#132228",
-    "panel_surface_alt": "#192b32",
-    "panel_surface_high": "#223a42",
-    "panel_line": "#36535c",
-    "panel_line_soft": "#20353c",
-    "panel_text": "#f0f7f5",
-    "panel_muted": "#aec0c0",
-    "panel_faint": "#84999b",
-    "panel_accent": "#6be2d1",
-    "panel_accent_soft": "#a0eee1",
-    "panel_accent_button": "#087f73",
-    "panel_accent_hover": "#099889",
-    "panel_accent_press": "#066d64",
+    "panel_background": "#10191d",
+    "panel_bg_alt": "#0c1418",
+    "panel_surface": "#162126",
+    "panel_surface_alt": "#1b292e",
+    "panel_surface_high": "#223238",
+    "panel_line": "#34474e",
+    "panel_line_soft": "#26363c",
+    "panel_text": "#edf3f2",
+    "panel_muted": "#b0bfbe",
+    "panel_faint": "#91a4a5",
+    "panel_accent": "#86dbc9",
+    "panel_accent_soft": "#b8ebde",
+    "panel_accent_button": "#24796b",
+    "panel_accent_hover": "#2b8979",
+    "panel_accent_press": "#1b655a",
     "panel_brand_mid": "#164b4d",
     "panel_brand_start": "#138d7d",
     "panel_brand_end": "#086b64",
     "panel_brand_hover_start": "#19a08c",
     "panel_brand_hover_end": "#0a7a70",
-    "panel_hero_start": "#172d34",
-    "panel_hero_end": "#102127",
+    "panel_hero_start": "#162126",
+    "panel_hero_end": "#10191d",
 }
 
 
@@ -69,6 +68,28 @@ def rgba(color, alpha, channel=None):
         value = value[channel * 2:channel * 2 + 2] * 3
     red, green, blue = (int(value[index:index + 2], 16) for index in (0, 2, 4))
     return f"rgba({red}, {green}, {blue}, {alpha:g})"
+
+
+def panel_css_tokens():
+    """Render the panel's palette at composition time, without a second copy."""
+    names = {
+        "bg": "background", "bg-alt": "bg_alt", "surface": "surface",
+        "surface-alt": "surface_alt", "surface-high": "surface_high",
+        "line": "line", "line-soft": "line_soft", "text": "text",
+        "muted": "muted", "faint": "faint", "accent": "accent",
+        "accent-soft": "accent_soft", "accent-button": "accent_button",
+        "accent-hover": "accent_hover", "accent-press": "accent_press",
+    }
+    tokens = {name: PALETTE["panel_" + key] for name, key in names.items()}
+    tokens.update({name: PALETTE[name] for name in ("green", "amber", "red")})
+    return "\n".join(f"  --{name}: {value};" for name, value in tokens.items())
+
+
+def overlay_tokens():
+    """Colors consumed by the Canvas renderer, resolved from the same palette."""
+    return {name: PALETTE[name] for name in (
+        "accent", "working", "green", "amber", "red", "text", "muted",
+        "glass", "glass_alt", "line")}
 
 
 def blend(start, end, ratio):

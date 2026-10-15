@@ -6,6 +6,7 @@ overlay con los colores viejos (o con un literal suelto que nadie sabe de
 dónde salió). El contrato del bridge también se ancla acá.
 """
 import os
+import json
 import re
 import sys
 import unittest
@@ -13,6 +14,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from instant2_app.branding import PALETTE
+from instant2_app.overlay_web import compose_page
 
 WEB_PAGE = os.path.join(
     os.path.dirname(__file__), "..", "src", "instant2_app", "web", "overlay.html")
@@ -28,12 +30,8 @@ class WebOverlayPaletteTests(unittest.TestCase):
             return handle.read()
 
     def test_declared_tokens_mirror_python_palette(self):
-        source = self._source()
-        declared = {
-            token.lower(): value.lower()
-            for token, value in re.findall(
-                r'(\w+):\s*"(#[0-9a-fA-F]{6})"', source)
-        }
+        source = compose_page(self._source(), "")
+        declared = json.loads(re.search(r"const PALETTE = (\{[^;]+\});", source).group(1))
         for key in ("accent", "working", "green", "amber", "red", "text",
                     "muted", "glass", "glass_alt", "line"):
             self.assertIn(key, declared, f"falta el token {key} en overlay.html")

@@ -39,7 +39,7 @@ Window {
         anchors.fill: parent
         url: host.pageUrl
         webChannel: channel
-        backgroundColor: "#0f1a20"
+        backgroundColor: "#10191d"
     }
 
     FileDialog {

@@ -117,7 +117,11 @@ class KokoroTextTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             paths = tts.asset_paths(directory)
             kokoro_module = types.ModuleType("kokoro_onnx")
-            kokoro_module.Kokoro = lambda model, voices: (model, voices)
+            kokoro_module.Kokoro = SimpleNamespace(from_session=lambda session, voices: (session, voices))
+            fake_session = object()
+            options = SimpleNamespace(add_session_config_entry=lambda *args: None)
+            ort_module = SimpleNamespace(SessionOptions=lambda: options,
+                                         InferenceSession=lambda *args, **kwargs: fake_session)
             misaki_module = types.ModuleType("misaki")
             espeak_module = types.ModuleType("misaki.espeak")
             espeak_module.EspeakG2P = lambda **kwargs: kwargs
@@ -128,11 +132,14 @@ class KokoroTextTests(unittest.TestCase):
                         "kokoro_onnx": kokoro_module,
                         "misaki": misaki_module,
                         "misaki.espeak": espeak_module,
+                        "onnxruntime": ort_module,
                     }):
                 engine, g2p = reader._load(None, None)
 
             ensure.assert_called_once_with(directory, None, None)
-            self.assertEqual(engine, (paths["model"], paths["voices"]))
+            self.assertEqual(engine, (fake_session, paths["voices"]))
+            self.assertEqual(options.intra_op_num_threads, reader.threads)
+            self.assertEqual(options.inter_op_num_threads, 1)
             self.assertEqual(g2p, {"language": "es"})
 
     def test_kokoro_unload_releases_engine_and_phonemizer_references(self):

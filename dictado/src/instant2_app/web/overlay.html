@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html lang="es">
 <head>
 <meta charset="utf-8">
 <style>
@@ -10,28 +10,23 @@
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
+<canvas id="c" aria-hidden="true"></canvas>
+<div id="announcement" role="status" aria-live="polite" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)"></div>
 <!--QWEBCHANNEL-->
 <script>
-/* Overlay de Instant2 (daemon): misma anatomia que los overlays QML/Tk, en
-   canvas2d. Dos estilos:
-     classic  pastilla de vidrio con 9 barras que siguen su banda real, chip
-              de tecla, spinner al transcribir, tilde verde + "Copiado" al
-              confirmar.
-     orbital  pastilla compacta con un espectro suave que sigue las bandas
-              reales del microfono y transiciones breves entre estados.
+/* Overlay de Instant2 (daemon), en canvas2d. Una cápsula de 56 px reúne
+   icono, estado, señal y atajo, con mensajes multilínea para los avisos.
+   Los estilos classic (9 barras) y orbital (17 bandas interpoladas)
+   comparten anatomía y usan exclusivamente el audio real del micrófono
+   o la salida de Kokoro. El movimiento reducido conserva una señal estática.
    Protocolo con el daemon (QWebChannel): pushFrame(json) con
-   {mode, message, keyLabel, style, level?, pitch?, bands?}. La paleta repite
-   instant2_app/branding.py (ver tests/test_overlay_palette.py). */
+   {mode, message, keyLabel, style, level?, pitch?, bands?}. La paleta se resuelve
+   desde instant2_app/branding.py (ver tests/test_overlay_palette.py). */
 (() => {
   const PI = Math.PI;
 
-  // Tokens de marca (espejo de branding.PALETTE).
-  const PALETTE = {
-    accent: "#55d5c8", working: "#8fd7e8", green: "#7cdda6", amber: "#f2c36a",
-    red: "#ff908b", text: "#eaf3f4", muted: "#9db0b6", glass: "#1b2b34",
-    glass_alt: "#0f1c23", line: "#28414a"
-  };
+  // Resolved from branding.PALETTE when the production page is composed.
+  const PALETTE = /*OVERLAY_PALETTE*/;
   const MARGIN = 12;   // margen transparente para la sombra dibujada.
 
   const canvas = document.getElementById('c');
@@ -42,7 +37,7 @@
     level: 0, pitch: 0.5, bands: new Array(9).fill(0)
   };
   let running = false, lastMs = 0, timeS = 0, frameTimer = 0;
-  let entranceStartMs = 0, exitStartMs = 0;
+  let entranceStartMs = 0, exitStartMs = 0, modeStartMs = 0;
   let lastVisibleMode = 'idle', lastVisibleMessage = '';
   const motionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
   let reducedMotion = !!(motionQuery && motionQuery.matches);
@@ -70,10 +65,6 @@
     const v = a.map((x, i) => Math.round(x + (b[i] - x) * t));
     return '#' + v.map((channel) => channel.toString(16).padStart(2, '0')).join('');
   };
-  function captureAccent() {
-    return PALETTE.accent;
-  }
-
   function resize() {
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(window.innerWidth * dpr);
@@ -95,6 +86,7 @@
       state.target.bands = f.bands.map((value) => Math.max(0, Math.min(1, Number(value) || 0)));
     if (state.mode !== previousMode) {
       const changedAt = performance.now();
+      modeStartMs = changedAt;
       if (previousMode === 'idle' && state.mode !== 'idle') {
         entranceStartMs = changedAt;
       }
@@ -118,6 +110,16 @@
     }
     if (f.keyLabel) state.keyLabel = f.keyLabel;
     if (f.style) state.style = f.style;
+    // A late audio flush must not keep the renderer running after dismissal.
+    if (state.mode === 'idle') {
+      state.target.level = 0;
+      state.target.pitch = 0.5;
+      state.target.bands.fill(0);
+    }
+    if (state.mode !== previousMode || f.message !== undefined) {
+      document.getElementById('announcement').textContent = state.mode === 'idle' ? ''
+        : (MODE_LABELS[state.mode] || '') + (state.message ? ': ' + state.message : '');
+    }
     start();
   };
   if (typeof qt !== 'undefined' && qt.webChannelTransport) {
@@ -141,16 +143,6 @@
     document.title = 'overlay-web';
 
   // --- Dibujo ---
-  function pillBox(textWidth, textHeight) {
-    const feedback = ['notice', 'error', 'read_notice', 'read_error'].includes(state.mode);
-    const w = feedback ? Math.min(424, Math.max(300, textWidth + 104)) : 300;
-    const h = feedback ? Math.max(78, textHeight + 34) : 78;
-    return {
-      w: w, h: h, x: (window.innerWidth - w) / 2,
-      y: window.innerHeight - MARGIN - h, feedback: feedback
-    };
-  }
-
   function roundRect(x, y, w, h, r) {
     if (typeof C.roundRect === "function") {
       C.beginPath();
@@ -172,22 +164,14 @@
     C.closePath();
   }
 
-  function modeColor() {
-    if (state.mode === 'notice' || state.mode === 'read_notice') return PALETTE.amber;
-    if (state.mode === 'error' || state.mode === 'read_error') return PALETTE.red;
-    if (state.mode === 'success' || state.mode === 'read_success') return PALETTE.green;
-    if (['processing', 'read_preparing', 'read_stopping'].includes(state.mode)) return PALETTE.working;
-    return PALETTE.accent;
-  }
-
   function drawGlass(box) {
     C.save();
-    C.shadowColor = 'rgba(0,0,0,0.45)';
-    C.shadowBlur = 16;
-    C.shadowOffsetY = 6;
+    C.shadowColor = 'rgba(0,0,0,0.16)';
+    C.shadowBlur = 10;
+    C.shadowOffsetY = 3;
     const grad = C.createLinearGradient(0, box.y, 0, box.y + box.h);
-    grad.addColorStop(0, rgba(PALETTE.glass, 0.92));
-    grad.addColorStop(1, rgba(PALETTE.glass_alt, 0.94));
+    grad.addColorStop(0, rgba(PALETTE.glass, 0.97));
+    grad.addColorStop(1, rgba(PALETTE.glass_alt, 0.98));
     C.fillStyle = grad;
     roundRect(box.x, box.y, box.w, box.h, box.r || 18);
     C.fill();
@@ -210,253 +194,186 @@
     C.stroke();
   }
 
-  function drawClassic() {
-    const voice = mixHex(captureAccent(), PALETTE.working, state.pitch);
-    const msgFont = '14px "Segoe UI", system-ui, sans-serif';
-    C.font = msgFont;
-    const textW = state.message ? C.measureText(state.message).width : 0;
-    const box = pillBox(textW, state.message ? 20 : 0);
-    drawGlass(box);
+  const MODE_LABELS = {
+    starting: 'PREPARANDO', listening: 'ESCUCHANDO', processing: 'TRANSCRIBIENDO',
+    success: 'COMPLETADO', notice: 'AVISO', error: 'ERROR',
+    read_preparing: 'PREPARANDO', read_speaking: 'LEYENDO', read_stopping: 'DETENIENDO',
+    read_success: 'COMPLETADO', read_notice: 'AVISO', read_error: 'ERROR'
+  };
+  const clamp01 = (value) => Math.max(0, Math.min(1, value));
+  const easeOut = (value) => 1 - Math.pow(1 - clamp01(value), 3);
 
-    const reading = state.mode.startsWith('read_');
-    const active = ['starting', 'listening', 'processing', 'read_preparing', 'read_speaking', 'read_stopping'].includes(state.mode);
-    const processing = ['starting', 'processing', 'read_preparing', 'read_stopping'].includes(state.mode);
-    const success = state.mode === 'success' || state.mode === 'read_success';
-    if (active) {
-      C.font = '700 10px "Segoe UI", system-ui, sans-serif';
-      C.fillStyle = PALETTE.muted;
-      C.textAlign = 'center';
-      C.textBaseline = 'middle';
-      C.fillText(reading ? 'LECTURA EN VOZ ALTA' : 'DICTADO MEJORADO', window.innerWidth / 2, 21);
-    }
-
-    const cx = box.x + box.w / 2;
-    const cy = box.y + box.h / 2;
-
-    if (box.feedback) {
-      C.font = msgFont;
-      C.fillStyle = state.mode === 'error' || state.mode === 'read_error' ? PALETTE.red : PALETTE.amber;
-      C.textAlign = 'center';
-      C.textBaseline = 'middle';
-      C.fillText(state.message, cx, cy + 1);
-      return;
-    }
-
-    if (success) {
-      drawCheck(cx - 34, cy, 22, PALETTE.green, 3);
-      C.font = '14px "Segoe UI", system-ui, sans-serif';
-      C.fillStyle = PALETTE.green;
-      C.textAlign = 'center';
-      C.textBaseline = 'middle';
-      C.fillText(state.mode === 'read_success' ? 'Lectura finalizada' : 'Copiado', cx + 14, cy + 1);
-      return;
-    }
-
-    // Barras: 9 bandas reales, con ataque por nivel y vaiven por indice.
-    const barX = cx - 56;
-    const floorH = 5, maxH = 34;
-    for (let i = 0; i < 9; i++) {
-      const band = state.bands[i] || 0;
-      const act = Math.max(state.level, band);
-      const h = Math.min(maxH, floorH + (maxH - floorH) * (0.28 * act + 0.72 * band));
-      const x = barX + i * 12.5;
-      C.fillStyle = voice;
-      C.globalAlpha = 0.35 + 0.65 * Math.min(1, 0.4 * act + 0.6 * band);
-      roundRect(x, cy - h / 2, 3, h, 1.5);
-      C.fill();
-      C.globalAlpha = 1;
-    }
-
-    if (processing) {
-      const t0 = reducedMotion ? 0 : (timeS * (1000 / 1150)) % 1;
-      C.strokeStyle = PALETTE.working;
-      C.lineWidth = 3;
-      C.lineCap = 'round';
-      C.beginPath();
-      C.arc(cx, cy, 15, t0 * 2 * PI, t0 * 2 * PI + PI * 0.55);
-      C.stroke();
-    }
-
-    // Chip de tecla.
-    C.font = '600 12px "Segoe UI", system-ui, sans-serif';
-    const label = reading ? 'F10' : (state.keyLabel || 'F9');
-    const chipW = Math.max(30, C.measureText(label).width + 16);
-    const chipX = box.x + box.w - chipW - 14;
-    roundRect(chipX, cy - 11, chipW, 22, 11);
-    C.fillStyle = rgba(PALETTE.line, 0.55);
-    C.fill();
-    C.fillStyle = PALETTE.muted;
-    C.textAlign = 'center';
-    C.textBaseline = 'middle';
-    C.fillText(label, chipX + chipW / 2, cy + 1);
+  function fitText(text, width) {
+    if (C.measureText(text).width <= width) return text;
+    const characters = Array.from(text);
+    while (characters.length && C.measureText(characters.join('') + '…').width > width)
+      characters.pop();
+    return characters.join('') + '…';
   }
 
-  function drawOrbital(now, exiting = false) {
-    const mode = exiting ? lastVisibleMode : state.mode;
-    const message = exiting ? lastVisibleMessage : state.message;
-    const cx = window.innerWidth / 2;
-    const card = { x: cx - 168, y: 26, w: 336, h: 102, r: 24 };
-    const centerY = window.innerHeight / 2;
-    const voice = mixHex(captureAccent(), PALETTE.working, state.pitch);
-    const clamp01 = (value) => Math.max(0, Math.min(1, value));
-    const easeOut = (value) => 1 - Math.pow(1 - clamp01(value), 3);
-
-    let alpha = 1;
-    let scale = 1;
-    let offsetY = 0;
-    if (!reducedMotion && exiting && exitStartMs) {
-      const progress = easeOut((now - exitStartMs) / 190);
-      alpha = 1 - progress;
-      scale = 1 - progress * 0.04;
-      offsetY = progress * 6;
-    } else if (!reducedMotion && entranceStartMs) {
-      const progress = easeOut((now - entranceStartMs) / 260);
-      alpha = progress;
-      scale = 0.96 + progress * 0.04;
-      offsetY = (1 - progress) * 6;
-      if (progress >= 1)
-        entranceStartMs = 0;
-    }
-
-    C.save();
-    C.globalAlpha *= alpha;
-    C.translate(cx, centerY + offsetY);
-    C.scale(scale, scale);
-    C.translate(-cx, -centerY);
-
-    if (!['starting', 'listening', 'processing', 'success', 'notice', 'error',
-          'read_preparing', 'read_speaking', 'read_stopping', 'read_success',
-          'read_notice', 'read_error'].includes(mode)) {
-      C.restore();
-      return;
-    }
-
-    drawGlass(card);
-    const headerY = card.y + 23;
-    const signalY = card.y + 74;
-    const reading = mode.startsWith('read_');
-    const processing = ['processing', 'starting', 'read_preparing', 'read_stopping'].includes(mode);
-    const feedback = ['notice', 'error', 'read_notice', 'read_error'].includes(mode);
-    const success = mode === 'success' || mode === 'read_success';
-    const statusColor = mode === 'error' || mode === 'read_error' ? PALETTE.red
-      : mode === 'notice' || mode === 'read_notice' ? PALETTE.amber
-      : success ? PALETTE.green
-      : processing ? PALETTE.working : PALETTE.accent;
-
-    // Un unico encabezado mantiene todos los estados dentro de la misma pieza.
-    const breathe = 0.5;
-    C.beginPath();
-    C.arc(card.x + 23, headerY, 6.5, 0, 2 * PI);
-    C.fillStyle = rgba(statusColor, 0.12 + breathe * 0.08);
-    C.fill();
-    C.beginPath();
-    C.arc(card.x + 23, headerY, 3.3, 0, 2 * PI);
-    C.fillStyle = statusColor;
-    C.globalAlpha *= processing || feedback || success ? 0.9 : 0.7 + breathe * 0.3;
-    C.fill();
-    C.globalAlpha = alpha;
-
-    const labels = {
-      starting: 'PREPARANDO', listening: 'ESCUCHANDO',
-      processing: 'TRANSCRIBIENDO', success: 'COMPLETADO',
-      notice: 'AVISO', error: 'ERROR',
-      read_preparing: 'PREPARANDO', read_speaking: 'LEYENDO',
-      read_stopping: 'DETENIENDO', read_success: 'COMPLETADO',
-      read_notice: 'AVISO', read_error: 'ERROR'
-    };
-    C.font = '700 10px "Segoe UI", system-ui, sans-serif';
-    C.fillStyle = PALETTE.text;
-    C.textAlign = 'left';
-    C.textBaseline = 'middle';
-    C.fillText(`${labels[mode]} · ${reading ? 'LEER TEXTO' : 'DICTADO MEJORADO'}`,
-      card.x + 39, headerY, card.w - 92);
-
-    if (!feedback && !success) {
-      const key = reading ? 'F10' : (state.keyLabel || 'F9');
-      C.font = '600 10px "Segoe UI", system-ui, sans-serif';
-      const chipW = Math.max(32, C.measureText(key).width + 16);
-      const chipX = card.x + card.w - chipW - 15;
-      roundRect(chipX, headerY - 11, chipW, 22, 11);
-      C.fillStyle = rgba(PALETTE.line, 0.62);
-      C.fill();
-      C.fillStyle = PALETTE.muted;
-      C.textAlign = 'center';
-      C.fillText(key, chipX + chipW / 2, headerY);
-    }
-
-    C.strokeStyle = rgba(PALETTE.line, 0.46);
-    C.lineWidth = 1;
-    C.beginPath();
-    C.moveTo(card.x + 20, card.y + 45.5);
-    C.lineTo(card.x + card.w - 20, card.y + 45.5);
-    C.stroke();
-
-    if (processing) {
-      // Un arco corto comunica trabajo en curso sin llenar la barra de efectos.
-      C.strokeStyle = rgba(PALETTE.working, 0.16);
-      C.lineWidth = 2;
-      C.beginPath();
-      C.arc(cx, signalY, 15, 0, 2 * PI);
-      C.stroke();
-      C.strokeStyle = PALETTE.working;
-      C.lineWidth = 2.5;
-      C.lineCap = 'round';
-      const sweep = reducedMotion ? 0 : timeS * 1.25;
-      C.beginPath();
-      C.arc(cx, signalY, 15, sweep, sweep + 1.35);
-      C.stroke();
-    } else if (feedback || success) {
-      if (success) {
-        drawCheck(cx - 35, signalY, 17, PALETTE.green, 2.7);
-        C.fillStyle = PALETTE.green;
-        C.font = '700 11px "Segoe UI", system-ui, sans-serif';
-        C.textAlign = 'left';
-        C.fillText(mode === 'read_success' ? 'LECTURA FINALIZADA' : 'TEXTO COPIADO',
-          cx - 20, signalY, card.w - 90);
-      } else {
-        const detail = message || (mode === 'error' || mode === 'read_error'
-          ? 'No se pudo completar' : 'Listo');
-        C.strokeStyle = statusColor;
-        C.lineWidth = 1.7;
-        C.beginPath();
-        C.arc(card.x + 26, signalY, 7, 0, 2 * PI);
-        C.stroke();
-        C.fillStyle = statusColor;
-        C.font = '700 11px "Segoe UI", system-ui, sans-serif';
-        C.textAlign = 'center';
-        C.fillText(mode === 'error' || mode === 'read_error' ? '!' : 'i', card.x + 26, signalY + 0.5);
-        C.fillStyle = PALETTE.text;
-        C.font = '600 12px "Segoe UI", system-ui, sans-serif';
-        C.textAlign = 'left';
-        C.fillText(detail, card.x + 43, signalY, card.w - 64);
+  function wrapText(text, width) {
+    const lines = [];
+    let line = '';
+    for (const word of text.split(/\s+/)) {
+      if (line && C.measureText(line + ' ' + word).width > width) {
+        lines.push(line);
+        line = '';
       }
+      // Split long device names/paths as well as ordinary sentences.
+      for (const character of Array.from((line ? ' ' : '') + word)) {
+        if (line && C.measureText(line + character).width > width) {
+          lines.push(line);
+          line = '';
+        }
+        line += character;
+      }
+    }
+    if (line) lines.push(line);
+    if (lines.length > 4) {
+      lines[3] = fitText(lines.slice(3).join(' '), width);
+      lines.length = 4;
+    }
+    return lines;
+  }
+
+  function drawStateIcon(cx, cy, color, mode) {
+    C.save();
+    C.translate(cx, cy);
+    C.strokeStyle = color;
+    C.lineWidth = 1.5;
+    C.lineCap = 'round';
+    C.lineJoin = 'round';
+    C.beginPath();
+    if (mode === 'success' || mode === 'read_success') {
+      drawCheck(0, 0, 11, color, 1.6);
+    } else if (mode === 'error' || mode === 'read_error' || mode === 'notice' || mode === 'read_notice') {
+      C.arc(0, 0, 8, 0, PI * 2);
+      C.moveTo(0, -4); C.lineTo(0, 1);
+      C.moveTo(0, 4); C.lineTo(0, 4.2);
+      C.stroke();
+    } else if (mode.startsWith('read_')) {
+      C.moveTo(-8, -3); C.lineTo(-4, -3); C.lineTo(1, -7);
+      C.lineTo(1, 7); C.lineTo(-4, 3); C.lineTo(-8, 3); C.closePath();
+      C.moveTo(5, -4); C.quadraticCurveTo(9, 0, 5, 4);
+      C.moveTo(8, -7); C.quadraticCurveTo(14, 0, 8, 7);
+      C.stroke();
     } else {
-      // Las 9 bandas reales se interpolan en una forma continua; la energia,
-      // y no un giro decorativo, determina el movimiento de cada barra.
-      const barCount = 21;
-      const barW = 3.4;
-      const gap = 6.2;
-      const totalW = barCount * barW + (barCount - 1) * gap;
-      const startX = cx - totalW / 2;
-      const level = clamp01(state.level);
-      for (let i = 0; i < barCount; i++) {
-        const bandPosition = i / (barCount - 1) * (state.bands.length - 1);
+      roundRect(-3, -9, 6, 12, 3); C.stroke();
+      C.beginPath(); C.arc(0, 0, 6, 0, PI);
+      C.moveTo(0, 6); C.lineTo(0, 10);
+      C.moveTo(-3, 10); C.lineTo(3, 10); C.stroke();
+    }
+    C.restore();
+  }
+
+  function drawSignal(cx, cy, mode, color) {
+    const processing = ['starting', 'processing', 'read_preparing', 'read_stopping'].includes(mode);
+    C.save();
+    if (processing) {
+      C.strokeStyle = rgba(color, .15);
+      C.lineWidth = 1.7;
+      C.beginPath(); C.arc(cx, cy, 7, 0, PI * 2); C.stroke();
+      const angle = reducedMotion ? -PI / 2 : timeS * 3;
+      C.strokeStyle = color;
+      C.lineCap = 'round';
+      C.beginPath(); C.arc(cx, cy, 7, angle, angle + PI * .65); C.stroke();
+    } else {
+      const count = state.style === 'classic' ? 9 : 17;
+      const gap = state.style === 'classic' ? 5.5 : 3.3;
+      const width = 2;
+      for (let i = 0; i < count; i++) {
+        const bandPosition = i / (count - 1) * 8;
         const lower = Math.floor(bandPosition);
-        const upper = Math.min(state.bands.length - 1, lower + 1);
         const fraction = bandPosition - lower;
-        const spectrum = state.bands[lower] * (1 - fraction) + state.bands[upper] * fraction;
-        let energy = clamp01(Math.max(spectrum, level * 0.14));
-        const height = 2.5 + 28 * energy;
-        const x = startX + i * (barW + gap);
-        const color = mixHex(PALETTE.accent, voice, i / (barCount - 1) * 0.34);
-        C.globalAlpha = alpha * (0.38 + 0.62 * clamp01(energy * 1.8));
-        C.fillStyle = color;
-        roundRect(x, signalY - height / 2, barW, height, barW / 2);
+        const band = state.bands[lower] * (1 - fraction) + state.bands[Math.min(8, lower + 1)] * fraction;
+        const energy = clamp01(Math.max(band, state.level * .12));
+        const height = 3 + 19 * energy;
+        C.fillStyle = rgba(color, .4 + energy * .6);
+        roundRect(cx + (i - (count - 1) / 2) * gap - width / 2, cy - height / 2, width, height, 1);
         C.fill();
       }
     }
     C.restore();
   }
+
+  // Both preferences share the same compact anatomy and readable state labels.
+  // Only the audio signal changes: 9 discrete bars or 17 interpolated bands.
+  function drawIndicator(now, exiting = false) {
+    const mode = exiting ? lastVisibleMode : state.mode;
+    const message = exiting ? lastVisibleMessage : state.message;
+    if (!MODE_LABELS[mode]) return;
+    const reading = mode.startsWith('read_');
+    const feedback = ['notice', 'error', 'read_notice', 'read_error'].includes(mode);
+    const success = mode === 'success' || mode === 'read_success';
+    const processing = ['starting', 'processing', 'read_preparing', 'read_stopping'].includes(mode);
+    const statusColor = mode === 'error' || mode === 'read_error' ? PALETTE.red
+      : feedback ? PALETTE.amber : success ? PALETTE.green
+      : processing ? PALETTE.working : PALETTE.accent;
+    C.font = '12px "Segoe UI", system-ui, sans-serif';
+    const detail = message || (reading ? 'Lectura finalizada' : 'Copiado');
+    const maxWidth = Math.min(440, window.innerWidth - MARGIN * 2);
+    const w = feedback ? Math.min(maxWidth, Math.max(300, C.measureText(detail).width + 72)) : Math.min(344, maxWidth);
+    const lines = feedback ? wrapText(detail, w - 72) : [];
+    const h = feedback ? Math.max(72, 38 + lines.length * 16) : 56;
+    const card = {x: (window.innerWidth - w) / 2, y: window.innerHeight - MARGIN - h, w, h, r: 17};
+    const cx = card.x + w / 2;
+    const cy = card.y + h / 2;
+    let alpha = 1, scale = 1, offsetY = 0;
+    if (!reducedMotion && exiting && exitStartMs) {
+      const progress = easeOut((now - exitStartMs) / 160);
+      alpha = 1 - progress; scale = 1 - progress * .015; offsetY = progress * 3;
+    } else if (!reducedMotion && entranceStartMs) {
+      const progress = easeOut((now - entranceStartMs) / 220);
+      alpha = progress; scale = .985 + progress * .015; offsetY = (1 - progress) * 4;
+      if (progress >= 1) entranceStartMs = 0;
+    }
+    C.save();
+    C.globalAlpha = alpha;
+    C.translate(cx, cy + offsetY); C.scale(scale, scale); C.translate(-cx, -cy);
+    drawGlass(card);
+
+    // Only state content enters; the surface stays steady between operations.
+    const stateProgress = reducedMotion || exiting ? 1 : easeOut((now - modeStartMs) / 150);
+    C.globalAlpha *= .55 + stateProgress * .45;
+    C.translate(0, (1 - stateProgress) * 2);
+    const iconY = feedback ? card.y + 26 : cy;
+    roundRect(card.x + 12, iconY - 16, 32, 32, 11);
+    C.fillStyle = rgba(statusColor, .075); C.fill();
+    drawStateIcon(card.x + 28, iconY, statusColor, mode);
+    C.textAlign = 'left'; C.textBaseline = 'middle';
+    C.fillStyle = feedback ? statusColor : PALETTE.text;
+    C.font = '600 10px "Segoe UI", system-ui, sans-serif';
+    C.fillText(MODE_LABELS[mode], card.x + 55, card.y + (feedback ? 22 : 20));
+    C.font = '10px "Segoe UI", system-ui, sans-serif';
+    C.fillStyle = PALETTE.muted;
+    if (feedback) {
+      C.font = '12px "Segoe UI", system-ui, sans-serif';
+      C.fillStyle = PALETTE.text;
+      lines.forEach((line, index) => C.fillText(line, card.x + 55, card.y + 42 + index * 16));
+    } else {
+      let subtitle = reading ? 'Lectura · F10 para detener' : 'Dictado · soltá para pegar';
+      if (success) subtitle = reading ? 'Lectura finalizada' : 'Copiado';
+      else if (processing) subtitle = message || (reading ? 'Preparando la voz local…' : 'Procesando tu voz…');
+      C.fillText(fitText(subtitle, 160), card.x + 55, card.y + 37);
+      if (!success) {
+        const voice = mixHex(statusColor, PALETTE.working, state.pitch * .25);
+        const key = reading ? 'F10' : (state.keyLabel || 'F9');
+        C.font = '600 10px "Segoe UI", system-ui, sans-serif';
+        const chipW = Math.min(52, Math.max(32, C.measureText(key).width + 14));
+        drawSignal(card.x + w - chipW - 50, cy, mode, voice);
+        const chipX = card.x + w - chipW - 12;
+        roundRect(chipX, cy - 12, chipW, 24, 7);
+        C.fillStyle = rgba(PALETTE.line, .45); C.fill();
+        C.fillStyle = PALETTE.muted; C.textAlign = 'center';
+        C.fillText(fitText(key, chipW - 8), chipX + chipW / 2, cy);
+      } else {
+        C.fillStyle = rgba(statusColor, 0.5);
+        C.beginPath(); C.arc(card.x + w - 24, cy, 2.5, 0, PI * 2); C.fill();
+      }
+    }
+    C.restore();
+  }
+
   function frame(now) {
     try {
       const dt = lastMs ? Math.min((now - lastMs) / 1000, 0.05) : 0.016;
@@ -480,13 +397,10 @@
 
       C.clearRect(0, 0, window.innerWidth, window.innerHeight);
       if (state.mode !== 'idle') {
-        if (state.style === 'orbital')
-          drawOrbital(now);
-        else
-          drawClassic();
+        drawIndicator(now);
       } else if (exitStartMs && !reducedMotion) {
-        if (now - exitStartMs < 190 && state.style === 'orbital')
-          drawOrbital(now, true);
+        if (now - exitStartMs < 160)
+          drawIndicator(now, true);
         else
           exitStartMs = 0;
       } else if (reducedMotion) {

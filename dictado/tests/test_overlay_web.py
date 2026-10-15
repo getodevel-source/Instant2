@@ -53,7 +53,8 @@ class ComposePageTests(unittest.TestCase):
             self.assertIn(expected, source)
         # El "Copiado" es copy del renderer classic, como en el QML.
         self.assertIn("Copiado", source)
-        self.assertIn("DICTADO MEJORADO", source)
+        self.assertIn("Dictado · soltá para pegar", source)
+        self.assertIn("Lectura · F10 para detener", source)
 
 
     def test_roundrect_falls_back_without_native_support(self):
@@ -78,7 +79,7 @@ class ComposePageTests(unittest.TestCase):
         self.assertIn("prefers-reduced-motion: reduce", source)
         self.assertIn("let reducedMotion", source)
         self.assertIn("}, reducedMotion ? 40 : 33);", source)
-        self.assertIn("const breathe = 0.5;", source)
+        self.assertIn("C.fillStyle = rgba(statusColor, 0.5);", source)
         self.assertNotIn("Math.sin(timeS * 4.2", source)
         self.assertNotIn("Math.sin(timeS * 3.2", source)
         self.assertIn("if (!reducedMotion && exiting", source)
@@ -103,7 +104,7 @@ class WindowSizesTests(unittest.TestCase):
 
     def test_palette_tokens_used_by_the_page_exist(self):
         with open(PAGE_PATH, encoding="utf-8") as handle:
-            source = handle.read()
+            source = compose_page(handle.read(), "")
         for key in ("accent", "working", "green", "amber", "red", "text",
                     "muted", "glass", "glass_alt", "line"):
             self.assertIn(PALETTE[key], source)

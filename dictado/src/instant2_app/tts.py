@@ -312,7 +312,10 @@ def _continuous_audio_chunks(engine, phonemes, voice, speed, cancel_event=None):
 
     while start < len(tokens):
         _cancelled(cancel_event)
-        end = min(start + sliding.KEEP, len(tokens))
+        # A shorter first keep region starts speaking earlier. Full context and
+        # lookahead remain intact; following windows keep the upstream size.
+        keep = min(120, sliding.KEEP) if start == 0 else sliding.KEEP
+        end = min(start + keep, len(tokens))
         first = max(0, start - sliding.CONTEXT)
         last = min(len(tokens), end + sliding.LOOKAHEAD)
         window_audio, duration = engine._infer(tokens[first:last], style, speed)
@@ -376,8 +379,10 @@ def _continuous_audio_chunks(engine, phonemes, voice, speed, cancel_event=None):
 class KokoroReader:
     """Mantiene Kokoro en memoria durante la sesión para acelerar relecturas."""
 
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, threads=4):
+        from instant2_app.resource_policy import inference_threads
         self.data_dir = data_dir
+        self.threads = inference_threads(threads)
         self._engine = None
         self._g2p = None
         self._lock = threading.Lock()
@@ -401,10 +406,18 @@ class KokoroReader:
             _cancelled(cancel_event)
             from kokoro_onnx import Kokoro
             from misaki.espeak import EspeakG2P
+            import onnxruntime as ort
             # ensure_model() verifies the compact Dora archive and removes the
             # raw .bin. Re-preparing it here would fail on every later load
             # because that source file is intentionally no longer present.
-            self._engine = Kokoro(paths["model"], paths["voices"])
+            options = ort.SessionOptions()
+            options.intra_op_num_threads = self.threads
+            options.inter_op_num_threads = 1
+            options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+            options.add_session_config_entry("session.inter_op.allow_spinning", "0")
+            session = ort.InferenceSession(paths["model"], sess_options=options,
+                                           providers=["CPUExecutionProvider"])
+            self._engine = Kokoro.from_session(session, paths["voices"])
             self._g2p = EspeakG2P(language="es")
         return self._engine, self._g2p
 
@@ -440,8 +453,8 @@ class KokoroReader:
             sample_rate = 24_000
             block_samples = sample_rate // 10
             completed = 0
-            band_edges = np.logspace(np.log10(80.0), np.log10(7500.0), 10)
-            band_max = np.full(9, 1e-3, dtype=np.float64)
+            from instant2_app.metering import SpectrumMeter
+            meter = SpectrumMeter(sample_rate, .98) if bands_callback is not None else None
 
             def synthesize(chunk):
                 phonemes, _ = g2p(chunk)
@@ -535,22 +548,7 @@ class KokoroReader:
                                     level_callback(min(1.0, rms * 7.0))
                                 if bands_callback is not None:
                                     if rms > 0.006:
-                                        windowed = block * np.hanning(len(block))
-                                        spectrum = np.abs(np.fft.rfft(windowed))
-                                        freqs = np.fft.rfftfreq(
-                                            len(block), 1.0 / sample_rate)
-                                        values = np.empty(9, dtype=np.float64)
-                                        for band in range(9):
-                                            mask = ((freqs >= band_edges[band])
-                                                    & (freqs < band_edges[band + 1]))
-                                            values[band] = (
-                                                float(np.mean(spectrum[mask]))
-                                                if np.any(mask) else 0.0)
-                                        band_max[:] = np.maximum(
-                                            band_max * 0.98, values)
-                                        bands = np.clip(
-                                            values / np.maximum(band_max, 1e-9),
-                                            0.0, 1.0)
+                                        bands = meter.bands(block)
                                     else:
                                         bands = np.zeros(9, dtype=np.float64)
                                     bands_callback([float(v) for v in bands])
@@ -562,18 +560,23 @@ class KokoroReader:
 
                 with sd.OutputStream(samplerate=sample_rate, channels=1,
                                      dtype="float32", latency="high") as stream:
-                    item = first
-                    while item is not None:
-                        _kind, chunk_index, samples = item
-                        output(stream, samples)
+                    try:
+                        _cancelled(cancel_event)
                         if progress is not None:
-                            if total_chunks is None:
-                                progress(None, None,
-                                         "Leyendo voz continua…")
-                            else:
+                            progress(None, None, "Leyendo voz continua…")
+                        item = first
+                        while item is not None:
+                            _kind, chunk_index, samples = item
+                            output(stream, samples)
+                            if progress is not None and total_chunks is not None:
                                 progress(chunk_index + 1, total_chunks,
                                          f"Leyendo frase {chunk_index + 1} de {total_chunks}…")
-                        item = next_audio()
+                            item = next_audio()
+                    except SpeechCancelled:
+                        # stop() drains buffered audio; abort() drops it so
+                        # F10 does not keep speaking after cancellation.
+                        stream.abort()
+                        raise
             finally:
                 producer_stop.set()
                 producer.join()
