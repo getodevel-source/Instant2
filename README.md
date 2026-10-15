@@ -22,9 +22,11 @@
 1. Descargá la versión de tu sistema desde [Releases](https://github.com/getodevel-source/Instant2/releases/latest).
 2. Abrí Instant2, elegí el micrófono y configurá la tecla de dictado.
 3. Enfocá un campo de texto, mantené la tecla mientras hablás y soltala al terminar.
-4. Para escuchar texto, abrí **Leer texto** o seleccioná texto y presioná **F10**.
+4. Para escuchar texto, abrí **Leer texto** o seleccioná texto y presioná la tecla de lectura configurada en **Ajustes**.
 
 En el portable y en Linux/macOS, Instant2 descarga los componentes de voz durante el primer uso. Necesitás internet y cerca de 1 GB libre. El instalador completo de Windows los incluye y puede instalarse sin conexión si mantenés juntos el ejecutable y todos sus archivos `.bin`.
+
+En una instalación nueva, el instalador deja seleccionados **Iniciar Instant2 con Windows** y **Abrir Instant2 y activar el dictado en segundo plano**. Puedes desmarcar cualquiera de esas opciones. Al abrirse, Instant2 inicia el servicio si detecta un micrófono disponible; cerrar el panel deja el servicio en la bandeja.
 
 | Sistema | Descarga |
 |---|---|

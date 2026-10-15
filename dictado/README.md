@@ -14,7 +14,7 @@ anglicismos se transcriben por fonética. Un perfil de vocabulario permite
 corregir variantes reconocidas explícitamente; el pulido LLM por sí solo
 ayuda con tildes y puntuación, pero no reemplaza el reconocimiento de audio.
 
-En Windows, la vía recomendada es el instalador completo de la [última release](https://github.com/getodevel-source/Instant2/releases/latest) (`Instant2-Setup.exe`): por usuario, sin admin, con desinstalador y actualización in-place. Incluye Parakeet, Qwen 4B, Kokoro con Dora y llama.cpp. Para instalar sin conexión, descargá todos los archivos `Instant2-Setup*` y mantenelos juntos. El `Instant2.exe` portable y los binarios de Linux/macOS no incluyen los pesos.
+En Windows, la vía recomendada es el instalador completo de la [última release](https://github.com/getodevel-source/Instant2/releases/latest) (`Instant2-Setup.exe`): por usuario, sin admin, con desinstalador y actualización in-place. Incluye Parakeet, Qwen 4B, Kokoro con Dora y llama.cpp. En una instalación nueva, deja activadas por defecto la apertura al terminar y el inicio con Windows; puedes desactivar ambas casillas. Para instalar sin conexión, descargá todos los archivos `Instant2-Setup*` y mantenelos juntos. El `Instant2.exe` portable y los binarios de Linux/macOS no incluyen los pesos.
 
 > Los binarios están **sin firmar** por ahora: Windows SmartScreen muestra «Windows protegió su PC» la primera vez (elegí «Más información» → «Ejecutar de todas formas» solo si el instalador salió del enlace oficial); Gatekeeper en macOS puede pedirte que confirmes la apertura en Ajustes → Privacidad y seguridad. Esto no es un error de Instant2.
 
@@ -256,10 +256,10 @@ desarrollo del repositorio fijan `INSTANT2_DATA` a su propia carpeta `models`.
 Sin modelos o sin mic, `setup` avisa y sigue (no crashea); `run` sin
 modelos pide correr `setup` con red primero.
 
-Teclas: Windows `f9 f10 f20 scroll pause`, Linux/macOS `f9 f10 f11 f12`.
+En **Ajustes** puedes elegir una tecla para Dictado mejorado y otra para leer la selección. Deben ser distintas; la captura acepta una tecla individual disponible en el sistema.
 Config en `%APPDATA%/instant2` (win), `~/.config/instant2` (linux),
 `~/Library/Application Support/instant2` (mac). Env `INSTANT2_*` pisa config
-(`INSTANT2_MIC`, `INSTANT2_KEY`, `INSTANT2_THREADS`, `INSTANT2_SOUND`,
+(`INSTANT2_MIC`, `INSTANT2_KEY`, `INSTANT2_READ_KEY`, `INSTANT2_THREADS`, `INSTANT2_SOUND`,
 `INSTANT2_MAX_SEG`, `INSTANT2_VAD=silero|ten`, `INSTANT2_BLANK=0..1`,
 `INSTANT2_LLM_URL`, `INSTANT2_LLM_TOKEN`,
 `INSTANT2_UPDATE=notify|auto|off`

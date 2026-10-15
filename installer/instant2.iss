@@ -77,7 +77,7 @@ VersionInfoVersion={#AppVersion}.0
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
-Name: "autostart"; Description: "Iniciar Instant2 con Windows (dictado en segundo plano)"; GroupDescription: "Inicio automático:"; Flags: unchecked
+Name: "autostart"; Description: "Iniciar Instant2 con Windows (dictado en segundo plano)"; GroupDescription: "Inicio automático:"; Flags: checkedonce
 Name: "desktopicon"; Description: "Crear un acceso directo en el escritorio"; GroupDescription: "Accesos directos:"; Flags: unchecked
 
 [Files]
@@ -97,9 +97,10 @@ Name: "{userstartup}\Instant2 Dictado.lnk"; Filename: "{app}\{#AppExe}"; Paramet
 [Run]
 ; En /SILENT no se abre nada: el updater silencioso no puede robar el foco ni
 ; abrir ventanas al usuario (skipifsilent). En instalación interactiva sí se
-; ofrece abrir el setup inicial (postinstall, desmarcable con "No volver" no
-; aplica: es solo esta vez).
-Filename: "{app}\{#AppExe}"; Description: "Abrir Instant2 ahora"; Flags: nowait postinstall skipifsilent unchecked
+; abre Instant2 tras una instalación normal. El ejecutable sin argumentos
+; muestra el panel e inicia el daemon si voz y micrófono están disponibles.
+; Las instalaciones silenciosas de actualización no abren ventanas.
+Filename: "{app}\{#AppExe}"; Description: "Abrir Instant2 y activar el dictado en segundo plano"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
 ; El daemon no tiene ventana: el Restart Manager no puede cerrarlo, así que
