@@ -445,6 +445,7 @@ jobs:
 
       - name: SHA256 sidecar for the installer
         if: runner.os == 'Windows'
+        shell: bash
         run: |
           python - <<'PY'
           import hashlib
