@@ -51,7 +51,7 @@ class PanelPageContractTests(unittest.TestCase):
     def test_page_keeps_the_user_facing_copy(self):
         source = self._source()
         for expected in ("Tu voz, en texto.", "Iniciar dictado", "Detener dictado",
-                         "ESTADO DEL DICTADO", "Servidor local administrado",
+                         "ESTADO DEL DICTADO",
                          "Guardar cambios", "A&ntilde;adir perfil", "Eliminar perfil",
                          "A&ntilde;adir t&eacute;rmino", "Descargar reconocimiento", "Cambiar tecla",
                          "Leer texto en voz alta", "El texto no se env&iacute;a ni se guarda.",
@@ -103,7 +103,7 @@ class PanelPageContractTests(unittest.TestCase):
                          "soundCheck", "llmUrlInput", "op:\"set_advanced\"",
                          "llmDestination", "llmModelInput",
                          "llmNormalCheck", "llmResources", "llmHomeStatus",
-                          "Servidor local administrado", "llmServerPathInput", "llmModelPathInput",
+                          "La instalaci&oacute;n completa configura esto por vos", "llmServerPathInput", "llmModelPathInput",
                          "llmAccelerationSelect", "llmRuntimeStatus", "llmRuntimeRetry",
                          "keyBtn",
                          "vadModelSelect", "blankPenaltyInput", "updateModeSelect",
