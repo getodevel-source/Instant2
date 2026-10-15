@@ -8,6 +8,16 @@ Las dos primeras entradas documentan versiones de Instant2. El historial que
 sigue corresponde al Instant heredado y sus versiones no son releases de
 Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z`.
 
+## [0.1.5] - 2026-10-15
+
+### Mejorado
+- Se puede elegir una tecla independiente para leer el texto seleccionado; no se
+  permite repetir la tecla de dictado.
+- Ajustes separa voz, uso de memoria, privacidad y actualizaciones; las opciones
+  técnicas quedan agrupadas aparte.
+- El instalador de Windows abre Instant2 y activa el inicio con Windows por
+  defecto en instalaciones nuevas.
+
 ## [0.1.4] - 2026-10-15
 
 ### Corregido
