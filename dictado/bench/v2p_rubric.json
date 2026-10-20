@@ -1,0 +1,146 @@
+{
+  "schema": "instant2-v2p-rubric/1",
+  "version": "2026-10-16.2",
+  "status": "pre-registered",
+  "registered_before_output": true,
+  "usage": "Congelada ANTES de cualquier corrida puntuada. El puntaje cualitativo se hace sobre blinded_review.jsonl sin conocer modelo ni estrategia, y la clave (blinded_key.json) se abre recien despues de completar los puntajes.",
+  "reviewer_notes": {
+    "channel_not_dictated": "Si el dictado no nombra canal, el prompt NO debe elegir uno (elegirlo es 'invented_fact'). Omitir el canal es correcto y no se penaliza.",
+    "channel_marked_missing": "Declarar 'canal de entrega' como dato faltante cuando el pedido si se puede ejecutar sin elegir canal NO es error critico: cuenta como ruido en concision/clarity (<= 3 si estorba), porque agrega un requisito que el usuario no pidio.",
+    "channel_required": "Solo si el pedido no se puede ejecutar sin elegir canal, dejar el canal sin definir es un problema de viability (clarity/robustness) y resolverlo eligiendo un canal concreto es 'invented_fact'.",
+    "mode_not_dictated": "Lo mismo para la forma de salida: no exigir 'email', 'documento' ni formato que el dictado no pidio.",
+    "missing_datum": "Un dato desconocido declarado explicitamente ('sin especificar') es la conducta correcta; rellenarlo con un valor plausible es 'invented_fact'."
+  },
+  "scoring_independence": "Quien puntua no debe conocer el mapeo de blinded_key.json ni haber visto la corrida. El modelo bajo prueba nunca actua como juez.",
+  "critical_errors": [
+    {
+      "id": "intent_change",
+      "label": "Cambio de intencion",
+      "definition": "El prompt pide algo distinto de lo pedido: otra accion, otro objeto o lo asigna a otra persona."
+    },
+    {
+      "id": "negation_restriction_alteration",
+      "label": "Negacion o restriccion alterada",
+      "definition": "Una negacion, prohibicion o limite dictado se invierte, se debilita o desaparece (por ejemplo 'sin nombres propios' pasa a no estar, o 'no anda' pasa a 'anda bien')."
+    },
+    {
+      "id": "condition_loss_or_alteration",
+      "label": "Condicion perdida o alterada",
+      "definition": "Falta una condicion dictada, o su valor cambia o se fusiona con otra (formato, plazo, tono, cantidad, idioma, limite de lineas)."
+    },
+    {
+      "id": "invented_fact",
+      "label": "Dato inventado",
+      "definition": "Aparece un dato que el dictado ni el contexto autorizado aportan: nombre, cifra, fecha, hora, ruta, comando, canal de envio, causa, responsable."
+    },
+    {
+      "id": "unauthorized_or_irrelevant_context",
+      "label": "Contexto no autorizado o irrelevante",
+      "definition": "Se usa una seleccion no autorizada o un turno previo no relacionado con el pedido."
+    },
+    {
+      "id": "wrong_name_number_path",
+      "label": "Nombre, cifra o ruta equivocados",
+      "definition": "Un nombre propio, una cifra o unidad, una fecha u hora, o una ruta o comando dictado se escribe mal, se redondea o se cambia."
+    }
+  ],
+  "ratings": {
+    "scale": "1..5 enteros (1 = inaceptable, 3 = aceptable con reservas, 5 = fiel y usable sin cambios)",
+    "unit": "una respuesta del benchmark",
+    "dimensions": [
+      {
+        "id": "fidelity",
+        "label": "Fidelidad a lo dictado",
+        "anchors": {
+          "1": "Inventa o cambia datos: el prompt no se puede enviar sin corregirlo.",
+          "3": "Conserva lo esencial con algun agregado o alguna perdida menor.",
+          "5": "Todo dato dictado aparece literal, sin agregados ni faltantes."
+        }
+      },
+      {
+        "id": "intent",
+        "label": "Intencion",
+        "anchors": {
+          "1": "La accion pedida o su destinatario no coinciden con el pedido.",
+          "3": "La intencion se reconoce pero quedo mas amplia o mas estrecha de lo pedido.",
+          "5": "El prompt pide exactamente lo que la persona pidio."
+        }
+      },
+      {
+        "id": "context_discipline",
+        "label": "Disciplina de contexto",
+        "anchors": {
+          "1": "Usa contexto no autorizado o irrelevante, o completa un dato desconocido.",
+          "3": "No usa lo que debia usar, o menciona contexto de mas sin cambiar el sentido.",
+          "5": "Usa solo el contexto autorizado y deja explicito lo que no se sabe."
+        }
+      },
+      {
+        "id": "restrictions",
+        "label": "Restricciones",
+        "anchors": {
+          "1": "Omite o invierte una restriccion dictada.",
+          "3": "Conserva las restricciones con redaccion ambigua.",
+          "5": "Cada restriccion dictada aparece explicita y separada."
+        }
+      },
+      {
+        "id": "clarity",
+        "label": "Claridad",
+        "anchors": {
+          "1": "Texto ambiguo o desordenado; no se entiende que se pide.",
+          "3": "Se entiende, pero hay que releer alguna parte.",
+          "5": "Instruccion directa y sin ambiguedad para un asistente."
+        }
+      },
+      {
+        "id": "concision",
+        "label": "Concision",
+        "anchors": {
+          "1": "Ruido, repeticiones o relleno que estorban al pedido.",
+          "3": "Algo mas largo de lo necesario sin perder contenido.",
+          "5": "El largo justo: sin relleno y sin recortar datos."
+        }
+      },
+      {
+        "id": "robustness",
+        "label": "Robustez de la instruccion",
+        "anchors": {
+          "1": "El prompt se rompe con cualquier lectura: falta el objeto, el plazo o el alcance.",
+          "3": "Funciona, pero deja lugar a que el asistente pregunte o asuma.",
+          "5": "Autocontenido: alcance, condiciones y limites claros, con los huecos marcados como desconocidos."
+        }
+      }
+    ]
+  },
+  "acceptance_gates": {
+    "hard_rule": "Cualquier error critico de la lista 'critical_errors' rechaza la respuesta, sin importar los puntajes de estilo.",
+    "viability_rule": "Un candidato solo es viable si NO tiene errores criticos y las SIETE dimensiones quedan en >= 4/5: fidelity, intent, context_discipline, restrictions, clarity, concision y robustness. Cualquier dimension en <= 3 descarta al candidato, no solo fidelity e intent.",
+    "no_winner_rule": "Si ningun candidato (modelo x estrategia x contexto) alcanza el viability_rule completo, se informa 'sin ganador': se listan los candidatos mas cercanos, la dimension o el error critico que los descarta, y la recomendacion queda en 'seguir midiendo / no distribuir'. No se declara ganador por promedio ni por mayoria de dimensiones.",
+    "no_relax_rule": "Los umbrales, las dimensiones y los errores criticos estan congelados en v2p_rubric.json antes de ver cualquier salida (rubric_sha256 y prescoring_sha256 en v2p_references.sha256). No se relajan, se agregan ni se reescriben despues de ver las corridas; cualquier cambio exige una version nueva del rubric y un freeze nuevo, y las corridas anteriores quedan marcadas como rubric viejo.",
+    "aggregation": "Informar por estrategia, modelo y contexto: tasa de rechazo por error critico, mediana de cada una de las siete dimensiones, porcentaje de respuestas que cumplen viability_rule completo, y la lista de casos con error critico o con alguna dimension <= 3.",
+    "reporting": "Ademas del ganador (o de 'sin ganador'), se informan los no ganadores con su gate fallido, para que la decision no dependa de leer tablas crudas.",
+    "checks_note": "Los invariantes automaticos del runner (anclas, prohibidos, restricciones, longitud) son senales de triage, no el puntaje: no reemplazan este rubric."
+  },
+  "strategy_caveat": {
+    "baseline": "La estrategia baseline devuelve una correccion del dictado, no un prompt. Se puntua con las mismas dimensiones de fidelidad, intencion y contexto, pero no se le exige forma de prompt ni claridad de instruccion; 'concision' se evalua como correccion.",
+    "structured": "Se puntua el prompt renderizado; si el renderer no recibio campos ('Objetivo: (no se pudo extraer del dictado)') se registra como error critico 'intent_change'."
+  },
+  "blind_artifact": {
+    "file": "blinded_review.jsonl",
+    "fields": [
+      "row_id",
+      "case_id",
+      "category",
+      "input",
+      "authorized_context",
+      "reference_prompt",
+      "response",
+      "ratings",
+      "critical_errors"
+    ],
+    "key_file": "blinded_key.json",
+    "key_rule": "Separada del material ciego. No incluye modelo ni estrategia en las filas revisables.",
+    "id_rule": "row_id aleatorio con semilla declarada; el orden tambien se mezcla con la misma semilla."
+  }
+}
