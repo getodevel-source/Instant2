@@ -994,6 +994,11 @@ class PanelLogic(PanelReadingActions):
     def toast(self, title, message="", level="info", actions=(), ms=4500):
         if self._closed:
             return
+        if level == "error":
+            # Todo error que ve el usuario tiene que quedar en el log: un
+            # toast sin rastro no se puede diagnosticar despues. Los que
+            # pasan por `_toast_error` dejan además el traceback.
+            log.error("toast de error: %s: %s", title, message)
         toast_id = f"t{time.monotonic_ns()}"
         if actions:
             self._toast_callbacks[toast_id] = [

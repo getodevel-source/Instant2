@@ -503,5 +503,34 @@ class T4DaemonProbeTests(unittest.TestCase):
             self.assertIn("sigue activo", detail)
 
 
+class T5ErrorToastLoggingTests(unittest.TestCase):
+    """T5: todo toast de error queda registrado en instant2.log."""
+
+    def test_error_toast_is_logged_with_title_and_detail(self):
+        logic, _emitted = _logic()
+        with self.assertLogs("instant2", level="ERROR") as captured:
+            logic.toast("Actualización sin aplicar", "el instalador se abortó",
+                        level="error")
+        self.assertTrue(captured.output)
+        line = captured.output[0]
+        self.assertIn("Actualización sin aplicar", line)
+        self.assertIn("el instalador se abortó", line)
+
+    def test_error_toast_that_does_not_go_through_toast_error_is_logged(self):
+        """El error reportado por otra ruta tambien deja rastro."""
+        logic, emitted = _logic()
+        with self.assertLogs("instant2", level="ERROR") as captured:
+            logic.toast("Fallo raro", "detalle del fallo", level="error")
+        self.assertIn("Fallo raro", captured.output[0])
+        self.assertTrue(any(toast["title"] == "Fallo raro"
+                            for toast in _toasts(emitted)))
+
+    def test_informative_toasts_are_not_logged_as_errors(self):
+        logic, _emitted = _logic()
+        with self.assertNoLogs("instant2", level="ERROR"):
+            logic.toast("Actualización lista", "v0.2.0 se descargó")
+            logic.toast("Aviso", "cuidado", level="warn")
+
+
 if __name__ == "__main__":
     unittest.main()
