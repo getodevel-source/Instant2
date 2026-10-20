@@ -2247,6 +2247,19 @@ class PanelLogic(PanelReadingActions):
                                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
                 else:
                     os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                # El proceso ya no existe: el daemon no estaba corriendo. No
+                # es un fallo, asi que no se avisa como error (en Windows
+                # taskkill falla en silencio y el caso es el mismo: el
+                # proceso se fue solo). Avisarlo como error era un toast
+                # mentiroso sobre un daemon que no estaba.
+                log.info("el daemon (PID %d) ya no estaba corriendo", pid)
+                self._daemon_stop_pending = False
+                self.status_detail = "El daemon ya no estaba; actualizando estado…"
+                self.push_state()
+                self.refresh_daemon()
+                self._restart_notified(on_restart, False)
+                return
             except OSError as exc:
                 self._daemon_stop_pending = False
                 self.status_detail = "No se pudo detener Instant2."
