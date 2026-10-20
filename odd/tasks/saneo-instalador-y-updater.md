@@ -69,11 +69,11 @@ Un actualizador que no verifica nada no puede fallar de forma honesta: el usuari
 
 ### Bloque 2 - Instalador sin recargar 4 GB
 
-- [ ] **T7** `installer/instant2.iss`: si existen modelos en el directorio legacy (`%LOCALAPPDATA%\instant\models`), se reutilizan en vez de volver a copiar los 4 GB; el bundle queda en `ignoreversion` solo para lo que no existe.
+- [x] **T7** `installer/instant2.iss`: si existen modelos en el directorio legacy (`%LOCALAPPDATA%\instant\models`), se reutilizan en vez de volver a copiar los 4 GB; el bundle queda en `ignoreversion` solo para lo que no existe.
 
 ### Bloque 3 - Python
 
-- [ ] **T8** `dictado/pyproject.toml`: techo en `requires-python` mientras la GUI dependa de `ctypes.wintypes.WINFUNCTYPE`; documentar el venv de desarrollo en 3.12.
+- [x] **T8** `dictado/pyproject.toml`: la GUI tiene que andar en 3.14 (no se topa `requires-python`: el tipo de callback de Windows se resuelve desde `ctypes`, que es donde vive); documentar el venv de desarrollo en 3.12.
 
 ### Bloque 4 - Higiene del repo
 
@@ -152,3 +152,26 @@ Desviaciones y limites de esta tanda:
 - T1-T6, T7, T8, T10 tocan 2 o mas archivos no triviales -> **writer delegado** (un writer por bloque).
 - T9, T11 (edicion de `.gitignore` y CHANGELOG) son mecanicas -> **inline**.
 - La verificacion de los writers corre en la suite completa mas el pyflakes, con lectura de vuelta del diff en el padre.
+
+### Tercera tanda (los cinco pendientes que quedaban)
+
+Cinco defectos verificados por el orquestador, en un writer delegado. Todos
+tienen commit propio y evidencia.
+
+- **El resultado de la actualizacion se reportaba para siempre** `987839a` `fix(update): expire a stale update result`: las notas (`pending-update.json`, `installer-result.json`, `helper-result.json`) se leian en cada arranque mientras existieran; si nunca se consumian, el toast rojo "Actualizacion sin aplicar" se repetia dias despues de una actualizacion que el usuario nunca pidio. Ahora cada nota lleva su fecha (campo `ts`, que el `.bat` tambien escribe) y **vence a las 24 horas**: una nota vieja se descarta en silencio y se borra; el caso legitimo (reabrir la app del dia siguiente) se sigue reportando con el log al lado. Una nota sin fecha usa la mtime del archivo. Evidencia: `python -m unittest tests.test_update_safety` -> Ran 60 tests, OK.
+- **El helper no reabria el panel en sus caminos de fallo** `3214646` `fix(update): reopen the panel when the helper fails`: `:hashfail`, `:locked` y `:copyfail` salian con `exit /b 1` y la app se quedaba cerrada (la cierro el padre a proposito: hay que reemplazar el binario). Ahora **todos** los caminos de salida reabren el panel y siguen saliendo con codigo 1 (el de exito, con 0 y con el "Listo" solo en ese caso). De paso, `start` con un ejecutable que no existe se queda esperando en esta maquina: ahora solo se reabre si el archivo esta, y si no queda dicho en el log. Evidencia: `python -m unittest tests.test_update_safety` -> Ran 60 tests, OK (los tests lanzan el `.bat` de verdad y comprueban que el panel falso se abrio).
+- **El instalador volvia a copiar los 4 GB del bundle** `74c5811` `fix(installer): reuse the models the user already has`: `PrepareToInstall` mueve (rename, sin copiar) los modelos del directorio legacy `%LOCALAPPDATA%\instant\models` al de Instant2 y borra el duplicado para que la copia vieja no quede huerfana; la entrada de modelos lleva `Check: ModelAlreadyInstalled`, que Setup llama una vez por archivo y saltea los que ya estan en el destino (una copia incompleta se completa sin recopiarla). No se tocan el AppId, el mecanismo de AppVersion, `CloseApplications`, `RestartApplications`, `PrivilegesRequired`, `OutputBaseFilename` ni la entrada de `[Files]` de la app. Inno Setup no tiene cobertura automatica en este repo: lo unico verificable sin compilar el instalador es el texto del script (guarda estatica en `dictado/tests/test_installer_script.py`). Evidencia: `python -m unittest tests.test_installer_script` -> Ran 4 tests, OK.
+- **La instalacion silenciosa no volvia a abrir la app** `bbd628a` `fix(installer): relaunch Instant2 after a silent install`: la entrada de `[Run]` tenia `skipifsilent`, asi que la actualizacion desde la app (que instala en silencio) dejaba al usuario con la app cerrada y sin ver el resultado. Ahora la instalacion silenciosa tambien abre la app; la instalacion interactiva no cambia (la casilla de la pagina final sigue mandando). Evidencia: `python -m unittest tests.test_installer_script` -> Ran 6 tests, OK.
+- **La GUI no arrancaba con Python 3.14** `2b750c6` `fix(gui): start the panel on Python 3.14`: el tipo de callback de Windows se tomaba de `ctypes.wintypes`, donde ese nombre no existe (ni en 3.12 ni en 3.14) - el log de la app instalada 0.1.0 lo prueba: `AttributeError: module 'ctypes.wintypes' has no attribute 'WINFUNCTYPE'`. El tipo vive en `ctypes`: ahora se resuelve en un solo lugar (`gui_lifecycle.winfunctype`), con un error claro si el interprete no lo trae, y lo usan el panel y el atajo de lectura. `requires-python` sigue sin techo: 3.14 anda. Evidencia: `python -m unittest tests.test_windows_callbacks` -> Ran 4 tests, OK (con el codigo anterior fallan: 1 fallo + 1 error) y smoke del panel con `QT_QPA_PLATFORM=offscreen`: "panel abierto (setup)" en 3.14.2 y en 3.12.12.
+- **Venv de desarrollo documentado** `d80cafe` `docs(dev): document the 3.12 development environment`: el README de `dictado/` explica que el interprete de desarrollo es CPython 3.12 (el de CI), deja la ruta del 3.12.12 de la maquina y del venv equivalente al de CI, con los comandos de la suite y del pyflakes; el README de la raiz enlaza a esa seccion.
+
+Checks de la tercera tanda: `cd dictado && python -m unittest discover -s tests` -> Ran 575 tests, OK (skipped=6) en 3.14.2 (sistema) y en 3.12.12 (venv de CI); `python -m pyflakes dictado/src/instant2_app/*.py` -> 38 archivos, 0 hallazgos (exit 0 en los dos interpretes); `python -m instant2_app --help` -> exit 0 en los dos interpretes.
+
+Desviaciones y limites de esta tanda:
+
+- **Inno Setup no se pudo compilar ni correr**: no hay Inno Setup en esta maquina, asi que el comportamiento del `[Code]` nuevo (el rename del directorio legacy, el borrado del duplicado y el `Check` por archivo) queda verificado por lectura del script y por la guarda estatica, no por una instalacion real.
+- **El `Check` de los modelos decide por nombre de archivo**: Setup llama a la funcion una vez por archivo del bundle y pasa el nombre con `CurrentFilename`; el archivo se busca por nombre en todo el directorio de modelos. Si un archivo con el mismo nombre estuviera en otro subdirectorio, se lo daria por instalado (la app verifica los pesos por hash y los vuelve a bajar si no verifican).
+- **El duplicado del directorio legacy se borra**: cuando `%LOCALAPPDATA%\instant2\models` ya tiene el modelo, la copia del legacy es redundante (la app solo acepta los pesos fijados por hash) y se elimina para que no quede huerfana. Queda escrito en el log de Inno (`/LOG=`).
+- **La nota vencida se descarta a las 24 horas**: una ventana mas corta (una hora) reportaria menos, pero reabrir la app a la manana siguiente tiene que seguir mostrando el fallo de la actualizacion de la noche.
+- **El `.bat` tiene que quedar con finales de linea CRLF en el arbol de trabajo**: con LF, `cmd` deja de encontrar la etiqueta `:say` y los mensajes no se escriben (passo en esta tanda y quedo anotado para el que edite el archivo).
+
