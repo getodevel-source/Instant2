@@ -100,12 +100,14 @@ Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 Name: "{userstartup}\Instant2 Dictado.lnk"; Filename: "{app}\{#AppExe}"; Parameters: "run"; WorkingDir: "{userdocs}"; Tasks: autostart
 
 [Run]
-; En /SILENT no se abre nada: el updater silencioso no puede robber el foco ni
-; abrir ventanas al usuario (skipifsilent). En instalación interactiva sí se
-; abre Instant2 tras una instalación normal. El ejecutable sin argumentos
-; muestra el panel e inicia el daemon si voz y micrófono están disponibles.
-; Las instalaciones silenciosas de actualización no abren ventanas.
-Filename: "{app}\{#AppExe}"; Description: "Abrir Instant2 y activar el dictado en segundo plano"; Flags: nowait postinstall skipifsilent
+; La app se abre al terminar la instalacion, tambien en silencio: la
+; actualizacion desde la app instala en silencio y, si no se abriera, el
+; usuario se queda con la app cerrada y sin ver el resultado (la nota de
+; verificacion se reporta en el arranque siguiente).
+; En instalacion interactiva la casilla de la pagina final sigue mandando
+; (el usuario puede desmarcarla). El ejecutable sin argumentos muestra el
+; panel e inicia el daemon si voz y microfono estan disponibles.
+Filename: "{app}\{#AppExe}"; Description: "Abrir Instant2 y activar el dictado en segundo plano"; Flags: nowait postinstall
 
 [UninstallRun]
 ; El daemon no tiene ventana: el Restart Manager no puede cerrarlo, así que

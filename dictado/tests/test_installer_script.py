@@ -63,5 +63,21 @@ class InstallerModelsTests(unittest.TestCase):
         self.assertIn("ReuseLegacyModels();", prepare.group(0))
 
 
+class InstallerRunTests(unittest.TestCase):
+    """T7b: la instalacion silenciosa tambien reabre la app."""
+
+    def test_the_silent_install_reopens_the_app(self):
+        run = _section("Run")
+        entries = [line for line in run.splitlines()
+                   if line.startswith("Filename:")]
+        self.assertEqual(len(entries), 1)
+        self.assertNotIn("skipifsilent", entries[0])
+        self.assertIn("postinstall", entries[0])
+
+    def test_the_installed_app_is_the_one_that_is_opened(self):
+        run = _section("Run")
+        self.assertIn('Filename: "{app}\\{#AppExe}"', run)
+
+
 if __name__ == "__main__":
     unittest.main()
