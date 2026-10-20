@@ -241,14 +241,24 @@ def _installer_result_path():
     return os.path.join(config_dir(), "installer-result.json")
 
 
-def _write_pending_update(version, log_path):
+def _helper_result_path():
+    """Codigo de salida del helper portable: %APPDATA%\\instant2\\helper-result.json."""
+    return os.path.join(config_dir(), "helper-result.json")
+
+
+def _write_pending_update(version, log_path, stdout_path=""):
     """Deja anotada la actualización que se pidió aplicar.
 
     El instalador y el helper tienen que cerrar la app para poder
     reemplazar el binario, así que la comprobación de la versión instalada
     recién puede hacerse en el arranque siguiente.
+
+    `stdout_path` es la salida cruda del helper (un archivo aparte del log
+    del usuario): sirve para explicar un fallo que ni siquiera llegó al
+    log (por ejemplo, que el helper no arrancó).
     """
-    payload = {"version": str(version or ""), "log": str(log_path or "")}
+    payload = {"version": str(version or ""), "log": str(log_path or ""),
+               "stdout": str(stdout_path or "")}
     try:
         path = _pending_update_path()
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -315,6 +325,28 @@ def _clear_installer_result():
         pass
 
 
+def _read_helper_result():
+    """Codigo de salida del helper portable (lo escribe el `.bat`).
+
+    El helper reemplaza el binario mientras la app esta cerrada: el
+    proceso que lo lanzo puede morir antes de contar como termino. Es el
+    mismo mecanismo que `installer-result.json`, pero para el portable.
+    """
+    try:
+        with open(_helper_result_path(), encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _clear_helper_result():
+    try:
+        os.remove(_helper_result_path())
+    except OSError:
+        pass
+
+
 def _log_tail(path, lines=8):
     """Últimas líneas de un log: el toast del fallo lleva el detalle."""
     if not path:
@@ -337,6 +369,55 @@ def _installer_failure(returncode, log_path):
     return RuntimeError(message)
 
 
+def _helper_stdout_path():
+    """Dónde va la salida del helper: un archivo aparte del log del usuario.
+
+    El log del usuario (`%APPDATA%\\instant2\\update.log`) lo escribe el
+    helper con `>>`. Si el padre lo abriera para apuntar ahí la salida
+    del hijo, los dos se pelearían por el archivo (Windows no deja
+    escribir con el handle tomado) y los mensajes del helper no llegarían
+    nunca al log: en el log solo quedaría el error de compartición del
+    sistema. Por eso el padre no abre ese archivo.
+    """
+    import tempfile
+    return os.path.join(tempfile.gettempdir(),
+                        f"instant2_update_{os.getpid()}",
+                        "helper-stdout.log")
+
+
+def _launch_update_helper(script, target, expected, destination, root):
+    """Lanza el helper portable sin ventana de consola.
+
+    Devuelve la ruta del archivo donde queda la salida del hijo (el ruido
+    de `cmd`, no los mensajes del helper: esos van al log del usuario).
+    """
+    stdout_path = _helper_stdout_path()
+    try:
+        os.makedirs(os.path.dirname(stdout_path), exist_ok=True)
+        output = open(stdout_path, "a", encoding="utf-8", errors="replace")
+    except OSError:
+        # Sin archivo donde apuntar la salida: mejor el null que la
+        # consola de la app (el helper no debe verse).
+        output = subprocess.DEVNULL
+    env = dict(os.environ)
+    # El helper sabe que su salida ya está redirigida: no la escribe dos
+    # veces (ni en la consola ni en el log del usuario).
+    env["INSTANT2_UPDATE_LOG_REDIRECTED"] = "1"
+    try:
+        # Sin CREATE_NO_WINDOW el helper abre una terminal con sus pasos
+        # en medio de la actualización.
+        subprocess.Popen(
+            ["cmd", "/c", script, target, expected, destination], cwd=root,
+            env=env, stdout=output, stderr=subprocess.STDOUT,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    finally:
+        if output is not subprocess.DEVNULL:
+            # El hijo ya tiene su propia copia del handle: el padre puede
+            # cerrar el suyo sin perder la salida del helper.
+            output.close()
+    return stdout_path
+
+
 def _pending_update_report():
     """(título, mensaje, nivel) con el resultado de la actualización anterior.
 
@@ -348,30 +429,43 @@ def _pending_update_report():
     archivos, así que el proceso que lo espera puede morir antes de leer
     su código de salida: por eso el worker lo anota en
     `installer-result.json` y esta nota lo lee en el arranque siguiente.
+
+    El helper portable hace lo mismo (cierra la app para reemplazar el
+    binario): su `.bat` anota el código en `helper-result.json` y el
+    arranque siguiente lo cuenta con el log del helper al lado.
     """
     data = _read_pending_update()
     result = _read_installer_result()
-    if not data and not result:
+    helper = _read_helper_result()
+    if not data and not result and not helper:
         return None
     expected = str((data or {}).get("version") or "")
     log_path = str((data or {}).get("log")
-                   or (result or {}).get("log") or "")
+                   or (result or {}).get("log")
+                   or (helper or {}).get("log") or "")
+    stdout_path = str((data or {}).get("stdout") or "")
     current = _current_version()
     _clear_pending_update()
     _clear_installer_result()
+    _clear_helper_result()
     returncode = None
-    if result is not None:
+    source = result if result is not None else helper
+    if source is not None:
         try:
-            returncode = int(result.get("returncode"))
+            returncode = int(source.get("returncode"))
         except (TypeError, ValueError):
             returncode = None
     if returncode is not None and returncode != 0:
-        # El instalador fallo: el log de Inno va con el mensaje.
-        message = (f"El instalador terminó con código {returncode}; no se "
+        # El instalador o el helper fallaron: el log va con el mensaje.
+        quien = "El instalador" if result is not None else "El actualizador"
+        message = (f"{quien} terminó con código {returncode}; no se "
                    f"actualizó Instant2. Log: {log_path}")
         tail = _log_tail(log_path)
         if tail:
             message += "\n\nÚltimas líneas del log:\n" + tail
+        extra = _log_tail(stdout_path)
+        if extra:
+            message += "\n\nSalida del actualizador:\n" + extra
         return ("Actualización sin aplicar", message, "error")
     if not expected:
         # Sin versión anotada no se puede afirmar que la actualización se
@@ -2613,36 +2707,16 @@ class PanelLogic(PanelReadingActions):
             return
         # El helper también cierra la app: se anota qué se pidió para poder
         # verificar la versión instalada en el próximo arranque.
-        _write_pending_update(version, _update_log_path())
+        stdout_path = _helper_stdout_path()
+        _write_pending_update(version, _update_log_path(), stdout_path)
         try:
-            log_path = _update_log_path()
-            os.makedirs(os.path.dirname(log_path), exist_ok=True)
-            output = open(log_path, "a", encoding="utf-8", errors="replace")
-        except OSError as exc:
-            self._update_install_failed(exc)
-            return
-        try:
-            # Sin CREATE_NO_WINDOW el helper abre una terminal con sus pasos
-            # en medio de la actualización. Su salida va al log: el usuario
-            # no ve una ventana y el paso a paso queda para diagnosticar.
-            env = dict(os.environ)
-            # El helper sabe que su stdout ya apunta al log: no lo escribe
-            # dos veces.
-            env["INSTANT2_UPDATE_LOG_REDIRECTED"] = "1"
-            subprocess.Popen(
-                ["cmd", "/c", script, target, expected, destination], cwd=root,
-                env=env, stdout=output, stderr=subprocess.STDOUT,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            _launch_update_helper(script, target, expected, destination, root)
         except Exception as exc:  # noqa: BLE001  (se informa al usuario)
             # El helper ni siquiera arranco: se reporta por la misma via que
             # el resto de los fallos (y se limpia la nota, asi el proximo
             # arranque no repite el error con otro toast).
             self._update_install_failed(exc)
             return
-        finally:
-            # El hijo ya tiene su propia copia del handle: el padre puede
-            # cerrar el suyo sin perder la salida del helper.
-            output.close()
         self.close()
 
     def _install_via_setup(self, installer_path, expected):
@@ -2762,6 +2836,7 @@ class PanelLogic(PanelReadingActions):
         # instalador, que sinon el usuario veria dos toasts rojos).
         _clear_pending_update()
         _clear_installer_result()
+        _clear_helper_result()
         self._update_install_pending = False
         self.update_button = (f"Reintentar instalación v"
                               f"{(self._pending_update or {}).get('latest', '')}")

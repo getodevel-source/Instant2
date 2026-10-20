@@ -12,6 +12,7 @@ Cada clase cubre una tarea del documento `odd/tasks/saneo-instalador-y-updater.m
 unittest clásico (como el resto de la suite): sin red, sin Qt, sin SO real.
 """
 import hashlib
+import json
 import os
 import queue
 import shutil
@@ -155,7 +156,7 @@ def _isolated_update_paths(directory):
 class T1HelperConsoleTests(unittest.TestCase):
     """T1: el helper portable se lanza sin ventana de consola."""
 
-    def test_helper_launch_has_no_console_window_and_logs_its_output(self):
+    def test_helper_launch_has_no_console_window_and_redirects_its_output(self):
         logic, _emitted = _logic()
         logic._pending_update = _release()
         with tempfile.TemporaryDirectory() as temp:
@@ -171,7 +172,6 @@ class T1HelperConsoleTests(unittest.TestCase):
                 patch("instant2_app.gui.subprocess.Popen") as popen,
             ):
                 logic.handle({"op": "apply_update"})
-            self.assertTrue(os.path.isfile(log_path))
 
         self.assertEqual(popen.call_count, 1)
         kwargs = popen.call_args.kwargs
@@ -180,9 +180,16 @@ class T1HelperConsoleTests(unittest.TestCase):
                          getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if os.name == "nt":
             self.assertNotEqual(kwargs["creationflags"], 0)
-        # La salida del helper va al log, no a una consola.
+        # La salida del helper va a un archivo, no a una consola.
         self.assertIs(kwargs["stderr"], subprocess.STDOUT)
-        self.assertEqual(os.path.basename(kwargs["stdout"].name), "update.log")
+        self.assertTrue(os.path.isfile(kwargs["stdout"].name))
+        # El log del usuario es del helper: si el padre lo tomara para la
+        # salida del hijo, los dos se pelean por el archivo y los mensajes
+        # del helper nunca llegan al log.
+        self.assertNotEqual(os.path.abspath(kwargs["stdout"].name),
+                            os.path.abspath(log_path))
+        self.assertNotEqual(os.path.basename(kwargs["stdout"].name),
+                            "update.log")
 
     def test_helper_log_lives_next_to_the_app_config(self):
         from instant2_app import paths
@@ -190,6 +197,140 @@ class T1HelperConsoleTests(unittest.TestCase):
             os.path.basename(gui._update_log_path()), "update.log")
         self.assertEqual(
             os.path.dirname(gui._update_log_path()), paths.config_dir())
+
+
+class T1HelperLogOwnershipTests(unittest.TestCase):
+    """El log del usuario es del helper: el padre no lo toma.
+
+    La app abria `%APPDATA%\\instant2\\update.log` y se lo pasaba al helper
+    como stdout, mientras el helper escribia sus mensajes en el mismo
+    archivo con `>>`. En Windows los dos se pelean por el archivo: el
+    helper no puede escribir y en el log queda solo el error de
+    comparticion del sistema (ni el paso a paso ni el error real).
+    """
+
+    BAT = os.path.normpath(os.path.join(
+        os.path.dirname(__file__), "..", "..", "scripts", "instant2-update.bat"))
+
+    @unittest.skipUnless(os.name == "nt", "el helper es un .bat de Windows")
+    def test_the_user_log_gets_the_helper_step_by_step_and_its_error(self):
+        """El log del usuario tiene el paso a paso y el error real.
+
+        Se lanza el `.bat` de verdad, como lo lanza la app (el helper
+        reemplaza el binario mientras la app esta cerrada).
+        """
+        logic, _emitted = _logic()
+        logic._pending_update = _release()
+        real_popen = subprocess.Popen
+        launched = []
+
+        def spy(*args, **kwargs):
+            process = real_popen(*args, **kwargs)
+            launched.append(process)
+            return process
+
+        with tempfile.TemporaryDirectory() as temp:
+            appdata = os.path.join(temp, "appdata")
+            root = os.path.join(temp, "root")
+            scripts = os.path.join(root, "scripts")
+            dist = os.path.join(root, "dist")
+            for folder in (appdata, scripts, dist):
+                os.makedirs(folder)
+            # El helper real, pero solo: sin instant2-stop.bat al lado no
+            # toca el daemon de esta maquina.
+            helper = os.path.join(scripts, "instant2-update.bat")
+            shutil.copyfile(self.BAT, helper)
+            # El destino es un .bat: arranca, pero no escribe pidfile, asi
+            # que el helper cae en la rama de rollback.
+            destination = os.path.join(dist, "Instant2.exe")
+            with open(destination, "w", encoding="utf-8") as handle:
+                handle.write("@echo off\r\necho fake %*\r\n")
+            source = os.path.join(temp, "nuevo.exe")
+            with open(source, "wb") as handle:
+                handle.write(b"MZ" + b"\x00" * 200)
+            with open(source, "rb") as handle:
+                digest = hashlib.sha256(handle.read()).hexdigest()
+
+            logic._ready_update = (source, digest, "0.2.0")
+            with patch.dict(os.environ, {"APPDATA": appdata}), \
+                    patch("instant2_app.update.install_mode",
+                          return_value="portable"), \
+                    patch("instant2_app.gui._workdir", return_value=root), \
+                    patch("instant2_app.gui.subprocess.Popen",
+                          side_effect=spy):
+                logic.handle({"op": "apply_update"})
+                self.assertEqual(len(launched), 1)
+                launched[0].wait(timeout=180)
+                log = os.path.join(appdata, "instant2", "update.log")
+                with open(log, encoding="utf-8", errors="replace") as handle:
+                    content = handle.read()
+                result = os.path.join(appdata, "instant2", "helper-result.json")
+                payload = None
+                if os.path.isfile(result):
+                    with open(result, encoding="utf-8") as handle:
+                        payload = json.load(handle)
+
+        # El paso a paso del helper esta en el log del usuario...
+        self.assertIn("[1/6] Verificando SHA256...", content)
+        self.assertIn("[6/6] Reabriendo ventana...", content)
+        # ...y tambien el error real (no el error de comparticion).
+        self.assertIn("ERROR:", content)
+        self.assertIn("NO se aplico", content)
+        # El codigo de salida queda anotado para el arranque siguiente.
+        self.assertIsNotNone(payload)
+        self.assertEqual(payload["returncode"], 1)
+        self.assertTrue(payload["log"].endswith("update.log"))
+
+    def test_the_helper_failure_is_reported_on_the_next_start(self):
+        """El codigo del helper queda anotado aunque el panel muera.
+
+        El helper reemplaza el binario con la app cerrada: el proceso que
+        lo lanzo no puede contar como termino. El `.bat` lo anota y el
+        arranque siguiente lo cuenta con el log al lado.
+        """
+        with tempfile.TemporaryDirectory() as temp:
+            pending = os.path.join(temp, "pending-update.json")
+            log_path = os.path.join(temp, "update.log")
+            result = os.path.join(temp, "helper-result.json")
+            with open(log_path, "w", encoding="utf-8") as handle:
+                handle.write("ERROR: el daemon nuevo no arranco\n")
+            with open(result, "w", encoding="utf-8") as handle:
+                json.dump({"returncode": 1, "log": log_path}, handle)
+            with patch("instant2_app.gui._pending_update_path",
+                       return_value=pending), \
+                    patch("instant2_app.gui._installer_result_path",
+                          return_value=os.path.join(temp, "installer.json")), \
+                    patch("instant2_app.gui._helper_result_path",
+                          return_value=result), \
+                    patch("instant2_app.gui._current_version",
+                          return_value="0.1.5"):
+                gui._write_pending_update("0.2.0", log_path)
+                report = gui._pending_update_report()
+            self.assertIsNotNone(report)
+            title, message, level = report
+            self.assertEqual(title, "Actualización sin aplicar")
+            self.assertEqual(level, "error")
+            self.assertIn("1", message)
+            self.assertIn("el daemon nuevo no arranco", message)
+            # El resultado se consume: no se repite el error.
+            with patch("instant2_app.gui._pending_update_path",
+                       return_value=pending), \
+                    patch("instant2_app.gui._installer_result_path",
+                          return_value=os.path.join(temp, "installer.json")), \
+                    patch("instant2_app.gui._helper_result_path",
+                          return_value=result):
+                self.assertIsNone(gui._pending_update_report())
+
+    def test_a_helper_without_result_does_not_report_a_failure(self):
+        """Sin resultado anotado no hay fallo que reportar."""
+        with tempfile.TemporaryDirectory() as temp:
+            with patch("instant2_app.gui._pending_update_path",
+                       return_value=os.path.join(temp, "pending.json")), \
+                    patch("instant2_app.gui._installer_result_path",
+                          return_value=os.path.join(temp, "installer.json")), \
+                    patch("instant2_app.gui._helper_result_path",
+                          return_value=os.path.join(temp, "helper.json")):
+                self.assertIsNone(gui._pending_update_report())
 
 
 class T2HelperHonestyTests(unittest.TestCase):

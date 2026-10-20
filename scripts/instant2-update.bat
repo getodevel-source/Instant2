@@ -5,13 +5,19 @@ REM Re-verifica el hash, frena Instant2, respalda el exe, reemplaza, comprueba
 REM que el daemon nuevo levante (si no, restaura) y abre el panel.
 REM En exito borra %DST%.bak (no se acumulan respaldos); en rollback se
 REM conserva para vuelta atras manual.
-REM Toda la salida va a %APPDATA%\instant2\update.log. La app lanza este
-REM helper sin terminal (CREATE_NO_WINDOW) y con la salida ya apuntada al
-REM log (INSTANT2_UPDATE_LOG_REDIRECTED=1): ahi queda el paso a paso y el
-REM error real si la actualizacion se revierte.
+REM El log %APPDATA%\instant2\update.log es de este helper: lo escribe con
+REM ">>" y nadie mas lo abre. La app lanza este helper sin terminal
+REM (CREATE_NO_WINDOW) y con la salida del hijo apuntada a otro archivo
+REM (INSTANT2_UPDATE_LOG_REDIRECTED=1): si la app tomara el mismo log para
+REM la salida, los dos se pelean por el archivo y los mensajes del helper
+REM no llegan nunca al log.
+REM Ademas el codigo de salida queda en %APPDATA%\instant2\helper-result.json
+REM (como installer-result.json del instalador de Inno): la app lo lee en el
+REM arranque siguiente y reporta el fallo con el log al lado.
 setlocal
 set "LOGDIR=%APPDATA%\instant2"
 set "LOG=%LOGDIR%\update.log"
+set "RESULT=%LOGDIR%\helper-result.json"
 if not exist "%LOGDIR%" mkdir "%LOGDIR%" >nul 2>&1
 set "ROOT=%~dp0.."
 set "RC=0"
@@ -110,6 +116,9 @@ REM Exito verificado: el respaldo ya cumplio (rollback disponible hasta aca).
 del "%DST%.bak" 2>nul
 
 :reopen
+REM El codigo de salida se anota ANTES de reabrir la ventana: la app que
+REM vuelve a abrir lee el resultado y reporta el fallo con el log al lado.
+call :result %RC%
 set "MSG=[6/6] Reabriendo ventana..."
 call :say
 start "" "%DST%" setup 2>nul
@@ -127,27 +136,33 @@ exit /b %RC%
 :usage
 set "MSG=Uso: instant2-update.bat [nuevo-Instant2.exe] [sha256] [destino-Instant2.exe]"
 call :say
+call :result 1
 exit /b 1
 :missing
 set "MSG=ERROR: no existe el archivo a instalar: %~1"
 call :say
+call :result 1
 exit /b 1
 :selfcopy
 set "MSG=ERROR: el origen es el propio destino; nada que instalar."
 call :say
+call :result 1
 exit /b 1
 :hashfail
 set "MSG=ERROR: el SHA256 no coincide; no se instala nada."
 call :say
+call :result 1
 exit /b 1
 :locked
 set "MSG=ERROR: el destino sigue en uso; cerra Instant2 y reintenta. Destino: %DST%"
 call :say
+call :result 1
 exit /b 1
 :copyfail
 set "MSG=ERROR: no se pudo copiar el archivo nuevo al destino: %DST%"
 call :say
 if exist "%DST%.bak" move /Y "%DST%.bak" "%DST%" >nul
+call :result 1
 exit /b 1
 
 REM Escribe el mensaje en el log y, si la salida no esta ya redirigida al
@@ -155,4 +170,12 @@ REM log (la app la redirige), tambien en la consola.
 :say
 >>"%LOG%" echo %MSG%
 if not defined INSTANT2_UPDATE_LOG_REDIRECTED echo %MSG%
+goto :eof
+
+REM Anota el codigo de salida para que la app lo lea en el arranque
+REM siguiente (mismo mecanismo que installer-result.json de Inno). El log
+REM va con barras "/" porque JSON no acepta "\".
+:result
+set "RC=%~1"
+>"%RESULT%" echo {"returncode":%RC%,"log":"%LOG:\=/%"}
 goto :eof
