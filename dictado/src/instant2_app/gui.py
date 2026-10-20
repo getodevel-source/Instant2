@@ -2284,9 +2284,13 @@ class PanelLogic(PanelReadingActions):
             # Sin CREATE_NO_WINDOW el helper abre una terminal con sus pasos
             # en medio de la actualización. Su salida va al log: el usuario
             # no ve una ventana y el paso a paso queda para diagnosticar.
+            env = dict(os.environ)
+            # El helper sabe que su stdout ya apunta al log: no lo escribe
+            # dos veces.
+            env["INSTANT2_UPDATE_LOG_REDIRECTED"] = "1"
             subprocess.Popen(
                 ["cmd", "/c", script, target, expected, destination], cwd=root,
-                stdout=output, stderr=subprocess.STDOUT,
+                env=env, stdout=output, stderr=subprocess.STDOUT,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except Exception as exc:  # noqa: BLE001  (se informa al usuario)
             self._update_install_pending = False

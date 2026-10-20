@@ -13,6 +13,7 @@ unittest clásico (como el resto de la suite): sin red, sin Qt, sin SO real.
 """
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -133,6 +134,106 @@ class T1HelperConsoleTests(unittest.TestCase):
             os.path.basename(gui._update_log_path()), "update.log")
         self.assertEqual(
             os.path.dirname(gui._update_log_path()), paths.config_dir())
+
+
+class T2HelperHonestyTests(unittest.TestCase):
+    """T2: el helper deja todo en el log y no miente cuando revierte."""
+
+    BAT = os.path.normpath(os.path.join(
+        os.path.dirname(__file__), "..", "..", "scripts", "instant2-update.bat"))
+
+    def _source(self):
+        with open(self.BAT, encoding="utf-8") as handle:
+            return handle.read()
+
+    def _section(self, source, label):
+        """El bloque de la etiqueta `:label` hasta la siguiente etiqueta."""
+        start = source.index("\n:" + label + "\n") + 1
+        rest = source[start:]
+        end = rest.find("\n:")
+        return rest if end < 0 else rest[:end]
+
+    def test_every_message_goes_to_the_update_log(self):
+        source = self._source()
+        self.assertIn('set "LOG=%LOGDIR%\\update.log"', source)
+        self.assertIn('>>"%LOG%" echo %MSG%', source)
+        # El helper escribe siempre en el log; en consola solo si la app no
+        # redirigio la salida (si no, el log tendria cada linea dos veces).
+        self.assertIn("if not defined INSTANT2_UPDATE_LOG_REDIRECTED echo %MSG%",
+                      source)
+
+    def test_rollback_reports_the_failure_and_exits_with_error(self):
+        source = self._source()
+        rollback = self._section(source, "rollback")
+        self.assertIn("ERROR:", rollback)
+        self.assertIn("set \"RC=1\"", rollback)
+        # El falso "Listo" no puede quedar en la rama que revierte.
+        self.assertNotIn("Listo: Instant2 actualizado.", rollback)
+        # Y el codigo de salida es el de RC, no un 0 fijo.
+        self.assertIn("exit /b %RC%", source)
+
+    def test_success_branch_is_the_only_one_that_says_listo(self):
+        source = self._source()
+        self.assertEqual(source.count("Listo: Instant2 actualizado."), 1)
+        self.assertIn("if \"%RC%\"==\"0\" (", source)
+
+    @unittest.skipUnless(os.name == "nt", "el helper es un .bat de Windows")
+    def test_helper_writes_the_log_and_exits_with_error(self):
+        with tempfile.TemporaryDirectory() as temp:
+            appdata = os.path.join(temp, "appdata")
+            os.makedirs(appdata)
+            env = dict(os.environ)
+            env["APPDATA"] = appdata
+            env["INSTANT2_UPDATE_LOG_REDIRECTED"] = "1"
+            result = subprocess.run(
+                ["cmd", "/c", self.BAT], env=env, capture_output=True,
+                text=True, timeout=60)
+            log = os.path.join(appdata, "instant2", "update.log")
+            self.assertEqual(result.returncode, 1)
+            self.assertTrue(os.path.isfile(log))
+            with open(log, encoding="utf-8", errors="replace") as handle:
+                content = handle.read()
+            self.assertIn("Uso:", content)
+            # Con la salida redirigida al log la consola queda muda.
+            self.assertNotIn("Uso:", result.stdout)
+
+    @unittest.skipUnless(os.name == "nt", "el helper es un .bat de Windows")
+    def test_rollback_leaves_the_log_without_a_false_success(self):
+        with tempfile.TemporaryDirectory() as temp:
+            appdata = os.path.join(temp, "appdata")
+            scripts = os.path.join(temp, "scripts")
+            os.makedirs(appdata)
+            os.makedirs(scripts)
+            # El helper se copia lejos de instant2-stop.bat para no tocar
+            # la app real de esta maquina.
+            helper = os.path.join(scripts, "instant2-update.bat")
+            shutil.copyfile(self.BAT, helper)
+            # El destino es un .bat: arranca, pero no escribe pidfile, asi
+            # que el helper cae en la rama de rollback.
+            destination = os.path.join(scripts, "Instant2.exe")
+            with open(destination, "w", encoding="utf-8") as handle:
+                handle.write("@echo off\r\necho fake %*\r\n")
+            source = os.path.join(temp, "nuevo.exe")
+            with open(source, "wb") as handle:
+                handle.write(b"binario nuevo")
+            digest = hashlib.sha256(b"binario nuevo").hexdigest()
+
+            env = dict(os.environ)
+            env["APPDATA"] = appdata
+            env["INSTANT2_UPDATE_LOG_REDIRECTED"] = "1"
+            result = subprocess.run(
+                ["cmd", "/c", helper, source, digest, destination], env=env,
+                capture_output=True, text=True, timeout=120)
+
+            self.assertEqual(result.returncode, 1)
+            log = os.path.join(appdata, "instant2", "update.log")
+            with open(log, encoding="utf-8", errors="replace") as handle:
+                content = handle.read()
+            self.assertIn("ERROR:", content)
+            self.assertNotIn("Listo: Instant2 actualizado.", content)
+            # El destino anterior quedo restaurado.
+            with open(destination, encoding="utf-8") as handle:
+                self.assertIn("fake", handle.read())
 
 
 if __name__ == "__main__":
