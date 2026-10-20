@@ -18,6 +18,26 @@ En Windows, la vía recomendada es el instalador completo de la [última release
 
 > Los binarios están **sin firmar** por ahora: Windows SmartScreen muestra «Windows protegió su PC» la primera vez (elegí «Más información» → «Ejecutar de todas formas» solo si el instalador salió del enlace oficial); Gatekeeper en macOS puede pedirte que confirmes la apertura en Ajustes → Privacidad y seguridad. Esto no es un error de Instant2.
 
+## Desarrollo
+
+El intérprete de desarrollo es **CPython 3.12**: es el que corre la suite en CI (`.github/workflows/tests.yml`) y el que fijan las dependencias fijadas (`numpy 2.5.3` pide 3.12 o más).
+
+En la máquina del maintainer hay un 3.12.12 listo para usar en
+`C:\Users\juans\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\python.exe`
+y un venv equivalente al de CI (con las dependencias ya instaladas) en
+`C:\Users\juans\AppData\Local\Temp\opencode\instant2-venv`:
+
+```powershell
+# Suite completa con el intérprete de CI
+C:\Users\juans\AppData\Local\Temp\opencode\instant2-venv\Scripts\python.exe -m unittest discover -s tests
+# Pyflakes (mismo criterio que el gate de CI)
+C:\Users\juans\AppData\Local\Temp\opencode\instant2-venv\Scripts\python.exe -m pyflakes ..\dictado\src\instant2_app\*.py
+```
+
+El venv del `%TEMP%` es una comodidad: si se borra, se rehace con el 3.12 de arriba (`python -m venv <ruta>` + `pip install -e .` + `pip install PySide6 pyflakes`).
+
+Instant2 **también funciona con 3.14** (`requires-python` no tiene techo): el panel, el daemon y la suite andan en 3.12 y en 3.14. Para desarrollar, usá 3.12: es el que prueba CI en los tres sistemas.
+
 Para desarrollar el paquete desde `dictado/`:
 
 ```bash
