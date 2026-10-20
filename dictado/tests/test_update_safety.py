@@ -98,6 +98,21 @@ def _release(version="0.2.0"):
             "asset_url": "https://x/Instant2.exe"}
 
 
+def _isolated_update_paths(directory):
+    """Corta la nota y los logs de actualización dentro de un temporal.
+
+    Sin esto la suite escribiría en el %APPDATA% real de quien la corre.
+    """
+    return (
+        patch("instant2_app.gui._pending_update_path",
+              return_value=os.path.join(directory, "pending-update.json")),
+        patch("instant2_app.gui._update_log_path",
+              return_value=os.path.join(directory, "update.log")),
+        patch("instant2_app.gui._installer_log_path",
+              return_value=os.path.join(directory, "installer.log")),
+    )
+
+
 class T1HelperConsoleTests(unittest.TestCase):
     """T1: el helper portable se lanza sin ventana de consola."""
 
@@ -112,6 +127,8 @@ class T1HelperConsoleTests(unittest.TestCase):
                 patch("instant2_app.update.install_mode", return_value="portable"),
                 patch("instant2_app.gui.os.path.isfile", return_value=True),
                 patch("instant2_app.gui._update_log_path", return_value=log_path),
+                patch("instant2_app.gui._pending_update_path",
+                      return_value=os.path.join(temp, "pending-update.json")),
                 patch("instant2_app.gui.subprocess.Popen") as popen,
             ):
                 logic.handle({"op": "apply_update"})
@@ -234,6 +251,135 @@ class T2HelperHonestyTests(unittest.TestCase):
             # El destino anterior quedo restaurado.
             with open(destination, encoding="utf-8") as handle:
                 self.assertIn("fake", handle.read())
+
+
+class T3InstallerVerificationTests(unittest.TestCase):
+    """T3: el instalador se espera, se lee su codigo y se verifica la version."""
+
+    def _isolated(self, directory):
+        """Corta la nota y el log de Inno dentro de un temporal."""
+        return (
+            patch("instant2_app.gui._pending_update_path",
+                  return_value=os.path.join(directory, "pending-update.json")),
+            patch("instant2_app.gui._installer_log_path",
+                  return_value=os.path.join(directory, "installer.log")),
+        )
+
+    def test_installer_runs_with_a_log_and_waits_for_the_result(self):
+        logic, _emitted = _logic()
+        logic._pending_update = _release()
+        with tempfile.TemporaryDirectory() as temp:
+            target, digest = _verified_file(temp, "Instant2-Setup.exe")
+            logic._ready_update = (target, digest, "0.2.0")
+            pending_patch, log_patch = self._isolated(temp)
+            with (
+                patch("instant2_app.update.install_mode", return_value="installed"),
+                pending_patch, log_patch,
+                patch("instant2_app.gui.stop_daemon"),
+                patch("instant2_app.gui.daemon_is_running", return_value=False),
+                patch("instant2_app.gui.subprocess.run",
+                      return_value=SimpleNamespace(returncode=0)) as run,
+            ):
+                logic.handle({"op": "apply_update"})
+
+            self.assertEqual(run.call_count, 1)
+            argv = run.call_args.args[0]
+            self.assertIn("/SILENT", argv)
+            self.assertTrue(any(str(part).startswith("/LOG=") for part in argv))
+            self.assertTrue(logic._closed)
+
+    def test_failed_installer_reports_the_log_instead_of_pretending(self):
+        logic, emitted = _logic()
+        logic._pending_update = _release()
+        with tempfile.TemporaryDirectory() as temp:
+            target, digest = _verified_file(temp, "Instant2-Setup.exe")
+            logic._ready_update = (target, digest, "0.2.0")
+            log_path = os.path.join(temp, "installer.log")
+            with open(log_path, "w", encoding="utf-8") as handle:
+                handle.write("Setup aborted\nERROR: no hay espacio\n")
+            pending_patch, log_patch = self._isolated(temp)
+            with (
+                patch("instant2_app.update.install_mode", return_value="installed"),
+                pending_patch, log_patch,
+                patch("instant2_app.gui.stop_daemon"),
+                patch("instant2_app.gui.daemon_is_running", return_value=False),
+                patch("instant2_app.gui.subprocess.run",
+                      return_value=SimpleNamespace(returncode=5)) as run,
+            ):
+                logic.handle({"op": "apply_update"})
+
+            self.assertEqual(run.call_count, 1)
+            # La app sigue viva y el toast lleva el log del instalador.
+            self.assertFalse(logic._closed)
+            toasts = _toasts(emitted)
+            self.assertTrue(any(toast["title"] == "Actualización sin aplicar"
+                                for toast in toasts))
+            detail = " ".join(toast["message"] for toast in toasts)
+            self.assertIn("installer.log", detail)
+            self.assertIn("no hay espacio", detail)
+
+    def test_pending_update_is_reported_on_the_next_start(self):
+        with tempfile.TemporaryDirectory() as temp:
+            pending = os.path.join(temp, "pending-update.json")
+            log_path = os.path.join(temp, "installer.log")
+            with open(log_path, "w", encoding="utf-8") as handle:
+                handle.write("ERROR: el instalador se abortó\n")
+            with patch("instant2_app.gui._pending_update_path",
+                       return_value=pending), \
+                    patch("instant2_app.gui._current_version",
+                          return_value="0.1.5"):
+                gui._write_pending_update("0.2.0", log_path)
+                report = gui._pending_update_report()
+            self.assertIsNotNone(report)
+            title, message, level = report
+            self.assertEqual(title, "Actualización sin aplicar")
+            self.assertEqual(level, "error")
+            self.assertIn("0.2.0", message)
+            self.assertIn("0.1.5", message)
+            self.assertIn("el instalador se abortó", message)
+            # La nota se consume: no se vuelve a reportar.
+            with patch("instant2_app.gui._pending_update_path",
+                       return_value=pending):
+                self.assertIsNone(gui._pending_update_report())
+
+    def test_applied_update_is_confirmed_on_the_next_start(self):
+        with tempfile.TemporaryDirectory() as temp:
+            pending = os.path.join(temp, "pending-update.json")
+            with patch("instant2_app.gui._pending_update_path",
+                       return_value=pending), \
+                    patch("instant2_app.gui._current_version",
+                          return_value="0.2.0"):
+                gui._write_pending_update("0.2.0", os.path.join(temp, "x.log"))
+                report = gui._pending_update_report()
+            self.assertIsNotNone(report)
+            title, message, level = report
+            self.assertEqual(title, "Actualización aplicada")
+            self.assertEqual(level, "info")
+            self.assertIn("0.2.0", message)
+
+    def test_installed_update_notes_the_requested_version(self):
+        logic, _emitted = _logic()
+        logic._pending_update = _release()
+        with tempfile.TemporaryDirectory() as temp:
+            target, digest = _verified_file(temp, "Instant2-Setup.exe")
+            logic._ready_update = (target, digest, "0.2.0")
+            pending_patch, log_patch = self._isolated(temp)
+            with (
+                patch("instant2_app.update.install_mode", return_value="installed"),
+                pending_patch, log_patch,
+                patch("instant2_app.gui.stop_daemon"),
+                patch("instant2_app.gui.daemon_is_running", return_value=False),
+                patch("instant2_app.gui.subprocess.run",
+                      return_value=SimpleNamespace(returncode=0)),
+            ):
+                logic.handle({"op": "apply_update"})
+
+            with open(os.path.join(temp, "pending-update.json"),
+                      encoding="utf-8") as handle:
+                import json
+                note = json.load(handle)
+            self.assertEqual(note["version"], "0.2.0")
+            self.assertTrue(note["log"].endswith("installer.log"))
 
 
 if __name__ == "__main__":

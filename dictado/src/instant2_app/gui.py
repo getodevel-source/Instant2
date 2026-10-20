@@ -76,6 +76,8 @@ def _threads_is_valid(value):
 
 
 _UPDATE_MODES = ("notify", "auto", "off")
+# Tope de espera del instalador: copia los 4 GB de modelos, puede tardar.
+_INSTALL_TIMEOUT = 3600
 
 
 def _friendly_error(exc):
@@ -179,6 +181,98 @@ def _workdir():
 def _update_log_path():
     """Log del helper de actualización: %APPDATA%\\instant2\\update.log."""
     return os.path.join(config_dir(), "update.log")
+
+
+def _installer_log_path():
+    """Log de Inno Setup: %APPDATA%\\instant2\\installer.log."""
+    return os.path.join(config_dir(), "installer.log")
+
+
+def _pending_update_path():
+    """Nota de la actualización en curso: %APPDATA%\\instant2\\pending-update.json."""
+    return os.path.join(config_dir(), "pending-update.json")
+
+
+def _write_pending_update(version, log_path):
+    """Deja anotada la actualización que se pidió aplicar.
+
+    El instalador y el helper tienen que cerrar la app para poder
+    reemplazar el binario, así que la comprobación de la versión instalada
+    recién puede hacerse en el arranque siguiente.
+    """
+    payload = {"version": str(version or ""), "log": str(log_path or "")}
+    try:
+        path = _pending_update_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+    except OSError:
+        log.warning("no se pudo anotar la actualización pendiente",
+                    exc_info=True)
+
+
+def _read_pending_update():
+    try:
+        with open(_pending_update_path(), encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _clear_pending_update():
+    try:
+        os.remove(_pending_update_path())
+    except OSError:
+        pass
+
+
+def _log_tail(path, lines=8):
+    """Últimas líneas de un log: el toast del fallo lleva el detalle."""
+    if not path:
+        return ""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            content = handle.read().splitlines()
+    except OSError:
+        return ""
+    return "\n".join(content[-lines:])
+
+
+def _installer_failure(returncode, log_path):
+    """Error con el log de Inno adjunto: el toast tiene que poder explicar."""
+    message = (f"El instalador terminó con código {returncode}; no se "
+               f"actualizó Instant2. Log: {log_path}")
+    tail = _log_tail(log_path)
+    if tail:
+        message += "\n\nÚltimas líneas del log:\n" + tail
+    return RuntimeError(message)
+
+
+def _pending_update_report():
+    """(título, mensaje, nivel) con el resultado de la actualización anterior.
+
+    La app que está corriendo ES la versión instalada: acá se la compara con
+    la que se pidió. Si no coinciden, la actualización no se aplicó y el
+    log dice por qué.
+    """
+    data = _read_pending_update()
+    if not data:
+        return None
+    expected = str(data.get("version") or "")
+    log_path = str(data.get("log") or "")
+    current = _current_version()
+    _clear_pending_update()
+    if expected and expected != current:
+        message = (f"Se pidió actualizar a v{expected} y esta app sigue en "
+                   f"v{current}: la actualización no se aplicó.")
+        if log_path:
+            message += f"\n\nLog: {log_path}"
+            tail = _log_tail(log_path)
+            if tail:
+                message += "\n\nÚltimas líneas del log:\n" + tail
+        return ("Actualización sin aplicar", message, "error")
+    return ("Actualización aplicada", f"Instant2 quedó en v{current}.", "info")
 
 
 def _pid_value():
@@ -869,6 +963,7 @@ class PanelLogic(PanelReadingActions):
         self._toast_callbacks.clear()
         self.push_state()
         self._nudge_setup_if_needed()
+        self._report_pending_update()
 
     def _op_navigate(self, message):
         self.navigate(message.get("page") or "home")
@@ -2215,6 +2310,21 @@ class PanelLogic(PanelReadingActions):
                              lambda: self._install_ready(target, expected)),
                             ("Después", lambda: None)))
 
+    def _pending_version(self):
+        """La versión que se pidió instalar (la del release pendiente)."""
+        ready = self._ready_update or ()
+        if len(ready) > 2 and ready[2]:
+            return str(ready[2])
+        return str((self._pending_update or {}).get("latest", "") or "")
+
+    def _report_pending_update(self):
+        """Cuenta el resultado de la actualización anterior, si quedó a medias."""
+        report = _pending_update_report()
+        if report is None:
+            return
+        title, message, level = report
+        self.toast(title, message, level=level)
+
     def _install_ready(self, target, expected):
         from instant2_app import update as update_module
 
@@ -2231,7 +2341,11 @@ class PanelLogic(PanelReadingActions):
         self.update_button = "Preparando actualización…"
         self.push_state()
         mode = update_module.install_mode()
+        version = self._pending_version()
         if mode == "installed":
+            # El instalador cierra la app: se anota qué se pidió para
+            # poder verificar la versión instalada en el próximo arranque.
+            _write_pending_update(version, _installer_log_path())
             self._install_via_setup(target, expected)
             return
         if sys.platform != "win32" and getattr(sys, "frozen", False):
@@ -2273,6 +2387,9 @@ class PanelLogic(PanelReadingActions):
                 f"sobre tu binario de Instant2 (SHA256 {expected[:16]}…).",
                 level="warn")
             return
+        # El helper también cierra la app: se anota qué se pidió para poder
+        # verificar la versión instalada en el próximo arranque.
+        _write_pending_update(version, _update_log_path())
         try:
             log_path = _update_log_path()
             os.makedirs(os.path.dirname(log_path), exist_ok=True)
@@ -2328,20 +2445,41 @@ class PanelLogic(PanelReadingActions):
     def _launch_setup_installer(self, installer_path, expected=None):
         if self._closed:
             return
+        log_path = _installer_log_path()
         try:
             _verify_install_file(installer_path, expected)
-            subprocess.Popen(
-                [installer_path, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
-                close_fds=True)
+            os.makedirs(config_dir(), exist_ok=True)
         except Exception as exc:  # noqa: BLE001  (se informa al usuario)
             self._update_install_failed(exc)
             return
-        log.info("instalador %s lanzado en silencio", installer_path)
+        try:
+            # /LOG deja el detalle de Inno en un archivo: sin eso, un aborto
+            # del instalador es invisible. Se espera el proceso y se lee su
+            # código de salida: un instalador que falla no se lleva la app.
+            result = subprocess.run(
+                [installer_path, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+                 f"/LOG={log_path}"],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, timeout=_INSTALL_TIMEOUT)
+        except Exception as exc:  # noqa: BLE001  (se informa al usuario)
+            self._update_install_failed(exc)
+            return
+        if result.returncode != 0:
+            self._update_install_failed(
+                _installer_failure(result.returncode, log_path))
+            return
+        log.info("instalador %s terminado con codigo 0 (log: %s)",
+                 installer_path, log_path)
+        # La app que sigue corriendo es la versión vieja: se cierra para que
+        # el usuario la abra de nuevo y vea la versión nueva.
         self.close()
 
     def _update_install_failed(self, error):
         if self._closed:
             return
+        # El fallo se está contando ahora: no queda nada pendiente para
+        # reportar en el próximo arranque.
+        _clear_pending_update()
         self._update_install_pending = False
         self.update_button = (f"Reintentar instalación v"
                               f"{(self._pending_update or {}).get('latest', '')}")

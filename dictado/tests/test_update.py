@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -737,6 +738,12 @@ class UpdateFlowTests(unittest.TestCase):
         with (
             patch("instant2_app.update.install_mode", return_value="portable"),
             patch("instant2_app.gui.os.path.isfile", return_value=True),
+            patch("instant2_app.gui._pending_update_path",
+                  return_value=os.path.join(tempfile.gettempdir(),
+                                            "instant2-test-pending.json")),
+            patch("instant2_app.gui._update_log_path",
+                  return_value=os.path.join(tempfile.gettempdir(),
+                                            "instant2-test-update.log")),
             patch("instant2_app.gui.subprocess.Popen") as popen,
         ):
             logic.handle({"op": "apply_update"})
@@ -793,20 +800,23 @@ class UpdateFlowTests(unittest.TestCase):
         with (patch("instant2_app.update.install_mode", return_value="installed"),
               patch("instant2_app.gui.stop_daemon") as stop,
               patch("instant2_app.gui.daemon_is_running", return_value=False),
-              patch("instant2_app.gui.subprocess.Popen") as popen):
+              patch("instant2_app.gui._pending_update_path",
+                    return_value=os.path.join(_tmp.name, "pending-update.json")),
+              patch("instant2_app.gui.subprocess.run",
+                    return_value=SimpleNamespace(returncode=0)) as run):
             logic.handle({"op": "apply_update"})
 
             self.assertTrue(logic._update_install_pending)
             self.assertEqual(len(logic.tasks.jobs), 1)
             stop.assert_not_called()
-            popen.assert_not_called()
+            run.assert_not_called()
 
             fn, on_result, on_error, _progress = logic.tasks.jobs.pop()
             result = fn(lambda _payload: None)
             on_result(result)
 
         stop.assert_called_once_with()
-        popen.assert_called_once()
+        run.assert_called_once()
         self.assertTrue(logic._closed)
 
     def test_installed_update_reports_daemon_that_will_not_stop(self):
@@ -823,7 +833,10 @@ class UpdateFlowTests(unittest.TestCase):
               patch("instant2_app.gui.daemon_is_running", return_value=True),
               patch("instant2_app.gui.time.monotonic", side_effect=[0, 9]),
               patch("instant2_app.gui.time.sleep") as sleep,
-              patch("instant2_app.gui.subprocess.Popen") as popen):
+              patch("instant2_app.gui._pending_update_path",
+                    return_value=os.path.join(_tmp.name, "pending-update.json")),
+              patch("instant2_app.gui.subprocess.run",
+                    return_value=SimpleNamespace(returncode=0)) as run):
             logic.handle({"op": "apply_update"})
             fn, _on_result, on_error, _progress = logic.tasks.jobs.pop()
             with self.assertRaisesRegex(RuntimeError, "sigue activo") as caught:
@@ -832,7 +845,7 @@ class UpdateFlowTests(unittest.TestCase):
 
         stop.assert_called_once_with()
         sleep.assert_not_called()
-        popen.assert_not_called()
+        run.assert_not_called()
         self.assertFalse(logic._update_install_pending)
         self.assertFalse(logic._closed)
         self.assertTrue(any(toast["title"] == "Actualización sin aplicar"
@@ -858,6 +871,10 @@ class UpdateFlowTests(unittest.TestCase):
                 patch.object(sys, "_MEIPASS", extraction, create=True),
                 patch.object(sys, "executable", executable),
                 patch("tempfile.gettempdir", return_value=temp),
+                patch("instant2_app.gui._pending_update_path",
+                      return_value=os.path.join(temp, "pending-update.json")),
+                patch("instant2_app.gui._update_log_path",
+                      return_value=os.path.join(temp, "update.log")),
                 patch("instant2_app.gui.subprocess.Popen") as popen,
             ):
                 logic.handle({"op": "apply_update"})

@@ -280,12 +280,18 @@ class PanelLifecycleTests(unittest.TestCase):
             with patch("instant2_app.update.install_mode", return_value="installed"), \
                     patch("instant2_app.gui.stop_daemon") as stop, \
                     patch("instant2_app.gui.daemon_is_running", return_value=False), \
-                    patch("subprocess.Popen") as popen:
+                    patch("instant2_app.gui._pending_update_path",
+                          return_value=os.path.join(_dir, "pending-update.json")), \
+                    patch("instant2_app.gui.subprocess.run",
+                          return_value=SimpleNamespace(returncode=0)) as run:
                 logic._install_ready(_setup, _digest)
         stop.assert_called_once()
-        popen.assert_called_once()
-        self.assertEqual(popen.call_args.args[0][1:],
+        run.assert_called_once()
+        self.assertEqual(run.call_args.args[0][1:4],
                          ["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
+        # El log de Inno se pide para poder diagnosticar un aborto.
+        self.assertTrue(any(str(part).startswith("/LOG=")
+                            for part in run.call_args.args[0]))
         self.assertTrue(logic._closed)
 
         # Unix congelado: reemplazo en caliente + reinicio del dictado.
