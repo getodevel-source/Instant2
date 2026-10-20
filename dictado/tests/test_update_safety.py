@@ -258,12 +258,7 @@ class T3InstallerVerificationTests(unittest.TestCase):
 
     def _isolated(self, directory):
         """Corta la nota y el log de Inno dentro de un temporal."""
-        return (
-            patch("instant2_app.gui._pending_update_path",
-                  return_value=os.path.join(directory, "pending-update.json")),
-            patch("instant2_app.gui._installer_log_path",
-                  return_value=os.path.join(directory, "installer.log")),
-        )
+        return _isolated_update_paths(directory)
 
     def test_installer_runs_with_a_log_and_waits_for_the_result(self):
         logic, _emitted = _logic()
@@ -271,10 +266,10 @@ class T3InstallerVerificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             target, digest = _verified_file(temp, "Instant2-Setup.exe")
             logic._ready_update = (target, digest, "0.2.0")
-            pending_patch, log_patch = self._isolated(temp)
+            pending_patch, log_patch, _installer_patch = self._isolated(temp)
             with (
                 patch("instant2_app.update.install_mode", return_value="installed"),
-                pending_patch, log_patch,
+                pending_patch, log_patch, _installer_patch,
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui.daemon_is_running", return_value=False),
                 patch("instant2_app.gui.subprocess.run",
@@ -297,10 +292,10 @@ class T3InstallerVerificationTests(unittest.TestCase):
             log_path = os.path.join(temp, "installer.log")
             with open(log_path, "w", encoding="utf-8") as handle:
                 handle.write("Setup aborted\nERROR: no hay espacio\n")
-            pending_patch, log_patch = self._isolated(temp)
+            pending_patch, log_patch, _installer_patch = self._isolated(temp)
             with (
                 patch("instant2_app.update.install_mode", return_value="installed"),
-                pending_patch, log_patch,
+                pending_patch, log_patch, _installer_patch,
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui.daemon_is_running", return_value=False),
                 patch("instant2_app.gui.subprocess.run",
@@ -363,10 +358,10 @@ class T3InstallerVerificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             target, digest = _verified_file(temp, "Instant2-Setup.exe")
             logic._ready_update = (target, digest, "0.2.0")
-            pending_patch, log_patch = self._isolated(temp)
+            pending_patch, log_patch, _installer_patch = self._isolated(temp)
             with (
                 patch("instant2_app.update.install_mode", return_value="installed"),
-                pending_patch, log_patch,
+                pending_patch, log_patch, _installer_patch,
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui.daemon_is_running", return_value=False),
                 patch("instant2_app.gui.subprocess.run",
@@ -380,6 +375,132 @@ class T3InstallerVerificationTests(unittest.TestCase):
                 note = json.load(handle)
             self.assertEqual(note["version"], "0.2.0")
             self.assertTrue(note["log"].endswith("installer.log"))
+
+
+class T4DaemonProbeTests(unittest.TestCase):
+    """T4: los probes del daemon son robustos y el deadline es alcanzable."""
+
+    def test_probe_decodes_with_an_explicit_encoding(self):
+        with patch("instant2_app.gui.subprocess.run",
+                   return_value=SimpleNamespace(returncode=0, stdout="ok")) as run:
+            responded, code, output = gui._run_probe(["tasklist"], 5.0)
+        self.assertTrue(responded)
+        self.assertEqual(code, 0)
+        self.assertEqual(output, "ok")
+        kwargs = run.call_args.kwargs
+        self.assertEqual(kwargs["encoding"], "utf-8")
+        self.assertEqual(kwargs["errors"], "replace")
+
+    def test_probe_that_cannot_decode_does_not_raise(self):
+        """Un byte raro no puede abortar la actualización."""
+        with patch("instant2_app.gui.subprocess.run",
+                   side_effect=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "malo")):
+            responded, code, output = gui._run_probe(["tasklist"], 5.0)
+        self.assertFalse(responded)
+        self.assertIsNone(code)
+        self.assertEqual(output, "")
+
+    def test_probe_that_times_out_is_unknown_not_instant(self):
+        with patch("instant2_app.gui.subprocess.run",
+                   side_effect=TimeoutError("se colgo")):
+            responded, _code, _output = gui._run_probe(["tasklist"], 5.0)
+        self.assertFalse(responded)
+
+    def test_failed_powershell_probe_does_not_mean_it_is_instant(self):
+        """Un probe caido no puede afirmar que el PID sea de Instant2."""
+        with patch("instant2_app.gui.os.name", "nt"), \
+                patch("instant2_app.gui.subprocess.run",
+                      side_effect=OSError("no se pudo ejecutar")):
+            self.assertIsNone(gui._pid_is_instant(4242))
+
+    def test_failed_probe_leaves_the_daemon_state_unknown(self):
+        with patch("instant2_app.gui.os.name", "nt"), \
+                patch("instant2_app.gui._pid_value", return_value=4242), \
+                patch("instant2_app.gui.subprocess.run",
+                      side_effect=OSError("tasklist no responde")):
+            self.assertEqual(gui.daemon_probe_state(), gui.DAEMON_UNKNOWN)
+            # Y "no se sabe" no es "está corriendo".
+            self.assertFalse(gui.daemon_is_running())
+
+    def test_dead_pid_is_stopped(self):
+        with patch("instant2_app.gui.os.name", "nt"), \
+                patch("instant2_app.gui._pid_value", return_value=4242), \
+                patch("instant2_app.gui.subprocess.run",
+                      return_value=SimpleNamespace(
+                          returncode=0,
+                          stdout="INFO: No tasks are running which match "
+                                 "the specified criteria.\n")):
+            self.assertEqual(gui.daemon_probe_state(), gui.DAEMON_STOPPED)
+
+    def test_stop_daemon_does_not_touch_the_pidfile_when_the_probe_fails(self):
+        with tempfile.TemporaryDirectory() as temp:
+            pidfile = os.path.join(temp, "instant2.pid")
+            with open(pidfile, "w", encoding="utf-8") as handle:
+                handle.write("424242")
+            with patch("instant2_app.daemon.pid_path", return_value=pidfile), \
+                    patch("instant2_app.gui._pid_value", return_value=424242), \
+                    patch("instant2_app.gui.daemon_probe_state",
+                          return_value=gui.DAEMON_UNKNOWN):
+                self.assertFalse(gui.stop_daemon())
+            # El pidfile sigue: si el daemon vive, el proximo stop lo frena.
+            self.assertTrue(os.path.isfile(pidfile))
+
+    def test_deadline_is_longer_than_the_worst_case_probe(self):
+        """El margen para frenar el daemon tiene que alcanzar el probe."""
+        self.assertGreater(gui.DAEMON_STOP_DEADLINE,
+                           gui._PROBE_TASKLIST_TIMEOUT
+                           + gui._PROBE_POWERSHELL_TIMEOUT)
+
+    def test_probe_budget_is_split_between_the_two_probes(self):
+        tasklist, powershell = gui._split_probe_budget(12.0)
+        self.assertLessEqual(tasklist + powershell, 12.0)
+        self.assertGreater(tasklist, 0)
+        self.assertGreater(powershell, 0)
+
+    def test_installer_wait_distinguishes_a_live_daemon_from_a_dead_probe(self):
+        logic, emitted = _logic()
+        logic._pending_update = _release()
+        with tempfile.TemporaryDirectory() as temp:
+            target, digest = _verified_file(temp, "Instant2-Setup.exe")
+            logic._ready_update = (target, digest, "0.2.0")
+            pending_patch, log_patch, _installer_patch = _isolated_update_paths(temp)
+            with (
+                patch("instant2_app.update.install_mode", return_value="installed"),
+                pending_patch, log_patch, _installer_patch,
+                patch("instant2_app.gui.stop_daemon"),
+                patch("instant2_app.gui.daemon_probe_state",
+                      return_value=gui.DAEMON_UNKNOWN),
+                patch("instant2_app.gui.subprocess.run",
+                      return_value=SimpleNamespace(returncode=0)) as run,
+            ):
+                logic.handle({"op": "apply_update"})
+            run.assert_not_called()
+            detail = " ".join(toast["message"] for toast in _toasts(emitted))
+            self.assertIn("No se pudo verificar", detail)
+
+    def test_installer_wait_reports_a_daemon_that_does_not_stop(self):
+        logic, emitted = _logic()
+        logic._pending_update = _release()
+        with tempfile.TemporaryDirectory() as temp:
+            target, digest = _verified_file(temp, "Instant2-Setup.exe")
+            logic._ready_update = (target, digest, "0.2.0")
+            pending_patch, log_patch, _installer_patch = _isolated_update_paths(temp)
+            with (
+                patch("instant2_app.update.install_mode", return_value="installed"),
+                pending_patch, log_patch, _installer_patch,
+                patch("instant2_app.gui.stop_daemon"),
+                patch("instant2_app.gui.daemon_probe_state",
+                      return_value=gui.DAEMON_RUNNING),
+                patch("instant2_app.gui.time.monotonic", side_effect=[0, 0, 100]),
+                patch("instant2_app.gui.time.sleep") as sleep,
+                patch("instant2_app.gui.subprocess.run",
+                      return_value=SimpleNamespace(returncode=0)) as run,
+            ):
+                logic.handle({"op": "apply_update"})
+            run.assert_not_called()
+            sleep.assert_not_called()
+            detail = " ".join(toast["message"] for toast in _toasts(emitted))
+            self.assertIn("sigue activo", detail)
 
 
 if __name__ == "__main__":

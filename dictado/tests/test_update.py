@@ -830,8 +830,9 @@ class UpdateFlowTests(unittest.TestCase):
 
         with (patch("instant2_app.update.install_mode", return_value="installed"),
               patch("instant2_app.gui.stop_daemon") as stop,
-              patch("instant2_app.gui.daemon_is_running", return_value=True),
-              patch("instant2_app.gui.time.monotonic", side_effect=[0, 9]),
+              patch("instant2_app.gui.daemon_probe_state",
+                    return_value="running"),
+              patch("instant2_app.gui.time.monotonic", side_effect=[0, 0, 100]),
               patch("instant2_app.gui.time.sleep") as sleep,
               patch("instant2_app.gui._pending_update_path",
                     return_value=os.path.join(_tmp.name, "pending-update.json")),

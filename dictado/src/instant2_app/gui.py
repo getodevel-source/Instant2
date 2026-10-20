@@ -78,6 +78,17 @@ def _threads_is_valid(value):
 _UPDATE_MODES = ("notify", "auto", "off")
 # Tope de espera del instalador: copia los 4 GB de modelos, puede tardar.
 _INSTALL_TIMEOUT = 3600
+# Tope de cada probe del SO: tasklist y PowerShell no pueden colgarse.
+_PROBE_TASKLIST_TIMEOUT = 5.0
+_PROBE_POWERSHELL_TIMEOUT = 10.0
+# Margen para frenar el daemon: tiene que ser MAYOR que el peor caso de un
+# probe (5 s + 10 s), si no el deadline es inalcanzable y la actualización
+# se cuelga sin poder distinguir por que.
+DAEMON_STOP_DEADLINE = 20.0
+
+DAEMON_RUNNING = "running"
+DAEMON_STOPPED = "stopped"
+DAEMON_UNKNOWN = "unknown"
 
 
 def _friendly_error(exc):
@@ -284,43 +295,85 @@ def _pid_value():
         return None
 
 
-def daemon_is_running():
-    """True si el PID file apunta al daemon, incluso en el binario portable.
+def _run_probe(args, timeout):
+    """Ejecuta un probe del SO. Devuelve (respondió, código, salida).
 
-    Windows también valida la línea de comando. El ejecutable portable puede
-    llamarse Instant2-MVP.exe en vez de instant2.exe.
+    `encoding`/`errors` explícitos: la salida de tasklist o de PowerShell
+    puede traer bytes que no son UTF-8 y un UnicodeDecodeError (un
+    ValueError, no un OSError) abortaría la actualización.
+    """
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        result = subprocess.run(
+            args, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=timeout, creationflags=flags)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return False, None, ""
+    return True, result.returncode, result.stdout or ""
+
+
+def _split_probe_budget(budget):
+    """Reparte los segundos disponibles entre tasklist y PowerShell."""
+    if budget is None:
+        return _PROBE_TASKLIST_TIMEOUT, _PROBE_POWERSHELL_TIMEOUT
+    budget = max(float(budget), 0.1)
+    tasklist = min(_PROBE_TASKLIST_TIMEOUT, budget * 0.4)
+    powershell = min(_PROBE_POWERSHELL_TIMEOUT, budget - tasklist)
+    return tasklist, max(powershell, 0.1)
+
+
+def daemon_is_running():
+    """True si el daemon de Instant2 está corriendo.
+
+    Un probe que no responde NO es "está corriendo": el estado real lo
+    devuelve `daemon_probe_state`, que distingue las tres cosas.
+    """
+    return daemon_probe_state() == DAEMON_RUNNING
+
+
+def daemon_probe_state(budget=None):
+    """Estado del daemon: 'running' | 'stopped' | 'unknown'.
+
+    'unknown' es "el probe no pudo responder", no "no está": un probe
+    caído no significa que el PID sea de Instant2 ni que el daemon esté
+    apagado. `budget` acota los segundos que puede tardar el probe.
     """
     pid = _pid_value()
     if pid is None:
-        return False
+        return DAEMON_STOPPED
     if os.name == "nt":
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        try:
-            result = subprocess.run(
-                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
-                capture_output=True, text=True, timeout=5, creationflags=flags)
-        except (OSError, subprocess.TimeoutExpired):
-            return False
+        tasklist_budget, ps_budget = _split_probe_budget(budget)
+        responded, code, listing = _run_probe(
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            tasklist_budget)
+        if not responded or code != 0:
+            return DAEMON_UNKNOWN
         accepted_images = {"python.exe", "pythonw.exe", "instant2.exe"}
         if getattr(sys, "frozen", False):
             accepted_images.add(ntpath.basename(sys.executable).lower())
-        for row in result.stdout.splitlines():
+        for row in listing.splitlines():
             columns = [part.strip().strip('"') for part in row.split('","')]
             if len(columns) > 1 and columns[1] == str(pid):
                 if columns[0].lower() not in accepted_images:
-                    return False
-                return _pid_is_instant(pid)
-        return False
+                    return DAEMON_STOPPED
+                ours = _pid_is_instant(pid, budget=ps_budget)
+                if ours is None:
+                    return DAEMON_UNKNOWN
+                return DAEMON_RUNNING if ours else DAEMON_STOPPED
+        return DAEMON_STOPPED
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
-        return False
+        return DAEMON_STOPPED
     except PermissionError:
         # EPERM: el proceso existe pero no tenemos permiso -> vivo (G4).
-        return True
+        return DAEMON_RUNNING
     except OSError:
-        return False
-    return _pid_is_instant(pid)
+        return DAEMON_UNKNOWN
+    ours = _pid_is_instant(pid)
+    if ours is None:
+        return DAEMON_UNKNOWN
+    return DAEMON_RUNNING if ours else DAEMON_STOPPED
 
 
 def _display_input_name(name):
@@ -335,19 +388,22 @@ def _display_input_name(name):
     return label
 
 
-def _pid_is_instant(pid):
+def _pid_is_instant(pid, budget=None):
     """El PID file puede quedar rancio y el SO reciclar el número: antes de
-    matar se confirma que la línea de comando sea de Instant2."""
+    matar se confirma que la línea de comando sea de Instant2.
+
+    True si es Instant2, False si es de otro proceso y None si el probe no
+    pudo responder: un probe caído no es "es Instant2".
+    """
     if os.name == "nt":
-        try:
-            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            result = subprocess.run(
-                ["powershell", "-NoProfile", "-Command",
-                 f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine"],
-                capture_output=True, text=True, timeout=10, creationflags=flags)
-        except (OSError, subprocess.TimeoutExpired):
-            return True
-        command = (result.stdout or "").casefold()
+        _tasklist_budget, ps_budget = _split_probe_budget(budget)
+        responded, code, command = _run_probe(
+            ["powershell", "-NoProfile", "-Command",
+             f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine"],
+            ps_budget)
+        if not responded or code != 0:
+            return None
+        command = (command or "").casefold()
         args = [part.strip('"') for part in command.split()]
         return "instant2" in command and "run" in args[1:]
     command = ""
@@ -356,15 +412,14 @@ def _pid_is_instant(pid):
             command = handle.read().replace(b"\0", b" ").decode(
                 "utf-8", "replace")
     except (FileNotFoundError, PermissionError, OSError, ValueError):
-        try:
-            result = subprocess.run(
-                ["ps", "-p", str(int(pid)), "-o", "args="],
-                capture_output=True, text=True, timeout=10)
-        except (OSError, subprocess.SubprocessError, ValueError):
-            return True
-        if result.returncode != 0:
+        responded, code, output = _run_probe(
+            ["ps", "-p", str(int(pid)), "-o", "args="],
+            _PROBE_POWERSHELL_TIMEOUT)
+        if not responded:
+            return None
+        if code != 0:
             return False
-        command = result.stdout or ""
+        command = output or ""
     command = command.casefold()
     args = [part.strip('"') for part in command.split()]
     return "instant2" in command and "run" in args[1:]
@@ -375,7 +430,13 @@ def stop_daemon():
     pid = _pid_value()
     if pid is None:
         return False
-    if not daemon_is_running():
+    state = daemon_probe_state()
+    if state == DAEMON_UNKNOWN:
+        # El probe no respondió: no se toca el pidfile ni se mata nada.
+        # Un PID puede ser nuestro o no: no se afirma ninguna de las dos.
+        log.warning("no se pudo verificar el PID %d; el daemon no se frena", pid)
+        return False
+    if state == DAEMON_STOPPED:
         # PID file rancio (proceso muerto o PID reciclado ajeno): se borra
         # solo si el contenido sigue siendo ese PID muerto (G1+G3). clear_pid
         # ahora acepta el PID esperado porque no es el getpid() del llamador.
@@ -2436,11 +2497,20 @@ class PanelLogic(PanelReadingActions):
         # puede cerrarlo, así que se frena acá y se espera a que suelte
         # los archivos antes de copiar encima.
         stop_daemon()
-        deadline = time.monotonic() + 8.0
-        while daemon_is_running() and time.monotonic() < deadline:
+        deadline = time.monotonic() + DAEMON_STOP_DEADLINE
+        while True:
+            remaining = deadline - time.monotonic()
+            state = daemon_probe_state(budget=max(remaining, 0.0))
+            if state == DAEMON_STOPPED:
+                return
+            if state == DAEMON_UNKNOWN:
+                raise RuntimeError(
+                    "No se pudo verificar si el servicio de dictado está "
+                    "activo: cerrá Instant2 por completo y reintentá.")
+            if time.monotonic() >= deadline:
+                raise RuntimeError(
+                    "El servicio de dictado sigue activo. Cerralo y reintentá.")
             time.sleep(0.1)
-        if daemon_is_running():
-            raise RuntimeError("El servicio de dictado sigue activo. Cerralo y reintentá.")
 
     def _launch_setup_installer(self, installer_path, expected=None):
         if self._closed:
