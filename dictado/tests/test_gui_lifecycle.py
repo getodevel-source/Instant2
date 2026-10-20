@@ -306,7 +306,11 @@ class PanelLifecycleTests(unittest.TestCase):
                     patch.object(logic, "stop_daemon_flow") as restart:
                 logic._install_ready(_target, _digest)
         apply_update.assert_called_once_with(_target, expected_sha256=_digest)
-        restart.assert_called_once_with(restart=True)
+        restart.assert_called_once()
+        self.assertTrue(restart.call_args.kwargs["restart"])
+        # El reinicio se cuenta: el llamador recibe si el dictado quedo
+        # reiniciado (no se promete un reinicio que no ocurrio).
+        self.assertTrue(callable(restart.call_args.kwargs["on_restart"]))
 
         # Portable sin script: aviso con instrucciones, sin lanzar nada.
         logic, emitted = make_logic()

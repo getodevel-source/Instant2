@@ -2115,13 +2115,28 @@ class PanelLogic(PanelReadingActions):
             log.warning("el daemon no confirmó inicio dentro del plazo")
         self.push_state()
 
-    def stop_daemon_flow(self, restart=False):
+    def stop_daemon_flow(self, restart=False, on_restart=None):
+        """Frena el daemon (y opcionalmente lo vuelve a levantar).
+
+        `on_restart` recibe True si el daemon queda (o queda levantándose)
+        con la versión nueva, False si no se reinició nada y None si no se
+        sabe (hay otro freno en curso). El llamador lo usa para no prometer
+        un reinicio que no ocurrió (por ejemplo, cuando el PID del pidfile
+        estaba reciclado y no había nada que reiniciar).
+        """
         if self._daemon_stop_pending:
+            self._restart_notified(on_restart, None)
             return
         pid = _pid_value()
         if pid is None or not self._last_daemon_running:
             if restart:
-                self._start_daemon()
+                started = self._start_daemon()
+                # `_start_daemon` no hace nada si el daemon ya está
+                # corriendo: en ese caso hay servicio y no hay nada que
+                # reiniciar.
+                self._restart_notified(on_restart,
+                                       bool(self._last_daemon_running
+                                            or started))
             else:
                 self.refresh_daemon()
             return
@@ -2151,6 +2166,9 @@ class PanelLogic(PanelReadingActions):
                 self._daemon_stop_pending = False
                 self.status_detail = "El daemon ya no estaba; actualizando estado…"
                 self.refresh_daemon()
+                # El PID reciclado no es nuestro daemon: no se frena nada y
+                # no hay nada que reiniciar.
+                self._restart_notified(on_restart, False)
                 return
             try:
                 if os.name == "nt":
@@ -2164,6 +2182,7 @@ class PanelLogic(PanelReadingActions):
                 self.status_detail = "No se pudo detener Instant2."
                 self.push_state()
                 _toast_error(self, "No se pudo detener Instant2", exc)
+                self._restart_notified(on_restart, False)
                 return
             self.status_detail = "Cerrando Instant2…"
             self.push_state()
@@ -2171,6 +2190,7 @@ class PanelLogic(PanelReadingActions):
                 return
             if restart:
                 self.schedule(350, self._wait_before_restart)
+                self._restart_notified(on_restart, True)
             else:
                 self.schedule(700, self._settle_stop_attempt)
 
@@ -2181,8 +2201,20 @@ class PanelLogic(PanelReadingActions):
             self.status_detail = "No se pudo comprobar el estado de Instant2."
             self.push_state()
             _toast_error(self, "No se pudo detener Instant2", error)
+            self._restart_notified(on_restart, False)
 
         self.tasks.submit(check, checked, failed)
+
+    @staticmethod
+    def _restart_notified(on_restart, restarted):
+        """Avisa el resultado del reinicio (si a alguien le importa)."""
+        if on_restart is None:
+            return
+        try:
+            on_restart(restarted)
+        except Exception:  # noqa: BLE001  (un aviso que falla no rompe nada)
+            log.warning("no se pudo avisar el resultado del reinicio",
+                        exc_info=True)
 
     def _settle_stop_attempt(self):
         if self._closed:
@@ -2869,11 +2901,31 @@ class PanelLogic(PanelReadingActions):
             _toast_error(self, "Actualizaciones", exc)
             return
         log.info("binario actualizado en %s", applied)
+        # El reinicio del dictado no se promete: se cuenta lo que pasó. Con
+        # el PID reciclado no hay daemon al que reiniciar y el mensaje
+        # anterior ("Se reinicia el dictado con ella") era mentira.
+        self.stop_daemon_flow(restart=True, on_restart=self._update_restart_note)
+
+    def _update_restart_note(self, restarted):
+        """Dice si el dictado quedó reiniciado con la versión nueva."""
+        if restarted is None:
+            # No se sabe: no se promete ni se niega nada.
+            self.toast("Actualizaciones",
+                       "Versión nueva aplicada al binario. Reabrí el panel "
+                       "para tenerla también acá.",
+                       level="info")
+            return
+        if restarted:
+            self.toast("Actualizaciones",
+                       "Versión nueva aplicada al binario. Se reinicia el "
+                       "dictado con ella; reabrí el panel para tenerla también acá.",
+                       level="info")
+            return
         self.toast("Actualizaciones",
-                   "Versión nueva aplicada al binario. Se reinicia el "
-                   "dictado con ella; reabrí el panel para tenerla también acá.",
-                   level="info")
-        self.stop_daemon_flow(restart=True)
+                   "Versión nueva aplicada al binario, pero el dictado no se "
+                   "reinició: el servicio ya no estaba corriendo. Abrilo de "
+                   "nuevo para seguir dictando.",
+                   level="warn")
 
     # ------------------------------------------------------------- navegación
 

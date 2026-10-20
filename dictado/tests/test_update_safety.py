@@ -933,6 +933,48 @@ class T4DaemonProbeTests(unittest.TestCase):
             logic.tasks.wait()
         popen.assert_not_called()
 
+    def test_the_update_does_not_promise_a_restart_that_did_not_happen(self):
+        """Con el PID reciclado no hay daemon: el mensaje tiene que decirlo.
+
+        Antes el toast de la actualizacion decia siempre "Se reinicia el
+        dictado con ella", pero con el PID reciclado no se frena nada y
+        tampoco hay nada que reiniciar: el mensaje mentia.
+        """
+        logic, emitted = _logic()
+        logic._last_daemon_running = True
+        with tempfile.TemporaryDirectory() as temp:
+            target, digest = _verified_file(temp)
+            with patch("instant2_app.update.apply_binary_update",
+                       return_value=target), \
+                    patch("instant2_app.gui._pid_value", return_value=4242), \
+                    patch("instant2_app.gui._pid_is_instant", return_value=False), \
+                    patch("instant2_app.gui.daemon_is_running",
+                          return_value=False), \
+                    patch("instant2_app.gui.subprocess.Popen"):
+                logic._install_in_place(target, digest)
+                logic.tasks.wait()
+        message = " ".join(toast["message"] for toast in _toasts(emitted))
+        self.assertNotIn("Se reinicia el dictado", message)
+        self.assertIn("no se reinició", message)
+
+    def test_the_update_says_when_the_dictation_was_restarted(self):
+        """Si el daemon se frena y vuelve, el mensaje lo dice."""
+        logic, emitted = _logic()
+        logic._last_daemon_running = True
+        with tempfile.TemporaryDirectory() as temp:
+            target, digest = _verified_file(temp)
+            with patch("instant2_app.update.apply_binary_update",
+                       return_value=target), \
+                    patch("instant2_app.gui._pid_value", return_value=4242), \
+                    patch("instant2_app.gui._pid_is_instant", return_value=None), \
+                    patch("instant2_app.gui.daemon_is_running",
+                          return_value=False), \
+                    patch("instant2_app.gui.subprocess.Popen"):
+                logic._install_in_place(target, digest)
+                logic.tasks.wait()
+        message = " ".join(toast["message"] for toast in _toasts(emitted))
+        self.assertIn("Se reinicia el dictado", message)
+
     def test_deadline_is_longer_than_the_worst_case_probe(self):
         """El margen para frenar el daemon tiene que alcanzar el probe."""
         self.assertGreater(gui.DAEMON_STOP_DEADLINE,
