@@ -2488,13 +2488,62 @@ class PanelLogic(PanelReadingActions):
         self.close()
 
     def _install_via_setup(self, installer_path, expected):
-        """Modo instalado (Windows): el Setup nuevo actualiza y reabre solo."""
-        # Frenar y esperar al daemon puede tardar varios segundos. Hacerlo en
-        # el worker evita congelar el panel mientras Windows suelta sus archivos.
+        """Modo instalado (Windows): el Setup nuevo actualiza y reabre solo.
+
+        Todo lo bloqueante va en el worker: verificar el instalador, frenar
+        el daemon y ESPERAR al instalador. El hilo de UI tiene que seguir
+        respondiendo: el instalador de Inno manda WM_CLOSE al panel y un
+        hilo congelado no lo procesa (Inno escala a matar el proceso).
+        """
         self.tasks.submit(
-            lambda _emit: self._prepare_installer(),
-            lambda _value: self._launch_setup_installer(installer_path, expected),
+            lambda _emit: self._run_installer(installer_path, expected),
+            self._installer_finished,
             self._update_install_failed)
+
+    @staticmethod
+    def _run_installer(installer_path, expected=None):
+        """Verifica, frena el daemon y espera al instalador. (hilo worker)
+
+        Devuelve (codigo de salida, log de Inno, instalador). La espera
+        puede tardar minutos (copia los 4 GB de modelos): por eso esto
+        corre fuera del hilo de UI.
+        """
+        log_path = _installer_log_path()
+        _verify_install_file(installer_path, expected)
+        os.makedirs(config_dir(), exist_ok=True)
+        PanelLogic._prepare_installer()
+        # /LOG deja el detalle de Inno en un archivo: sin eso, un aborto
+        # del instalador es invisible. Se espera el proceso y se lee su
+        # código de salida: sirve cuando el instalador falla antes de
+        # cerrar el panel (Inno lo cierra después para copiar los archivos).
+        result = subprocess.run(
+            [installer_path, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+             f"/LOG={log_path}"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=_INSTALL_TIMEOUT)
+        return result.returncode, log_path, installer_path
+
+    def _installer_finished(self, outcome):
+        """El instalador terminó: se informa en el hilo de UI.
+
+        Ojo: Inno cierra el panel (Restart Manager) para poder reemplazar
+        los archivos, así que muchas veces este callback no llega: el
+        mecanismo que verifica el resultado de verdad es la nota
+        `pending-update.json`, que el arranque siguiente compara con la
+        versión instalada.
+        """
+        if self._closed:
+            return
+        returncode, log_path, installer_path = outcome
+        if returncode != 0:
+            self._update_install_failed(
+                _installer_failure(returncode, log_path))
+            return
+        log.info("instalador %s terminado con codigo 0 (log: %s)",
+                 installer_path, log_path)
+        # La app que sigue corriendo es la versión vieja: se cierra para que
+        # el usuario la abra de nuevo y vea la versión nueva.
+        self.close()
 
     @staticmethod
     def _prepare_installer():
@@ -2516,38 +2565,6 @@ class PanelLogic(PanelReadingActions):
                 raise RuntimeError(
                     "El servicio de dictado sigue activo. Cerralo y reintentá.")
             time.sleep(0.1)
-
-    def _launch_setup_installer(self, installer_path, expected=None):
-        if self._closed:
-            return
-        log_path = _installer_log_path()
-        try:
-            _verify_install_file(installer_path, expected)
-            os.makedirs(config_dir(), exist_ok=True)
-        except Exception as exc:  # noqa: BLE001  (se informa al usuario)
-            self._update_install_failed(exc)
-            return
-        try:
-            # /LOG deja el detalle de Inno en un archivo: sin eso, un aborto
-            # del instalador es invisible. Se espera el proceso y se lee su
-            # código de salida: un instalador que falla no se lleva la app.
-            result = subprocess.run(
-                [installer_path, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
-                 f"/LOG={log_path}"],
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, timeout=_INSTALL_TIMEOUT)
-        except Exception as exc:  # noqa: BLE001  (se informa al usuario)
-            self._update_install_failed(exc)
-            return
-        if result.returncode != 0:
-            self._update_install_failed(
-                _installer_failure(result.returncode, log_path))
-            return
-        log.info("instalador %s terminado con codigo 0 (log: %s)",
-                 installer_path, log_path)
-        # La app que sigue corriendo es la versión vieja: se cierra para que
-        # el usuario la abra de nuevo y vea la versión nueva.
-        self.close()
 
     def _update_install_failed(self, error):
         if self._closed:

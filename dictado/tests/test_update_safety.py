@@ -13,10 +13,12 @@ unittest clásico (como el resto de la suite): sin red, sin Qt, sin SO real.
 """
 import hashlib
 import os
+import queue
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -26,32 +28,67 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from instant2_app import gui
 
 
-class _SyncTasks:
-    """TaskRunner sincrónico para los flujos de actualización."""
+class _ThreadedTasks:
+    """TaskRunner con hilo real para los flujos de actualización.
+
+    El fake anterior corría `fn` Y `on_result` en el hilo que llamaba:
+    eso tapaba justo el defecto que hay que detectar (una espera
+    bloqueante en el hilo de UI). Acá el trabajo corre en un hilo aparte y
+    los resultados se aplican en el hilo que llama a `drain()`, que es el
+    hilo de UI en la app real.
+    """
 
     def __init__(self):
         self.pending = 0
+        self.ui_thread = threading.current_thread()
+        self._events = queue.Queue()
+        self._threads = []
+        self._lock = threading.Lock()
 
     def submit(self, fn, on_result=None, on_error=None, on_progress=None):
-        self.pending += 1
-        try:
-            value = fn(lambda payload: on_progress and on_progress(payload))
-        except Exception as exc:  # noqa: BLE001  (igual que el runner real)
-            if on_error is not None:
-                on_error(exc)
-            value = None
-        else:
-            if on_result is not None:
-                on_result(value)
-        finally:
-            self.pending -= 1
+        with self._lock:
+            self.pending += 1
+
+        def runner():
+            try:
+                value = fn(lambda payload: self._events.put(
+                    ("progress", on_progress, payload)))
+            except Exception as exc:  # noqa: BLE001  (igual que el runner real)
+                self._events.put(("error", on_error, exc))
+            else:
+                self._events.put(("result", on_result, value))
+            finally:
+                with self._lock:
+                    self.pending -= 1
+
+        thread = threading.Thread(target=runner, daemon=True)
+        thread.start()
+        with self._lock:
+            self._threads.append(thread)
         return id(fn)
 
+    def wait(self, timeout=30.0):
+        """Espera a los workers y aplica los resultados en ESTE hilo."""
+        for thread in list(self._threads):
+            thread.join(timeout)
+        return self.drain()
+
     def drain(self):
-        return 0
+        """Aplica los eventos encolados; devuelve cuántos atendió."""
+        applied = 0
+        while True:
+            try:
+                kind, callback, value = self._events.get_nowait()
+            except queue.Empty:
+                break
+            if callback is not None:
+                callback(value)
+            applied += 1
+        return applied
 
     def close(self):
         self.pending = 0
+        self._threads = []
 
 
 def _logic(cfg=None):
@@ -74,7 +111,7 @@ def _logic(cfg=None):
     ):
         logic = gui.PanelLogic(
             emit=lambda kind, payload: emitted.append((kind, payload)),
-            tasks=_SyncTasks(), schedule=lambda ms, fn: None)
+            tasks=_ThreadedTasks(), schedule=lambda ms, fn: None)
         logic._update_source_mode = False
     return logic, emitted
 
@@ -272,16 +309,53 @@ class T3InstallerVerificationTests(unittest.TestCase):
                 pending_patch, log_patch, _installer_patch,
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui.daemon_is_running", return_value=False),
+                patch("instant2_app.gui.daemon_probe_state",
+                      return_value=gui.DAEMON_STOPPED),
                 patch("instant2_app.gui.subprocess.run",
                       return_value=SimpleNamespace(returncode=0)) as run,
             ):
                 logic.handle({"op": "apply_update"})
+                logic.tasks.wait()
 
             self.assertEqual(run.call_count, 1)
             argv = run.call_args.args[0]
             self.assertIn("/SILENT", argv)
             self.assertTrue(any(str(part).startswith("/LOG=") for part in argv))
             self.assertTrue(logic._closed)
+
+    def test_the_installer_is_never_waited_on_the_ui_thread(self):
+        """La espera del instalador no puede caer en el hilo de UI.
+
+        El instalador de Inno manda WM_CLOSE al panel para reemplazar los
+        archivos: si el hilo de UI está bloqueado esperando al instalador,
+        no procesa el cierre y Inno escala a matar el proceso.
+        """
+        logic, _emitted = _logic()
+        logic._pending_update = _release()
+        calls = []
+
+        def fake_run(args, **kwargs):
+            calls.append((list(args), threading.current_thread()))
+            return SimpleNamespace(returncode=0)
+
+        with tempfile.TemporaryDirectory() as temp:
+            target, digest = _verified_file(temp, "Instant2-Setup.exe")
+            logic._ready_update = (target, digest, "0.2.0")
+            pending_patch, log_patch, installer_patch = _isolated_update_paths(temp)
+            with (
+                patch("instant2_app.update.install_mode", return_value="installed"),
+                pending_patch, log_patch, installer_patch,
+                patch("instant2_app.gui.stop_daemon"),
+                patch("instant2_app.gui.daemon_probe_state",
+                      return_value=gui.DAEMON_STOPPED),
+                patch("instant2_app.gui.subprocess.run", side_effect=fake_run),
+            ):
+                logic.handle({"op": "apply_update"})
+                logic.tasks.wait()
+
+        installers = [thread for argv, thread in calls if "/SILENT" in argv]
+        self.assertEqual(len(installers), 1)
+        self.assertIsNot(installers[0], threading.main_thread())
 
     def test_failed_installer_reports_the_log_instead_of_pretending(self):
         logic, emitted = _logic()
@@ -298,10 +372,13 @@ class T3InstallerVerificationTests(unittest.TestCase):
                 pending_patch, log_patch, _installer_patch,
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui.daemon_is_running", return_value=False),
+                patch("instant2_app.gui.daemon_probe_state",
+                      return_value=gui.DAEMON_STOPPED),
                 patch("instant2_app.gui.subprocess.run",
                       return_value=SimpleNamespace(returncode=5)) as run,
             ):
                 logic.handle({"op": "apply_update"})
+                logic.tasks.wait()
 
             self.assertEqual(run.call_count, 1)
             # La app sigue viva y el toast lleva el log del instalador.
@@ -364,10 +441,13 @@ class T3InstallerVerificationTests(unittest.TestCase):
                 pending_patch, log_patch, _installer_patch,
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui.daemon_is_running", return_value=False),
+                patch("instant2_app.gui.daemon_probe_state",
+                      return_value=gui.DAEMON_STOPPED),
                 patch("instant2_app.gui.subprocess.run",
                       return_value=SimpleNamespace(returncode=0)),
             ):
                 logic.handle({"op": "apply_update"})
+                logic.tasks.wait()
 
             with open(os.path.join(temp, "pending-update.json"),
                       encoding="utf-8") as handle:
@@ -474,6 +554,7 @@ class T4DaemonProbeTests(unittest.TestCase):
                       return_value=SimpleNamespace(returncode=0)) as run,
             ):
                 logic.handle({"op": "apply_update"})
+                logic.tasks.wait()
             run.assert_not_called()
             detail = " ".join(toast["message"] for toast in _toasts(emitted))
             self.assertIn("No se pudo verificar", detail)
@@ -497,6 +578,7 @@ class T4DaemonProbeTests(unittest.TestCase):
                       return_value=SimpleNamespace(returncode=0)) as run,
             ):
                 logic.handle({"op": "apply_update"})
+                logic.tasks.wait()
             run.assert_not_called()
             sleep.assert_not_called()
             detail = " ".join(toast["message"] for toast in _toasts(emitted))
