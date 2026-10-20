@@ -31,7 +31,7 @@ import time
 from instant2_app import audio, autostart, config, context, hotkey, models
 from instant2_app.launch import app_command, app_environment
 from instant2_app.identity import APP_NAME
-from instant2_app.paths import resolve_data_dir
+from instant2_app.paths import config_dir, resolve_data_dir
 
 log = logging.getLogger("instant2")
 
@@ -174,6 +174,11 @@ def _workdir():
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+
+
+def _update_log_path():
+    """Log del helper de actualización: %APPDATA%\\instant2\\update.log."""
+    return os.path.join(config_dir(), "update.log")
 
 
 def _pid_value():
@@ -2269,14 +2274,30 @@ class PanelLogic(PanelReadingActions):
                 level="warn")
             return
         try:
+            log_path = _update_log_path()
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            output = open(log_path, "a", encoding="utf-8", errors="replace")
+        except OSError as exc:
+            self._update_install_failed(exc)
+            return
+        try:
+            # Sin CREATE_NO_WINDOW el helper abre una terminal con sus pasos
+            # en medio de la actualización. Su salida va al log: el usuario
+            # no ve una ventana y el paso a paso queda para diagnosticar.
             subprocess.Popen(
-                ["cmd", "/c", script, target, expected, destination], cwd=root)
+                ["cmd", "/c", script, target, expected, destination], cwd=root,
+                stdout=output, stderr=subprocess.STDOUT,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except Exception as exc:  # noqa: BLE001  (se informa al usuario)
             self._update_install_pending = False
             self.update_button = f"Reiniciar para aplicar v{(self._pending_update or {}).get('latest', '')}"
             self.push_state()
             _toast_error(self, "Actualizaciones", exc)
             return
+        finally:
+            # El hijo ya tiene su propia copia del handle: el padre puede
+            # cerrar el suyo sin perder la salida del helper.
+            output.close()
         self.close()
 
     def _install_via_setup(self, installer_path, expected):
