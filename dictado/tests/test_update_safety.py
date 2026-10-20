@@ -147,6 +147,8 @@ def _isolated_update_paths(directory):
               return_value=os.path.join(directory, "update.log")),
         patch("instant2_app.gui._installer_log_path",
               return_value=os.path.join(directory, "installer.log")),
+        patch("instant2_app.gui._installer_result_path",
+              return_value=os.path.join(directory, "installer-result.json")),
     )
 
 
@@ -303,10 +305,11 @@ class T3InstallerVerificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             target, digest = _verified_file(temp, "Instant2-Setup.exe")
             logic._ready_update = (target, digest, "0.2.0")
-            pending_patch, log_patch, _installer_patch = self._isolated(temp)
+            (pending_patch, log_patch, _installer_patch,
+             _result_patch) = self._isolated(temp)
             with (
                 patch("instant2_app.update.install_mode", return_value="installed"),
-                pending_patch, log_patch, _installer_patch,
+                pending_patch, log_patch, _installer_patch, _result_patch,
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui.daemon_is_running", return_value=False),
                 patch("instant2_app.gui._pid_value", return_value=4242),
@@ -323,6 +326,36 @@ class T3InstallerVerificationTests(unittest.TestCase):
             self.assertIn("/SILENT", argv)
             self.assertTrue(any(str(part).startswith("/LOG=") for part in argv))
             self.assertTrue(logic._closed)
+
+    def test_the_installer_log_path_is_quoted(self):
+        """Inno parsea la linea de comandos cruda: un espacio en el
+        %APPDATA% mandaba el log a otro lado y el toast no tenia log."""
+        logic, _emitted = _logic()
+        logic._pending_update = _release()
+        with tempfile.TemporaryDirectory() as temp:
+            target, digest = _verified_file(temp, "Instant2-Setup.exe")
+            logic._ready_update = (target, digest, "0.2.0")
+            (pending_patch, log_patch, installer_patch,
+             result_patch) = _isolated_update_paths(temp)
+            with (
+                patch("instant2_app.update.install_mode", return_value="installed"),
+                pending_patch, log_patch, installer_patch, result_patch,
+                patch("instant2_app.gui.stop_daemon"),
+                patch("instant2_app.gui.daemon_is_running", return_value=False),
+                patch("instant2_app.gui._pid_value", return_value=4242),
+                patch("instant2_app.gui._probe_daemon_process",
+                      return_value=(gui.DAEMON_STOPPED, None)),
+                patch("instant2_app.gui.subprocess.run",
+                      return_value=SimpleNamespace(returncode=0)) as run,
+            ):
+                logic.handle({"op": "apply_update"})
+                logic.tasks.wait()
+            argv = run.call_args.args[0]
+            log_arg = [part for part in argv if str(part).startswith("/LOG=")]
+            self.assertEqual(len(log_arg), 1)
+            self.assertTrue(log_arg[0].startswith('/LOG="'))
+            self.assertTrue(log_arg[0].endswith('"'))
+            self.assertIn("installer.log", log_arg[0])
 
     def test_the_installer_is_never_waited_on_the_ui_thread(self):
         """La espera del instalador no puede caer en el hilo de UI.
@@ -342,10 +375,11 @@ class T3InstallerVerificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             target, digest = _verified_file(temp, "Instant2-Setup.exe")
             logic._ready_update = (target, digest, "0.2.0")
-            pending_patch, log_patch, installer_patch = _isolated_update_paths(temp)
+            (pending_patch, log_patch, installer_patch,
+             result_patch) = _isolated_update_paths(temp)
             with (
                 patch("instant2_app.update.install_mode", return_value="installed"),
-                pending_patch, log_patch, installer_patch,
+                pending_patch, log_patch, installer_patch, result_patch,
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui._pid_value", return_value=4242),
                 patch("instant2_app.gui._probe_daemon_process",
@@ -368,10 +402,11 @@ class T3InstallerVerificationTests(unittest.TestCase):
             log_path = os.path.join(temp, "installer.log")
             with open(log_path, "w", encoding="utf-8") as handle:
                 handle.write("Setup aborted\nERROR: no hay espacio\n")
-            pending_patch, log_patch, _installer_patch = self._isolated(temp)
+            (pending_patch, log_patch, _installer_patch,
+             _result_patch) = self._isolated(temp)
             with (
                 patch("instant2_app.update.install_mode", return_value="installed"),
-                pending_patch, log_patch, _installer_patch,
+                pending_patch, log_patch, _installer_patch, _result_patch,
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui.daemon_is_running", return_value=False),
                 patch("instant2_app.gui._pid_value", return_value=4242),
@@ -401,6 +436,8 @@ class T3InstallerVerificationTests(unittest.TestCase):
                 handle.write("ERROR: el instalador se abortó\n")
             with patch("instant2_app.gui._pending_update_path",
                        return_value=pending), \
+                    patch("instant2_app.gui._installer_result_path",
+                          return_value=os.path.join(temp, "result.json")), \
                     patch("instant2_app.gui._current_version",
                           return_value="0.1.5"):
                 gui._write_pending_update("0.2.0", log_path)
@@ -414,7 +451,9 @@ class T3InstallerVerificationTests(unittest.TestCase):
             self.assertIn("el instalador se abortó", message)
             # La nota se consume: no se vuelve a reportar.
             with patch("instant2_app.gui._pending_update_path",
-                       return_value=pending):
+                       return_value=pending), \
+                    patch("instant2_app.gui._installer_result_path",
+                          return_value=os.path.join(temp, "result.json")):
                 self.assertIsNone(gui._pending_update_report())
 
     def test_applied_update_is_confirmed_on_the_next_start(self):
@@ -422,6 +461,8 @@ class T3InstallerVerificationTests(unittest.TestCase):
             pending = os.path.join(temp, "pending-update.json")
             with patch("instant2_app.gui._pending_update_path",
                        return_value=pending), \
+                    patch("instant2_app.gui._installer_result_path",
+                          return_value=os.path.join(temp, "result.json")), \
                     patch("instant2_app.gui._current_version",
                           return_value="0.2.0"):
                 gui._write_pending_update("0.2.0", os.path.join(temp, "x.log"))
@@ -432,16 +473,97 @@ class T3InstallerVerificationTests(unittest.TestCase):
             self.assertEqual(level, "info")
             self.assertIn("0.2.0", message)
 
+    def test_the_installer_result_is_readable_after_the_panel_dies(self):
+        """El codigo de salida queda anotado aunque el panel muera.
+
+        Inno cierra el panel para reemplazar los archivos: el proceso que
+        espera al instalador puede no llegar a leer su codigo de salida.
+        """
+        with tempfile.TemporaryDirectory() as temp:
+            pending = os.path.join(temp, "pending-update.json")
+            result = os.path.join(temp, "installer-result.json")
+            log_path = os.path.join(temp, "installer.log")
+            with open(log_path, "w", encoding="utf-8") as handle:
+                handle.write("ERROR: el instalador se abortó\n")
+            with patch("instant2_app.gui._pending_update_path",
+                       return_value=pending), \
+                    patch("instant2_app.gui._installer_result_path",
+                          return_value=result), \
+                    patch("instant2_app.gui._current_version",
+                          return_value="0.1.5"):
+                gui._write_pending_update("0.2.0", log_path)
+                gui._write_installer_result(5, log_path, "0.2.0")
+                report = gui._pending_update_report()
+            self.assertIsNotNone(report)
+            title, message, level = report
+            self.assertEqual(title, "Actualización sin aplicar")
+            self.assertEqual(level, "error")
+            self.assertIn("5", message)
+            self.assertIn("el instalador se abortó", message)
+            # La nota y el resultado se consumen: no se repita el error.
+            with patch("instant2_app.gui._pending_update_path",
+                       return_value=pending), \
+                    patch("instant2_app.gui._installer_result_path",
+                          return_value=result):
+                self.assertIsNone(gui._pending_update_report())
+
+    def test_an_update_without_version_is_never_reported_as_applied(self):
+        """Sin version anotada no se puede decir que se aplico."""
+        with tempfile.TemporaryDirectory() as temp:
+            pending = os.path.join(temp, "pending-update.json")
+            with patch("instant2_app.gui._pending_update_path",
+                       return_value=pending), \
+                    patch("instant2_app.gui._installer_result_path",
+                          return_value=os.path.join(temp, "result.json")), \
+                    patch("instant2_app.gui._current_version",
+                          return_value="0.1.5"):
+                gui._write_pending_update("", "")
+                report = gui._pending_update_report()
+            self.assertIsNotNone(report)
+            title, message, level = report
+            self.assertNotEqual(title, "Actualización aplicada")
+            self.assertEqual(level, "warn")
+            self.assertIn("no se puede confirmar", message)
+
+    def test_a_helper_that_does_not_start_leaves_no_second_toast(self):
+        """Si el helper no arranca, la nota se limpia: no hay otro toast.
+
+        Sin limpiar la nota, el arranque siguiente reportaba el mismo
+        fallo con un segundo toast rojo.
+        """
+        logic, emitted = _logic()
+        logic._pending_update = _release()
+        with tempfile.TemporaryDirectory() as temp:
+            target, digest = _verified_file(temp)
+            logic._ready_update = (target, digest, "0.2.0")
+            (pending_patch, log_patch, _installer_patch,
+             _result_patch) = _isolated_update_paths(temp)
+            with (
+                patch("instant2_app.update.install_mode", return_value="portable"),
+                patch("instant2_app.gui.os.path.isfile", return_value=True),
+                pending_patch, log_patch, _installer_patch, _result_patch,
+                patch("instant2_app.gui.subprocess.Popen",
+                      side_effect=OSError("el helper no arranco")),
+            ):
+                logic.handle({"op": "apply_update"})
+            # La nota no queda: el proximo arranque no repite el error.
+            self.assertFalse(os.path.exists(
+                os.path.join(temp, "pending-update.json")))
+            toasts = _toasts(emitted)
+            self.assertTrue(any(toast["title"] == "Actualización sin aplicar"
+                                for toast in toasts))
+
     def test_installed_update_notes_the_requested_version(self):
         logic, _emitted = _logic()
         logic._pending_update = _release()
         with tempfile.TemporaryDirectory() as temp:
             target, digest = _verified_file(temp, "Instant2-Setup.exe")
             logic._ready_update = (target, digest, "0.2.0")
-            pending_patch, log_patch, _installer_patch = self._isolated(temp)
+            (pending_patch, log_patch, _installer_patch,
+             _result_patch) = self._isolated(temp)
             with (
                 patch("instant2_app.update.install_mode", return_value="installed"),
-                pending_patch, log_patch, _installer_patch,
+                pending_patch, log_patch, _installer_patch, _result_patch,
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui.daemon_is_running", return_value=False),
                 patch("instant2_app.gui._pid_value", return_value=4242),
@@ -649,10 +771,11 @@ class T4DaemonProbeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             target, digest = _verified_file(temp, "Instant2-Setup.exe")
             logic._ready_update = (target, digest, "0.2.0")
-            pending_patch, log_patch, _installer_patch = _isolated_update_paths(temp)
+            (pending_patch, log_patch, _installer_patch,
+             _result_patch) = _isolated_update_paths(temp)
             with (
                 patch("instant2_app.update.install_mode", return_value="installed"),
-                pending_patch, log_patch, _installer_patch,
+                pending_patch, log_patch, _installer_patch, _result_patch,
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui._pid_value", return_value=4242),
                 patch("instant2_app.gui._probe_daemon_process",
@@ -681,10 +804,11 @@ class T4DaemonProbeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             target, digest = _verified_file(temp, "Instant2-Setup.exe")
             logic._ready_update = (target, digest, "0.2.0")
-            pending_patch, log_patch, _installer_patch = _isolated_update_paths(temp)
+            (pending_patch, log_patch, _installer_patch,
+             _result_patch) = _isolated_update_paths(temp)
             with (
                 patch("instant2_app.update.install_mode", return_value="installed"),
-                pending_patch, log_patch, _installer_patch,
+                pending_patch, log_patch, _installer_patch, _result_patch,
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui._pid_value", return_value=4242),
                 patch("instant2_app.gui._probe_daemon_process",

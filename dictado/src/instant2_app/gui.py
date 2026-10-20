@@ -234,6 +234,11 @@ def _pending_update_path():
     return os.path.join(config_dir(), "pending-update.json")
 
 
+def _installer_result_path():
+    """Codigo de salida del instalador: %APPDATA%\\instant2\\installer-result.json."""
+    return os.path.join(config_dir(), "installer-result.json")
+
+
 def _write_pending_update(version, log_path):
     """Deja anotada la actualización que se pidió aplicar.
 
@@ -268,6 +273,46 @@ def _clear_pending_update():
         pass
 
 
+def _write_installer_result(returncode, log_path, version=""):
+    """Anota el codigo de salida del instalador para el arranque siguiente.
+
+    El instalador de Inno cierra el panel (Restart Manager) para poder
+    reemplazar los archivos: el proceso que lo espera puede morir antes de
+    leer su codigo de salida. Este archivo es lo que permite contarlo
+    igual (y con el log de Inno al lado).
+    """
+    try:
+        payload = {"returncode": int(returncode),
+                   "log": str(log_path or ""),
+                   "version": str(version or "")}
+    except (TypeError, ValueError):
+        return
+    try:
+        path = _installer_result_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+    except OSError:
+        log.warning("no se pudo anotar el resultado del instalador",
+                    exc_info=True)
+
+
+def _read_installer_result():
+    try:
+        with open(_installer_result_path(), encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _clear_installer_result():
+    try:
+        os.remove(_installer_result_path())
+    except OSError:
+        pass
+
+
 def _log_tail(path, lines=8):
     """Últimas líneas de un log: el toast del fallo lleva el detalle."""
     if not path:
@@ -296,15 +341,44 @@ def _pending_update_report():
     La app que está corriendo ES la versión instalada: acá se la compara con
     la que se pidió. Si no coinciden, la actualización no se aplicó y el
     log dice por qué.
+
+    El instalador de Inno cierra el panel para poder reemplazar los
+    archivos, así que el proceso que lo espera puede morir antes de leer
+    su código de salida: por eso el worker lo anota en
+    `installer-result.json` y esta nota lo lee en el arranque siguiente.
     """
     data = _read_pending_update()
-    if not data:
+    result = _read_installer_result()
+    if not data and not result:
         return None
-    expected = str(data.get("version") or "")
-    log_path = str(data.get("log") or "")
+    expected = str((data or {}).get("version") or "")
+    log_path = str((data or {}).get("log")
+                   or (result or {}).get("log") or "")
     current = _current_version()
     _clear_pending_update()
-    if expected and expected != current:
+    _clear_installer_result()
+    returncode = None
+    if result is not None:
+        try:
+            returncode = int(result.get("returncode"))
+        except (TypeError, ValueError):
+            returncode = None
+    if returncode is not None and returncode != 0:
+        # El instalador fallo: el log de Inno va con el mensaje.
+        message = (f"El instalador terminó con código {returncode}; no se "
+                   f"actualizó Instant2. Log: {log_path}")
+        tail = _log_tail(log_path)
+        if tail:
+            message += "\n\nÚltimas líneas del log:\n" + tail
+        return ("Actualización sin aplicar", message, "error")
+    if not expected:
+        # Sin versión anotada no se puede afirmar que la actualización se
+        # aplicó: se dice "no se sabe", nunca "aplicada".
+        return ("Actualización sin verificar",
+                "No quedó anotada qué versión se pidió instalar: no se "
+                f"puede confirmar si la actualización se aplicó. Esta app "
+                f"está en v{current}.", "warn")
+    if expected != current:
         message = (f"Se pidió actualizar a v{expected} y esta app sigue en "
                    f"v{current}: la actualización no se aplicó.")
         if log_path:
@@ -2555,10 +2629,10 @@ class PanelLogic(PanelReadingActions):
                 env=env, stdout=output, stderr=subprocess.STDOUT,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except Exception as exc:  # noqa: BLE001  (se informa al usuario)
-            self._update_install_pending = False
-            self.update_button = f"Reiniciar para aplicar v{(self._pending_update or {}).get('latest', '')}"
-            self.push_state()
-            _toast_error(self, "Actualizaciones", exc)
+            # El helper ni siquiera arranco: se reporta por la misma via que
+            # el resto de los fallos (y se limpia la nota, asi el proximo
+            # arranque no repite el error con otro toast).
+            self._update_install_failed(exc)
             return
         finally:
             # El hijo ya tiene su propia copia del handle: el padre puede
@@ -2574,13 +2648,14 @@ class PanelLogic(PanelReadingActions):
         respondiendo: el instalador de Inno manda WM_CLOSE al panel y un
         hilo congelado no lo procesa (Inno escala a matar el proceso).
         """
+        version = self._pending_version()
         self.tasks.submit(
-            lambda _emit: self._run_installer(installer_path, expected),
+            lambda _emit: self._run_installer(installer_path, expected, version),
             self._installer_finished,
             self._update_install_failed)
 
     @staticmethod
-    def _run_installer(installer_path, expected=None):
+    def _run_installer(installer_path, expected=None, version=""):
         """Verifica, frena el daemon y espera al instalador. (hilo worker)
 
         Devuelve (codigo de salida, log de Inno, instalador). La espera
@@ -2595,11 +2670,16 @@ class PanelLogic(PanelReadingActions):
         # del instalador es invisible. Se espera el proceso y se lee su
         # código de salida: sirve cuando el instalador falla antes de
         # cerrar el panel (Inno lo cierra después para copiar los archivos).
+        # Con comillas: Inno parsea la linea de comandos cruda y un espacio
+        # en el %APPDATA% mandaba el log a otro lado.
         result = subprocess.run(
             [installer_path, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
-             f"/LOG={log_path}"],
+             f'/LOG="{log_path}"'],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, timeout=_INSTALL_TIMEOUT)
+        # El codigo se anota aparte: Inno puede cerrar el panel mientras
+        # esperamos y este proceso morir sin llegar a contarlo.
+        _write_installer_result(result.returncode, log_path, version)
         return result.returncode, log_path, installer_path
 
     def _installer_finished(self, outcome):
@@ -2608,8 +2688,8 @@ class PanelLogic(PanelReadingActions):
         Ojo: Inno cierra el panel (Restart Manager) para poder reemplazar
         los archivos, así que muchas veces este callback no llega: el
         mecanismo que verifica el resultado de verdad es la nota
-        `pending-update.json`, que el arranque siguiente compara con la
-        versión instalada.
+        `pending-update.json` (más `installer-result.json`), que el
+        arranque siguiente lee y compara con la versión instalada.
         """
         if self._closed:
             return
@@ -2673,8 +2753,10 @@ class PanelLogic(PanelReadingActions):
         if self._closed:
             return
         # El fallo se está contando ahora: no queda nada pendiente para
-        # reportar en el próximo arranque.
+        # reportar en el próximo arranque (ni la nota ni el resultado del
+        # instalador, que sinon el usuario veria dos toasts rojos).
         _clear_pending_update()
+        _clear_installer_result()
         self._update_install_pending = False
         self.update_button = (f"Reintentar instalación v"
                               f"{(self._pending_update or {}).get('latest', '')}")
