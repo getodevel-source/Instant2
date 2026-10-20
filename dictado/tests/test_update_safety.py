@@ -550,6 +550,7 @@ class T4DaemonProbeTests(unittest.TestCase):
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui.daemon_probe_state",
                       return_value=gui.DAEMON_UNKNOWN),
+                patch("instant2_app.gui.time.monotonic", return_value=0.0),
                 patch("instant2_app.gui.subprocess.run",
                       return_value=SimpleNamespace(returncode=0)) as run,
             ):
@@ -560,8 +561,16 @@ class T4DaemonProbeTests(unittest.TestCase):
             self.assertIn("No se pudo verificar", detail)
 
     def test_installer_wait_reports_a_daemon_that_does_not_stop(self):
+        """Un daemon vivo que no se frena se reporta como "sigue activo"."""
         logic, emitted = _logic()
         logic._pending_update = _release()
+        clock = {"now": 0.0}
+
+        def probe(budget=None):
+            # Cada probe se come 30 s: el deadline se cumple.
+            clock["now"] += 30.0
+            return gui.DAEMON_RUNNING
+
         with tempfile.TemporaryDirectory() as temp:
             target, digest = _verified_file(temp, "Instant2-Setup.exe")
             logic._ready_update = (target, digest, "0.2.0")
@@ -570,19 +579,63 @@ class T4DaemonProbeTests(unittest.TestCase):
                 patch("instant2_app.update.install_mode", return_value="installed"),
                 pending_patch, log_patch, _installer_patch,
                 patch("instant2_app.gui.stop_daemon"),
-                patch("instant2_app.gui.daemon_probe_state",
-                      return_value=gui.DAEMON_RUNNING),
-                patch("instant2_app.gui.time.monotonic", side_effect=[0, 0, 100]),
-                patch("instant2_app.gui.time.sleep") as sleep,
+                patch("instant2_app.gui.daemon_probe_state", side_effect=probe),
+                patch("instant2_app.gui.time.monotonic",
+                      side_effect=lambda: clock["now"]),
+                patch("instant2_app.gui.time.sleep"),
                 patch("instant2_app.gui.subprocess.run",
                       return_value=SimpleNamespace(returncode=0)) as run,
             ):
                 logic.handle({"op": "apply_update"})
                 logic.tasks.wait()
             run.assert_not_called()
-            sleep.assert_not_called()
             detail = " ".join(toast["message"] for toast in _toasts(emitted))
             self.assertIn("sigue activo", detail)
+
+    def test_the_probe_budget_never_drops_below_the_floor(self):
+        """El probe conserva su presupuesto aunque el deadline se acerque.
+
+        Con el presupuesto colapsado el probe se queda sin respuesta y un
+        daemon vivo parecería "no verificable" en vez de "sigue activo".
+        """
+        clock = {"now": 0.0}
+        budgets = []
+
+        def probe(budget=None):
+            budgets.append(budget)
+            clock["now"] += 19.9  # el probe casi se come el deadline
+            return gui.DAEMON_RUNNING
+
+        with patch("instant2_app.gui.stop_daemon"), \
+                patch("instant2_app.gui.daemon_probe_state", side_effect=probe), \
+                patch("instant2_app.gui.time.monotonic",
+                      side_effect=lambda: clock["now"]), \
+                patch("instant2_app.gui.time.sleep"):
+            with self.assertRaises(RuntimeError):
+                gui.PanelLogic._prepare_installer()
+        self.assertGreaterEqual(len(budgets), 2)
+        for budget in budgets:
+            self.assertGreaterEqual(budget, gui._PROBE_BUDGET_FLOOR)
+
+    def test_the_probe_is_not_polled_too_often(self):
+        """Cada tasklist.exe cuesta ~0.25 s: no se sondea en bucle cerrado."""
+        sleeps = []
+        clock = {"now": 0.0}
+
+        def probe(budget=None):
+            clock["now"] += 1.0
+            return gui.DAEMON_RUNNING
+
+        with patch("instant2_app.gui.stop_daemon"), \
+                patch("instant2_app.gui.daemon_probe_state", side_effect=probe), \
+                patch("instant2_app.gui.time.monotonic",
+                      side_effect=lambda: clock["now"]), \
+                patch("instant2_app.gui.time.sleep", side_effect=sleeps.append):
+            with self.assertRaises(RuntimeError):
+                gui.PanelLogic._prepare_installer()
+        self.assertTrue(sleeps)
+        for value in sleeps:
+            self.assertGreaterEqual(value, 0.2)
 
 
 class T5ErrorToastLoggingTests(unittest.TestCase):

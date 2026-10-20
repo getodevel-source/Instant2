@@ -81,6 +81,10 @@ _INSTALL_TIMEOUT = 3600
 # Tope de cada probe del SO: tasklist y PowerShell no pueden colgarse.
 _PROBE_TASKLIST_TIMEOUT = 5.0
 _PROBE_POWERSHELL_TIMEOUT = 10.0
+# Piso del presupuesto del probe: aunque quede poco tiempo para el
+# deadline, el probe necesita su presupuesto completo para responder. Sin
+# este piso, un daemon vivo parece "no verificable" cuando no queda tiempo.
+_PROBE_BUDGET_FLOOR = _PROBE_TASKLIST_TIMEOUT + _PROBE_POWERSHELL_TIMEOUT
 # Margen para frenar el daemon: tiene que ser MAYOR que el peor caso de un
 # probe (5 s + 10 s), si no el deadline es inalcanzable y la actualización
 # se cuelga sin poder distinguir por que.
@@ -2552,19 +2556,35 @@ class PanelLogic(PanelReadingActions):
         # los archivos antes de copiar encima.
         stop_daemon()
         deadline = time.monotonic() + DAEMON_STOP_DEADLINE
+        alive = False
         while True:
             remaining = deadline - time.monotonic()
-            state = daemon_probe_state(budget=max(remaining, 0.0))
+            # El probe tiene un piso de presupuesto: con el tiempo que
+            # queda para el deadline se quedaría sin respuesta y un daemon
+            # vivo parecería "no verificable" en vez de "sigue activo".
+            state = daemon_probe_state(
+                budget=max(remaining, _PROBE_BUDGET_FLOOR))
             if state == DAEMON_STOPPED:
                 return
+            alive = alive or state == DAEMON_RUNNING
+            # El deadline tiene prioridad sobre el probe caído: si el daemon
+            # se vio vivo y no se frenó, el problema es el daemon, no el
+            # probe.
+            if time.monotonic() >= deadline:
+                if alive:
+                    raise RuntimeError(
+                        "El servicio de dictado sigue activo. "
+                        "Cerralo y reintentá.")
+                raise RuntimeError(
+                    "No se pudo verificar si el servicio de dictado está "
+                    "activo: cerrá Instant2 por completo y reintentá.")
             if state == DAEMON_UNKNOWN:
                 raise RuntimeError(
                     "No se pudo verificar si el servicio de dictado está "
                     "activo: cerrá Instant2 por completo y reintentá.")
-            if time.monotonic() >= deadline:
-                raise RuntimeError(
-                    "El servicio de dictado sigue activo. Cerralo y reintentá.")
-            time.sleep(0.1)
+            # 0.3 s entre probes: el sondeo no tiene que ser agresivo (cada
+            # tasklist.exe cuesta ~0.25 s en esta máquina).
+            time.sleep(0.3)
 
     def _update_install_failed(self, error):
         if self._closed:
