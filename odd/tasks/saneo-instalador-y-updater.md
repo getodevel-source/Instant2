@@ -77,10 +77,10 @@ Un actualizador que no verifica nada no puede fallar de forma honesta: el usuari
 
 ### Bloque 4 - Higiene del repo
 
-- [ ] **T9** `.gitignore`: reglas para `*.gguf` y `dictado/bench/results/` (con las claves ciegas).
-- [ ] **T10** Tests: reescribir `dictado/tests/test_bench_llm_runtime.py` contra los 2 candidatos vigentes y recuperar el test del passthrough de `sampling_params` en `llm.py` (`min_p`, `repetition_penalty`).
-- [ ] **T11** `CHANGELOG.md`: `[Sin publicar]` describe los ~13 cambios pendientes; `AUDITORIA-LLM.md`, `BENCHMARK-MODELOS.md` y `VOICE-TO-PROMPT.md` a `docs/`.
-- [ ] **T12** Commits por unidad de trabajo para todo el trabajo de benchmark pendiente.
+- [x] **T9** `.gitignore`: reglas para `*.gguf` y `dictado/bench/results/` (con las claves ciegas).
+- [x] **T10** Tests: reescribir `dictado/tests/test_bench_llm_runtime.py` contra los 2 candidatos vigentes y recuperar el test del passthrough de `sampling_params` en `llm.py` (`min_p`, `repetition_penalty`).
+- [x] **T11** `CHANGELOG.md`: `[Sin publicar]` describe los ~13 cambios pendientes; `AUDITORIA-LLM.md`, `BENCHMARK-MODELOS.md` y `VOICE-TO-PROMPT.md` a `docs/`.
+- [x] **T12** Commits por unidad de trabajo para todo el trabajo de benchmark pendiente.
 
 ## Criterios de aceptacion
 
@@ -174,4 +174,35 @@ Desviaciones y limites de esta tanda:
 - **El duplicado del directorio legacy se borra**: cuando `%LOCALAPPDATA%\instant2\models` ya tiene el modelo, la copia del legacy es redundante (la app solo acepta los pesos fijados por hash) y se elimina para que no quede huerfana. Queda escrito en el log de Inno (`/LOG=`).
 - **La nota vencida se descarta a las 24 horas**: una ventana mas corta (una hora) reportaria menos, pero reabrir la app a la manana siguiente tiene que seguir mostrando el fallo de la actualizacion de la noche.
 - **El `.bat` tiene que quedar con finales de linea CRLF en el arbol de trabajo**: con LF, `cmd` deja de encontrar la etiqueta `:say` y los mensajes no se escriben (passo en esta tanda y quedo anotado para el que edite el archivo).
+
+### Cuarta tanda (la higiene del repo: T9-T12)
+
+El trabajo de benchmark que estaba pendiente en el arbol de trabajo se landeo
+por unidades de trabajo revisables. Nada del trabajo de actualizacion ni del
+instalador se toco en esta tanda.
+
+- **Los artefactos generados dejan de ser versionables** `55b621c` `chore(repo): ignore the gguf weights and the generated benchmark results`: el `.gitignore` gana `*.gguf` y `dictado/bench/results/`. Motivo: el `.gguf` de la raiz son 1.212.103.520 bytes (1,13 GiB) y esta obsoleto (`bench_llm_runtime.py` apunta a `Ternary-Bonsai-2-9B-Q2_0.gguf`, no al 4B); y `dictado/bench/results/` son 680 archivos / 87.471.302 bytes de salida generada que ademas contiene las claves ciegas (`blind-package-final/blinded_key_v2p.json`, `blinded_key.ALL.json`, `blinded_review.ALL.jsonl`). El `.gguf` **no** se borro del disco: decidir que hacer con la descarga del usuario es del maintainer. Evidencia: `git check-ignore -v` marca las dos rutas y `git ls-files` no muestra ningun `.gguf` ni nada bajo `dictado/bench/results/`.
+- **El passthrough de sampling del LLM acepta los seis parametros** `8c90a70` `fix(llm): forward min_p and repetition_penalty to the benchmark sampling`: `min_p` y `repetition_penalty` se ignoraban en silencio, asi que el body de la request no coincidia con los flags del servidor (`--min-p`, `--repeat-penalty`) y la comparacion pareada no tenia base. La produccion no cambia (llama sin `sampling_params` y sigue mandando solo el cuerpo determinista). Evidencia: `python -m unittest tests.test_llm_sampling_params` -> Ran 3 tests, OK.
+- **Los corpus congelados se versionan con sus hashes** `ea6eeff` `feat(bench): freeze the correction and V2P corpora with their hashes`: `v2p_cases.json` (72 casos), `v2p_rubric.json`, `v2p_references.sha256`, `llm_cases_expanded_2026-10-16.json` (+ `.sha256`) y `correction-eval-prereg-2026-10-16.json`. Los hashes del manifiesto coinciden con los archivos: `llm_cases_expanded` `6533d230...`, `v2p_cases.json` `7d81ef20...`, `v2p_rubric.json` `6fda4286...`.
+- **El harness V2P, el empaquetado ciego y el analisis pareado** `4d7bcfd` `feat(bench): add the V2P harness, the blind packaging and the paired analysis`: `bench_v2p.py`, `prepare_blind_v2p.py`, `aggregate_v2p.py`, `analyze_correction_runs.py` y sus tres pruebas. Evidencia: `python -m unittest tests.test_bench_v2p tests.test_aggregate_v2p tests.test_prepare_blind_v2p` -> OK.
+- **El benchmark de correccion gana metricas y baja a dos candidatos** `9a5c249` `feat(bench): extend the correction benchmark with WER, invariants and two models`: WER normalizado, invariantes criticos, ediciones lexicas dañinas, corpus y subconjunto de casos explicitos, y `CANDIDATES` reducido a `qwen3.5-4b-q4` y `bonsai2-9b-q2`. La prueba vieja de runtime fijaba los cinco candidatos que este commit elimina, asi que se retira en este commit y su reemplazo llega en el siguiente.
+- **La cobertura del runtime vuelve** `9791c4e` `test(bench): cover the two runtime candidates and the sampling profiles`: `dictado/tests/test_bench_llm_runtime.py` reescrito contra los dos candidatos y el comportamiento actual (flags de GPU/CPU, los dos perfiles de sampling, `_sha256_file`, `_process_memory`, `_wait_for_server` y `run_candidate`, con su reporte de runtime). Evidencia: `python -m unittest tests.test_bench_llm_runtime` -> Ran 14 tests, OK.
+- **El CHANGELOG describe el trabajo pendiente** `896f736` `docs(changelog): describe the pending benchmark work`: la seccion `[Sin publicar]` pasa de una linea a las cuatro subsections (herramientas, validacion, correccion y documentacion).
+- **Los tres documentos largos pasan a `docs/`** `5824891` `docs: move the LLM audit, the model benchmark and the V2P notes to docs/`: `AUDITORIA-LLM.md`, `BENCHMARK-MODELOS.md` y `VOICE-TO-PROMPT.md` salen de la raiz (donde ya vivian 14 documentos largos) y las referencias cruzadas pasan a la forma `docs/<archivo>.md`. `README.md` y `dictado/README.md` no los mencionaban, asi que no habia enlaces que corregir.
+
+Checks de la cuarta tanda: `cd dictado && python -m unittest discover -s tests` -> Ran 597 tests, OK (skipped=6) en 3.14.2 (sistema) y en 3.12.12 (venv de CI); `python -m pyflakes dictado/src/instant2_app/*.py` -> 38 archivos, 0 hallazgos (exit 0 en los dos interpretes); `python -m instant2_app --help` -> exit 0. Los 597 tests son los 580 de la tanda anterior mas 14 de la prueba de runtime reescrita y 3 de la del passthrough de sampling; ningun test nuevo queda saltado.
+
+Cada commit se verifico por separado (worktree temporal en `C:\PROYECTOS\_wt-verify`, checkout commit por commit): los 8 commits dan `Ran N tests, OK (skipped=7)`. El `skipped=7` de esa corrida es el test del icono (`falta el icono ...\dictado\build\instant2.ico`), que en el worktree no existe porque `dictado/build/` no esta versionado; en el checkout real son 6, los mismos de antes.
+
+Desviaciones y limites de esta tanda:
+
+- **La prueba del passthrough de sampling va en un archivo nuevo**: `dictado/tests/test_llm_sampling_params.py` y no dentro de `test_bench_llm.py`. Motivo: `test_bench_llm.py` (reescrito por el maintainer) depende del corpus congelado y de `analyze_correction_runs`, asi que el cambio de produccion en `llm.py` no se puede revisar en un commit separado sin partir ese archivo.
+- **El harness de V2P no se toco**: no se cambio ni una linea de `bench_v2p.py`, `prepare_blind_v2p.py`, `aggregate_v2p.py` ni `analyze_correction_runs.py`. Solo se versionaron.
+- **El destino del `.gguf` de 1,13 GiB queda para el maintainer**: el archivo sigue en la raiz del checkout (`TempInstant2-benchmarkrevD-modelsTernary-Bonsai-2-4B-Q2_0.gguf`, 1.212.103.520 bytes) y ahora esta ignorado. Borrarlo, moverlo a una carpeta de modelos o dejar de descargarlo son decisiones de producto.
+
+### Hallazgos de la cuarta tanda (no se cambiaron)
+
+- **`_portable_path` de `bench_v2p.py` da prioridad al perfil de usuario sobre la ruta del repo**: el chequeo de `%LOCALAPPDATA%`/`%TEMP%`/`%USERPROFILE%` va **antes** del `os.path.relpath` al repo (`dictado/bench/bench_v2p.py:1638-1650`). Si el repo esta dentro del perfil de usuario (por ejemplo un worktree en `C:\Users\...\AppData\Local\Temp\...`), una ruta interna del repo se reporta como `%LOCALAPPDATA%\...` en vez de `dictado/bench/v2p_cases.json`, y la prueba `test_portable_path_hides_the_user_profile` de `tests/test_bench_v2p.py` falla. En el checkout real (`C:\PROYECTOS\Instant2`) la prueba pasa. No se cambio el comportamiento del harness: la precedencia es una decision de diseno (un artefacto compartido no debe filtrar la ruta del usuario), pero la prueba asume que el repo no vive bajo el perfil. Se deja anotado para quien lo mantenga.
+- **El bundle offline lleva 3 GB de pesos del LLM**: `installer/instant2.iss` copia 4.010.135.264 bytes, de los que ~3 GB son el LLM opcional. Sacarlo del bundle cambia el producto (el instalador deja de ser offline para el LLM) y por lo tanto el release: estaba declarado fuera de alcance en este documento y sigue pendiente de una propuesta aparte.
+- **La lista `CANDIDATES` del runtime ya no cubre el 4B de Bonsai**: `bench_llm_runtime.py` apunta a `Ternary-Bonsai-2-9B-Q2_0.gguf`, pero el `.gguf` descargado en la maquina es el 4B (`Ternary-Bonsai-2-4B-Q2_0.gguf`). El 4B se midio en las corridas V2P (`bonsai2-4b-q2-0-revC`) con otro arnes, no con el runtime de correccion.
 
