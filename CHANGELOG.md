@@ -8,7 +8,42 @@ Las dos primeras entradas documentan versiones de Instant2. El historial que
 sigue corresponde al Instant heredado y sus versiones no son releases de
 Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z`.
 
-## [Sin publicar]
+## [0.1.6] - 2026-10-20
+
+### Actualizaciones
+- La actualización desde la app ya no abre una ventana de consola: el helper
+  portable corre sin ventana y su paso a paso queda en
+  `%APPDATA%\instant2\update.log`.
+- El helper de actualización deja de mentir: si el binario nuevo no levanta,
+  restaura el anterior, sale con código de error y dice qué pasó, en vez de
+  imprimir "Listo: Instant2 actualizado".
+- El actualizador verifica el resultado: lee el código de salida del
+  instalador, adjunta el log de Inno Setup y confirma en el arranque
+  siguiente que la versión que corre es la que se pidió. Si no coincide,
+  avisa con el log.
+- Un resultado de actualización viejo se descarta a las 24 horas: antes podía
+  reportar un fallo de una actualización de días atrás en cada arranque.
+- Todo toast de error queda registrado en `instant2.log` con su título y su
+  detalle. Antes, el error que veía el usuario no dejaba rastro.
+- El helper reabre el panel aunque la actualización falle, para que el
+  resultado se vea sin tener que abrir la app a mano.
+- La app ya no promete un reinicio del dictado que no ocurrió: el mensaje
+  dice lo que pasó de verdad.
+
+### Instalador de Windows
+- El script de Inno Setup **no compilaba**, así que el instalador estaba roto
+  de una forma que ninguna prueba del repositorio podía ver. Tres fallos: la
+  firma del `Check` usaba un tipo que no existe en Inno Setup 6, los
+  comentarios de la sección de código usaban `;` (que en Pascal no es un
+  comentario) y el `Check` tenía la semántica invertida, con lo que el
+  instalador saltaba los modelos que faltaban y volvía a copiar los que ya
+  estaban.
+- El instalador reutiliza los modelos que el usuario ya tiene en vez de
+  volver a copiar gigabytes: mueve los del directorio anterior al nuevo y
+  solo copia lo que falta.
+- La instalación silenciosa vuelve a abrir la app, para que el resultado de la
+  actualización se vea en el momento.
+- El panel arranca con Python 3.14 (antes la interfaz gráfica no abría).
 
 ### Herramientas de benchmark
 - El agregador V2P acepta cobertura parcial explícita para informes exploratorios
