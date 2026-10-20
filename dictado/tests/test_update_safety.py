@@ -198,49 +198,61 @@ class T2HelperHonestyTests(unittest.TestCase):
     BAT = os.path.normpath(os.path.join(
         os.path.dirname(__file__), "..", "..", "scripts", "instant2-update.bat"))
 
-    def _source(self):
-        with open(self.BAT, encoding="utf-8") as handle:
-            return handle.read()
+    def _helper_env(self, appdata, redirected=True):
+        env = dict(os.environ)
+        env["APPDATA"] = appdata
+        if redirected:
+            env["INSTANT2_UPDATE_LOG_REDIRECTED"] = "1"
+        else:
+            env.pop("INSTANT2_UPDATE_LOG_REDIRECTED", None)
+        return env
 
-    def _section(self, source, label):
-        """El bloque de la etiqueta `:label` hasta la siguiente etiqueta."""
-        start = source.index("\n:" + label + "\n") + 1
-        rest = source[start:]
-        end = rest.find("\n:")
-        return rest if end < 0 else rest[:end]
-
+    @unittest.skipUnless(os.name == "nt", "el helper es un .bat de Windows")
     def test_every_message_goes_to_the_update_log(self):
-        source = self._source()
-        self.assertIn('set "LOG=%LOGDIR%\\update.log"', source)
-        self.assertIn('>>"%LOG%" echo %MSG%', source)
-        # El helper escribe siempre en el log; en consola solo si la app no
-        # redirigio la salida (si no, el log tendria cada linea dos veces).
-        self.assertIn("if not defined INSTANT2_UPDATE_LOG_REDIRECTED echo %MSG%",
-                      source)
+        """Los mensajes del helper van al log y no a la consola.
 
-    def test_rollback_reports_the_failure_and_exits_with_error(self):
-        source = self._source()
-        rollback = self._section(source, "rollback")
-        self.assertIn("ERROR:", rollback)
-        self.assertIn("set \"RC=1\"", rollback)
-        # El falso "Listo" no puede quedar en la rama que revierte.
-        self.assertNotIn("Listo: Instant2 actualizado.", rollback)
-        # Y el codigo de salida es el de RC, no un 0 fijo.
-        self.assertIn("exit /b %RC%", source)
+        Con la salida ya redirigida al log, la consola queda muda: el
+        usuario no ve una ventana y el paso a paso queda para diagnosing.
+        """
+        with tempfile.TemporaryDirectory() as temp:
+            appdata = os.path.join(temp, "appdata")
+            os.makedirs(appdata)
+            env = self._helper_env(appdata)
+            result = subprocess.run(
+                ["cmd", "/c", self.BAT], env=env, capture_output=True,
+                text=True, timeout=60)
+            log = os.path.join(appdata, "instant2", "update.log")
+            with open(log, encoding="utf-8", errors="replace") as handle:
+                content = handle.read()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Uso:", content)
+        self.assertNotIn("Uso:", result.stdout)
+        self.assertEqual(result.stdout.strip(), "")
 
-    def test_success_branch_is_the_only_one_that_says_listo(self):
-        source = self._source()
-        self.assertEqual(source.count("Listo: Instant2 actualizado."), 1)
-        self.assertIn("if \"%RC%\"==\"0\" (", source)
+    @unittest.skipUnless(os.name == "nt", "el helper es un .bat de Windows")
+    def test_without_the_redirect_the_helper_also_writes_to_the_console(self):
+        """Si la app no redirige la salida, el helper escribe en consola."""
+        with tempfile.TemporaryDirectory() as temp:
+            appdata = os.path.join(temp, "appdata")
+            os.makedirs(appdata)
+            env = self._helper_env(appdata, redirected=False)
+            result = subprocess.run(
+                ["cmd", "/c", self.BAT], env=env, capture_output=True,
+                text=True, timeout=60)
+            log = os.path.join(appdata, "instant2", "update.log")
+            with open(log, encoding="utf-8", errors="replace") as handle:
+                content = handle.read()
+        self.assertEqual(result.returncode, 1)
+        # El mensaje esta en el log y tambien en la consola.
+        self.assertIn("Uso:", content)
+        self.assertIn("Uso:", result.stdout)
 
     @unittest.skipUnless(os.name == "nt", "el helper es un .bat de Windows")
     def test_helper_writes_the_log_and_exits_with_error(self):
         with tempfile.TemporaryDirectory() as temp:
             appdata = os.path.join(temp, "appdata")
             os.makedirs(appdata)
-            env = dict(os.environ)
-            env["APPDATA"] = appdata
-            env["INSTANT2_UPDATE_LOG_REDIRECTED"] = "1"
+            env = self._helper_env(appdata)
             result = subprocess.run(
                 ["cmd", "/c", self.BAT], env=env, capture_output=True,
                 text=True, timeout=60)
@@ -254,7 +266,8 @@ class T2HelperHonestyTests(unittest.TestCase):
             self.assertNotIn("Uso:", result.stdout)
 
     @unittest.skipUnless(os.name == "nt", "el helper es un .bat de Windows")
-    def test_rollback_leaves_the_log_without_a_false_success(self):
+    def test_rollback_reports_the_failure_and_exits_with_error(self):
+        """El rollback cuenta el fallo real y sale con codigo de error."""
         with tempfile.TemporaryDirectory() as temp:
             appdata = os.path.join(temp, "appdata")
             scripts = os.path.join(temp, "scripts")
@@ -274,9 +287,7 @@ class T2HelperHonestyTests(unittest.TestCase):
                 handle.write(b"binario nuevo")
             digest = hashlib.sha256(b"binario nuevo").hexdigest()
 
-            env = dict(os.environ)
-            env["APPDATA"] = appdata
-            env["INSTANT2_UPDATE_LOG_REDIRECTED"] = "1"
+            env = self._helper_env(appdata)
             result = subprocess.run(
                 ["cmd", "/c", helper, source, digest, destination], env=env,
                 capture_output=True, text=True, timeout=120)
@@ -285,11 +296,65 @@ class T2HelperHonestyTests(unittest.TestCase):
             log = os.path.join(appdata, "instant2", "update.log")
             with open(log, encoding="utf-8", errors="replace") as handle:
                 content = handle.read()
+            # El fallo real queda escrito...
             self.assertIn("ERROR:", content)
-            self.assertNotIn("Listo: Instant2 actualizado.", content)
+            self.assertIn("NO se aplico", content)
+            # ...y el falso "Listo" no aparece en el rollback.
+            self.assertNotIn("Listo:", content)
             # El destino anterior quedo restaurado.
             with open(destination, encoding="utf-8") as handle:
                 self.assertIn("fake", handle.read())
+
+    @unittest.skipUnless(os.name == "nt", "el helper es un .bat de Windows")
+    def test_the_child_noise_stays_out_of_the_update_log(self):
+        """El ruido del proceso que arranca no va al log de la actualización.
+
+        Windows suelta avisos de "not compatible with the version of
+        Windows" al arrancar el ejecutable: en el log de la actualización
+        parecian fallos de la actualizacion.
+        """
+        with tempfile.TemporaryDirectory() as temp:
+            appdata = os.path.join(temp, "appdata")
+            scripts = os.path.join(temp, "scripts")
+            os.makedirs(appdata)
+            os.makedirs(scripts)
+            helper = os.path.join(scripts, "instant2-update.bat")
+            shutil.copyfile(self.BAT, helper)
+            # La version vieja es un .bat (arranca sin ruido): la que se
+            # copia encima es un PE invalido y Windows no la puede
+            # arrancar ("not compatible with the version of Windows").
+            destination = os.path.join(scripts, "Instant2.exe")
+            with open(destination, "w", encoding="utf-8") as handle:
+                handle.write("@echo off\r\necho fake %*\r\n")
+            source = os.path.join(temp, "nuevo.exe")
+            with open(source, "wb") as handle:
+                handle.write(b"MZ" + b"\x00" * 200)
+            with open(source, "rb") as handle:
+                digest = hashlib.sha256(handle.read()).hexdigest()
+
+            env = self._helper_env(appdata)
+            log = os.path.join(appdata, "instant2", "update.log")
+            os.makedirs(os.path.dirname(log), exist_ok=True)
+            # El helper se lanza como lo hace la app: con la salida ya
+            # apuntando al log (por eso el ruido del hijo llegaba al log).
+            # El padre cierra su handle enseguida: si lo mantiene, el
+            # helper no puede abrir el log para escribir sus mensajes.
+            output = open(log, "a", encoding="utf-8", errors="replace")
+            try:
+                process = subprocess.Popen(
+                    ["cmd", "/c", helper, source, digest, destination],
+                    env=env, stdout=output, stderr=subprocess.STDOUT)
+            finally:
+                output.close()
+            result = process.wait(timeout=120)
+
+            with open(log, encoding="utf-8", errors="replace") as handle:
+                content = handle.read()
+            self.assertEqual(result, 1)
+            # El ruido de Windows al arrancar el ejecutable no esta en el
+            # log: no dice nada del resultado de la actualizacion.
+            self.assertNotIn("not compatible with the version of Windows",
+                             content)
 
 
 class T3InstallerVerificationTests(unittest.TestCase):

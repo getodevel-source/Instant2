@@ -72,7 +72,10 @@ if errorlevel 1 goto :copyfail
 
 set "MSG=[5/6] Arrancando daemon nuevo..."
 call :say
-start "" "%DST%" run
+REM El stderr del proceso que arranca no va al log: Windows suelta avisos
+REM de "not compatible with the version of Windows" que no dicen nada del
+REM resultado de la actualizacion y ensucian el log.
+start "" "%DST%" run 2>nul
 ping -n 9 127.0.0.1 >nul 2>nul
 set "NEWPID="
 if exist "%PIDFILE%" set /p NEWPID=<"%PIDFILE%"
@@ -92,7 +95,7 @@ set "MSG=ERROR: el daemon nuevo no arranco; se restaura la version anterior."
 call :say
 del "%DST%" 2>nul
 if exist "%DST%.bak" move /Y "%DST%.bak" "%DST%" >nul
-start "" "%DST%" run
+start "" "%DST%" run 2>nul
 set "MSG=ERROR: la actualizacion NO se aplico; se revirtio a la version anterior."
 call :say
 set "MSG=Log completo: %LOG%"
@@ -109,7 +112,7 @@ del "%DST%.bak" 2>nul
 :reopen
 set "MSG=[6/6] Reabriendo ventana..."
 call :say
-start "" "%DST%" setup
+start "" "%DST%" setup 2>nul
 REM Sin terminal (CREATE_NO_WINDOW) `timeout` no puede leer la entrada:
 REM el ping espera los mismos segundos y no depende de la consola.
 ping -n 3 127.0.0.1 >nul 2>nul
