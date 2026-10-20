@@ -140,7 +140,17 @@ def _isolated_update_paths(directory):
     """Corta la nota y los logs de actualización dentro de un temporal.
 
     Sin esto la suite escribiría en el %APPDATA% real de quien la corre.
+    Los dos archivos de resultado (el del instalador de Inno y el del
+    helper portable) se cortan juntos: uno solo dejaria al otro leer el
+    %APPDATA% real de quien corre la suite.
     """
+    results = patch.multiple(
+        "instant2_app.gui",
+        _installer_result_path=(
+            lambda: os.path.join(directory, "installer-result.json")),
+        _helper_result_path=(
+            lambda: os.path.join(directory, "helper-result.json")),
+    )
     return (
         patch("instant2_app.gui._pending_update_path",
               return_value=os.path.join(directory, "pending-update.json")),
@@ -148,8 +158,7 @@ def _isolated_update_paths(directory):
               return_value=os.path.join(directory, "update.log")),
         patch("instant2_app.gui._installer_log_path",
               return_value=os.path.join(directory, "installer.log")),
-        patch("instant2_app.gui._installer_result_path",
-              return_value=os.path.join(directory, "installer-result.json")),
+        results,
     )
 
 
@@ -644,6 +653,8 @@ class T3InstallerVerificationTests(unittest.TestCase):
                        return_value=pending), \
                     patch("instant2_app.gui._installer_result_path",
                           return_value=os.path.join(temp, "result.json")), \
+                    patch("instant2_app.gui._helper_result_path",
+                          return_value=os.path.join(temp, "helper.json")), \
                     patch("instant2_app.gui._current_version",
                           return_value="0.1.5"):
                 gui._write_pending_update("0.2.0", log_path)
@@ -659,7 +670,9 @@ class T3InstallerVerificationTests(unittest.TestCase):
             with patch("instant2_app.gui._pending_update_path",
                        return_value=pending), \
                     patch("instant2_app.gui._installer_result_path",
-                          return_value=os.path.join(temp, "result.json")):
+                          return_value=os.path.join(temp, "result.json")), \
+                    patch("instant2_app.gui._helper_result_path",
+                          return_value=os.path.join(temp, "helper.json")):
                 self.assertIsNone(gui._pending_update_report())
 
     def test_applied_update_is_confirmed_on_the_next_start(self):
@@ -669,6 +682,8 @@ class T3InstallerVerificationTests(unittest.TestCase):
                        return_value=pending), \
                     patch("instant2_app.gui._installer_result_path",
                           return_value=os.path.join(temp, "result.json")), \
+                    patch("instant2_app.gui._helper_result_path",
+                          return_value=os.path.join(temp, "helper.json")), \
                     patch("instant2_app.gui._current_version",
                           return_value="0.2.0"):
                 gui._write_pending_update("0.2.0", os.path.join(temp, "x.log"))
@@ -695,6 +710,8 @@ class T3InstallerVerificationTests(unittest.TestCase):
                        return_value=pending), \
                     patch("instant2_app.gui._installer_result_path",
                           return_value=result), \
+                    patch("instant2_app.gui._helper_result_path",
+                          return_value=os.path.join(temp, "helper.json")), \
                     patch("instant2_app.gui._current_version",
                           return_value="0.1.5"):
                 gui._write_pending_update("0.2.0", log_path)
@@ -710,7 +727,9 @@ class T3InstallerVerificationTests(unittest.TestCase):
             with patch("instant2_app.gui._pending_update_path",
                        return_value=pending), \
                     patch("instant2_app.gui._installer_result_path",
-                          return_value=result):
+                          return_value=result), \
+                    patch("instant2_app.gui._helper_result_path",
+                          return_value=os.path.join(temp, "helper.json")):
                 self.assertIsNone(gui._pending_update_report())
 
     def test_an_update_without_version_is_never_reported_as_applied(self):
@@ -721,6 +740,8 @@ class T3InstallerVerificationTests(unittest.TestCase):
                        return_value=pending), \
                     patch("instant2_app.gui._installer_result_path",
                           return_value=os.path.join(temp, "result.json")), \
+                    patch("instant2_app.gui._helper_result_path",
+                          return_value=os.path.join(temp, "helper.json")), \
                     patch("instant2_app.gui._current_version",
                           return_value="0.1.5"):
                 gui._write_pending_update("", "")
