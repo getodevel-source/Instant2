@@ -14,7 +14,32 @@ def app_environment():
     env = os.environ.copy()
     if getattr(sys, "frozen", False):
         env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+        _drop_stale_webengine_path(env)
     return env
+
+
+def _parent_extraction_root():
+    """El árbol extraído del proceso actual (el `_MEIPASS` del onefile)."""
+    root = getattr(sys, "_MEIPASS", None)
+    if root:
+        return os.path.abspath(root)
+    return os.path.dirname(os.path.abspath(sys.executable))
+
+
+def _drop_stale_webengine_path(env):
+    """Saca del entorno del hijo el helper de QtWebEngine del padre.
+
+    `prepare_webengine_env` apunta el helper al árbol extraído del proceso
+    que corre, y ese árbol se borra cuando el padre sale. El hijo no puede
+    usar esa ruta: tiene que buscar la suya (o quedarse sin ella).
+    """
+    path = env.get("QTWEBENGINEPROCESS_PATH")
+    if not path:
+        return
+    root = os.path.normcase(_parent_extraction_root())
+    target = os.path.normcase(os.path.abspath(path))
+    if target == root or target.startswith(root + os.sep):
+        env.pop("QTWEBENGINEPROCESS_PATH", None)
 
 
 def prepare_webengine_env():

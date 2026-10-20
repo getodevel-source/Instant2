@@ -532,5 +532,43 @@ class T5ErrorToastLoggingTests(unittest.TestCase):
             logic.toast("Aviso", "cuidado", level="warn")
 
 
+class T6WebEngineEnvTests(unittest.TestCase):
+    """T6: el hijo no hereda el `_MEIPASS` del padre."""
+
+    def test_child_does_not_inherit_the_parents_webengine_helper(self):
+        from instant2_app import launch
+        meipass = os.path.join("C:", "Temp", "_MEI12345")
+        helper = os.path.join(meipass, "PySide6", "QtWebEngineProcess")
+        with patch.object(launch.sys, "frozen", True, create=True), \
+                patch.object(launch.sys, "_MEIPASS", meipass, create=True), \
+                patch.dict(os.environ,
+                           {"QTWEBENGINEPROCESS_PATH": helper}):
+            env = launch.app_environment()
+            # El padre sigue usando su helper...
+            self.assertIn("QTWEBENGINEPROCESS_PATH", os.environ)
+        # ...pero el hijo no hereda una ruta que desaparece con el padre.
+        self.assertNotIn("QTWEBENGINEPROCESS_PATH", env)
+
+    def test_webengine_helper_outside_the_extraction_is_kept(self):
+        from instant2_app import launch
+        meipass = os.path.join("C:", "Temp", "_MEI12345")
+        outside = os.path.join("C:", "Qt", "QtWebEngineProcess.exe")
+        with patch.object(launch.sys, "frozen", True, create=True), \
+                patch.object(launch.sys, "_MEIPASS", meipass, create=True), \
+                patch.dict(os.environ,
+                           {"QTWEBENGINEPROCESS_PATH": outside}):
+            env = launch.app_environment()
+        self.assertEqual(env["QTWEBENGINEPROCESS_PATH"], outside)
+
+    def test_source_run_keeps_the_environment_as_it_is(self):
+        """Sin congelar no hay `_MEIPASS` que limpiar."""
+        from instant2_app import launch
+        with patch.object(launch.sys, "frozen", False, create=True), \
+                patch.dict(os.environ,
+                           {"QTWEBENGINEPROCESS_PATH": "ya-esta"}):
+            env = launch.app_environment()
+        self.assertEqual(env["QTWEBENGINEPROCESS_PATH"], "ya-esta")
+
+
 if __name__ == "__main__":
     unittest.main()
