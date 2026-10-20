@@ -246,8 +246,8 @@ class DaemonIsRunningTests(unittest.TestCase):
                 handle.write("424242")
             with patch("instant2_app.daemon.pid_path", return_value=pidfile), \
                     patch.object(gui_module, "_pid_value", return_value=424242), \
-                    patch.object(gui_module, "daemon_probe_state",
-                                 return_value=gui_module.DAEMON_STOPPED):
+                    patch.object(gui_module, "_probe_daemon_process",
+                                 return_value=(gui_module.DAEMON_STOPPED, None)):
                 self.assertFalse(gui_module.stop_daemon())
             self.assertFalse(os.path.exists(pidfile))
 
@@ -262,8 +262,8 @@ class DaemonIsRunningTests(unittest.TestCase):
             reads = iter([424242, 777777])
             with patch("instant2_app.daemon.pid_path", return_value=pidfile), \
                     patch.object(gui_module, "_pid_value", side_effect=lambda: next(reads)), \
-                    patch.object(gui_module, "daemon_probe_state",
-                                 return_value=gui_module.DAEMON_STOPPED):
+                    patch.object(gui_module, "_probe_daemon_process",
+                                 return_value=(gui_module.DAEMON_STOPPED, None)):
                 self.assertFalse(gui_module.stop_daemon())
             with open(pidfile, encoding="utf-8") as handle:
                 self.assertEqual(handle.read().strip(), "424242")

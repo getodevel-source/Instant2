@@ -309,8 +309,9 @@ class T3InstallerVerificationTests(unittest.TestCase):
                 pending_patch, log_patch, _installer_patch,
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui.daemon_is_running", return_value=False),
-                patch("instant2_app.gui.daemon_probe_state",
-                      return_value=gui.DAEMON_STOPPED),
+                patch("instant2_app.gui._pid_value", return_value=4242),
+                patch("instant2_app.gui._probe_daemon_process",
+                      return_value=(gui.DAEMON_STOPPED, None)),
                 patch("instant2_app.gui.subprocess.run",
                       return_value=SimpleNamespace(returncode=0)) as run,
             ):
@@ -346,8 +347,9 @@ class T3InstallerVerificationTests(unittest.TestCase):
                 patch("instant2_app.update.install_mode", return_value="installed"),
                 pending_patch, log_patch, installer_patch,
                 patch("instant2_app.gui.stop_daemon"),
-                patch("instant2_app.gui.daemon_probe_state",
-                      return_value=gui.DAEMON_STOPPED),
+                patch("instant2_app.gui._pid_value", return_value=4242),
+                patch("instant2_app.gui._probe_daemon_process",
+                      return_value=(gui.DAEMON_STOPPED, None)),
                 patch("instant2_app.gui.subprocess.run", side_effect=fake_run),
             ):
                 logic.handle({"op": "apply_update"})
@@ -372,8 +374,9 @@ class T3InstallerVerificationTests(unittest.TestCase):
                 pending_patch, log_patch, _installer_patch,
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui.daemon_is_running", return_value=False),
-                patch("instant2_app.gui.daemon_probe_state",
-                      return_value=gui.DAEMON_STOPPED),
+                patch("instant2_app.gui._pid_value", return_value=4242),
+                patch("instant2_app.gui._probe_daemon_process",
+                      return_value=(gui.DAEMON_STOPPED, None)),
                 patch("instant2_app.gui.subprocess.run",
                       return_value=SimpleNamespace(returncode=5)) as run,
             ):
@@ -441,8 +444,9 @@ class T3InstallerVerificationTests(unittest.TestCase):
                 pending_patch, log_patch, _installer_patch,
                 patch("instant2_app.gui.stop_daemon"),
                 patch("instant2_app.gui.daemon_is_running", return_value=False),
-                patch("instant2_app.gui.daemon_probe_state",
-                      return_value=gui.DAEMON_STOPPED),
+                patch("instant2_app.gui._pid_value", return_value=4242),
+                patch("instant2_app.gui._probe_daemon_process",
+                      return_value=(gui.DAEMON_STOPPED, None)),
                 patch("instant2_app.gui.subprocess.run",
                       return_value=SimpleNamespace(returncode=0)),
             ):
@@ -494,13 +498,34 @@ class T4DaemonProbeTests(unittest.TestCase):
             self.assertIsNone(gui._pid_is_instant(4242))
 
     def test_failed_probe_leaves_the_daemon_state_unknown(self):
+        gui._reset_known_daemon_state()
         with patch("instant2_app.gui.os.name", "nt"), \
                 patch("instant2_app.gui._pid_value", return_value=4242), \
                 patch("instant2_app.gui.subprocess.run",
                       side_effect=OSError("tasklist no responde")):
             self.assertEqual(gui.daemon_probe_state(), gui.DAEMON_UNKNOWN)
-            # Y "no se sabe" no es "está corriendo".
+            # Y "no se sabe" no es "está corriendo" (no hay estado previo).
             self.assertFalse(gui.daemon_is_running())
+        gui._reset_known_daemon_state()
+
+    def test_an_unknown_probe_keeps_the_last_known_state(self):
+        """Un probe caido no puede hacer creer que el daemon esta apagado.
+
+        Si el panel cree que el daemon no esta, arranca un segundo.
+        """
+        gui._reset_known_daemon_state()
+        with patch("instant2_app.gui.os.name", "nt"), \
+                patch("instant2_app.gui._pid_value", return_value=4242), \
+                patch("instant2_app.gui._probe_daemon_process",
+                      return_value=(gui.DAEMON_RUNNING, None)):
+            self.assertTrue(gui.daemon_is_running())
+        with patch("instant2_app.gui.os.name", "nt"), \
+                patch("instant2_app.gui._pid_value", return_value=4242), \
+                patch("instant2_app.gui._probe_daemon_process",
+                      return_value=(gui.DAEMON_UNKNOWN, gui.PROBE_NO_IMAGE)):
+            # El ultimo estado conocido sigue siendo "corriendo".
+            self.assertTrue(gui.daemon_is_running())
+        gui._reset_known_daemon_state()
 
     def test_dead_pid_is_stopped(self):
         with patch("instant2_app.gui.os.name", "nt"), \
@@ -513,17 +538,72 @@ class T4DaemonProbeTests(unittest.TestCase):
             self.assertEqual(gui.daemon_probe_state(), gui.DAEMON_STOPPED)
 
     def test_stop_daemon_does_not_touch_the_pidfile_when_the_probe_fails(self):
+        """Sin evidencia del proceso no se mata nada ni se borra el pidfile."""
         with tempfile.TemporaryDirectory() as temp:
             pidfile = os.path.join(temp, "instant2.pid")
             with open(pidfile, "w", encoding="utf-8") as handle:
                 handle.write("424242")
             with patch("instant2_app.daemon.pid_path", return_value=pidfile), \
                     patch("instant2_app.gui._pid_value", return_value=424242), \
-                    patch("instant2_app.gui.daemon_probe_state",
-                          return_value=gui.DAEMON_UNKNOWN):
-                self.assertFalse(gui.stop_daemon())
+                    patch("instant2_app.gui._probe_daemon_process",
+                          return_value=(gui.DAEMON_UNKNOWN, gui.PROBE_NO_IMAGE)):
+                # None = "no se pudo verificar": ni vivo ni apagado.
+                self.assertIsNone(gui.stop_daemon())
             # El pidfile sigue: si el daemon vive, el proximo stop lo frena.
             self.assertTrue(os.path.isfile(pidfile))
+
+    @unittest.skipUnless(os.name == "nt", "mata el proceso con taskkill")
+    def test_stop_daemon_kills_the_daemon_when_the_cmdline_probe_fails(self):
+        """Un probe caido no puede dejar el daemon viejo vivo.
+
+        Si el daemon sigue vivo, el ejecutable queda tomado y el
+        actualizador falla al copiar encima (y el usuario ve un error sin
+        explicar). El pidfile lo escribio el daemon: se frena igual.
+        """
+        with tempfile.TemporaryDirectory() as temp:
+            pidfile = os.path.join(temp, "instant2.pid")
+            with open(pidfile, "w", encoding="utf-8") as handle:
+                handle.write("4242")
+            with patch("instant2_app.daemon.pid_path", return_value=pidfile), \
+                    patch("instant2_app.gui._pid_value", return_value=4242), \
+                    patch("instant2_app.gui._probe_daemon_process",
+                          return_value=(gui.DAEMON_UNKNOWN,
+                                        gui.PROBE_NO_CMDLINE)), \
+                    patch("instant2_app.gui.subprocess.Popen") as popen:
+                self.assertTrue(gui.stop_daemon())
+            self.assertEqual(popen.call_count, 1)
+            self.assertIn("4242", popen.call_args.args[0])
+
+    def test_the_panel_stops_the_daemon_even_if_the_probe_fails(self):
+        """Si el probe no responde, el panel frena el daemon igual.
+
+        Antes el panel decia "El daemon ya no estaba" mientras el daemon
+        seguia vivo: la actualizacion en caliente dejaba el daemon viejo
+        con el binario nuevo encima.
+        """
+        logic, _emitted = _logic()
+        logic._last_daemon_running = True
+        with patch("instant2_app.gui._pid_value", return_value=4242), \
+                patch("instant2_app.gui._pid_is_instant", return_value=None), \
+                patch("instant2_app.gui.subprocess.Popen") as popen:
+            logic.stop_daemon_flow()
+            logic.tasks.wait()
+        if os.name == "nt":
+            self.assertEqual(popen.call_count, 1)
+            self.assertIn("4242", popen.call_args.args[0])
+        self.assertNotIn("ya no estaba", logic.status_detail)
+
+    def test_the_panel_does_not_kill_a_recycled_pid(self):
+        """Un PID de otro proceso no se mata (eso no se negocia)."""
+        logic, _emitted = _logic()
+        logic._last_daemon_running = True
+        with patch("instant2_app.gui._pid_value", return_value=4242), \
+                patch("instant2_app.gui._pid_is_instant", return_value=False), \
+                patch("instant2_app.gui.daemon_is_running", return_value=False), \
+                patch("instant2_app.gui.subprocess.Popen") as popen:
+            logic.stop_daemon_flow()
+            logic.tasks.wait()
+        popen.assert_not_called()
 
     def test_deadline_is_longer_than_the_worst_case_probe(self):
         """El margen para frenar el daemon tiene que alcanzar el probe."""
@@ -574,8 +654,9 @@ class T4DaemonProbeTests(unittest.TestCase):
                 patch("instant2_app.update.install_mode", return_value="installed"),
                 pending_patch, log_patch, _installer_patch,
                 patch("instant2_app.gui.stop_daemon"),
-                patch("instant2_app.gui.daemon_probe_state",
-                      return_value=gui.DAEMON_UNKNOWN),
+                patch("instant2_app.gui._pid_value", return_value=4242),
+                patch("instant2_app.gui._probe_daemon_process",
+                      return_value=(gui.DAEMON_UNKNOWN, gui.PROBE_NO_IMAGE)),
                 patch("instant2_app.gui.time.monotonic", return_value=0.0),
                 patch("instant2_app.gui.subprocess.run",
                       return_value=SimpleNamespace(returncode=0)) as run,
@@ -592,10 +673,10 @@ class T4DaemonProbeTests(unittest.TestCase):
         logic._pending_update = _release()
         clock = {"now": 0.0}
 
-        def probe(budget=None):
+        def probe(_pid, budget=None):
             # Cada probe se come 30 s: el deadline se cumple.
             clock["now"] += 30.0
-            return gui.DAEMON_RUNNING
+            return gui.DAEMON_RUNNING, None
 
         with tempfile.TemporaryDirectory() as temp:
             target, digest = _verified_file(temp, "Instant2-Setup.exe")
@@ -605,7 +686,9 @@ class T4DaemonProbeTests(unittest.TestCase):
                 patch("instant2_app.update.install_mode", return_value="installed"),
                 pending_patch, log_patch, _installer_patch,
                 patch("instant2_app.gui.stop_daemon"),
-                patch("instant2_app.gui.daemon_probe_state", side_effect=probe),
+                patch("instant2_app.gui._pid_value", return_value=4242),
+                patch("instant2_app.gui._probe_daemon_process",
+                      side_effect=probe),
                 patch("instant2_app.gui.time.monotonic",
                       side_effect=lambda: clock["now"]),
                 patch("instant2_app.gui.time.sleep"),
@@ -627,13 +710,15 @@ class T4DaemonProbeTests(unittest.TestCase):
         clock = {"now": 0.0}
         budgets = []
 
-        def probe(budget=None):
+        def probe(_pid, budget=None):
             budgets.append(budget)
             clock["now"] += 19.9  # el probe casi se come el deadline
-            return gui.DAEMON_RUNNING
+            return gui.DAEMON_RUNNING, None
 
         with patch("instant2_app.gui.stop_daemon"), \
-                patch("instant2_app.gui.daemon_probe_state", side_effect=probe), \
+                patch("instant2_app.gui._pid_value", return_value=4242), \
+                patch("instant2_app.gui._probe_daemon_process", \
+                      side_effect=probe), \
                 patch("instant2_app.gui.time.monotonic",
                       side_effect=lambda: clock["now"]), \
                 patch("instant2_app.gui.time.sleep"):
@@ -648,12 +733,14 @@ class T4DaemonProbeTests(unittest.TestCase):
         sleeps = []
         clock = {"now": 0.0}
 
-        def probe(budget=None):
+        def probe(_pid, budget=None):
             clock["now"] += 1.0
-            return gui.DAEMON_RUNNING
+            return gui.DAEMON_RUNNING, None
 
         with patch("instant2_app.gui.stop_daemon"), \
-                patch("instant2_app.gui.daemon_probe_state", side_effect=probe), \
+                patch("instant2_app.gui._pid_value", return_value=4242), \
+                patch("instant2_app.gui._probe_daemon_process", \
+                      side_effect=probe), \
                 patch("instant2_app.gui.time.monotonic",
                       side_effect=lambda: clock["now"]), \
                 patch("instant2_app.gui.time.sleep", side_effect=sleeps.append):

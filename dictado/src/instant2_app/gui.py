@@ -94,6 +94,32 @@ DAEMON_RUNNING = "running"
 DAEMON_STOPPED = "stopped"
 DAEMON_UNKNOWN = "unknown"
 
+# Motivos de un probe del SO que no pudo responder. No son lo mismo: con
+# PROBE_NO_IMAGE no hay ninguna evidencia del proceso; con
+# PROBE_NO_CMDLINE la imagen del proceso es la nuestra y lo que falta es
+# leer su linea de comandos.
+PROBE_NO_IMAGE = "no-image"
+PROBE_NO_CMDLINE = "no-cmdline"
+
+# Ultimo estado conocido del daemon. Un probe que no responde NO lo
+# cambia: si lo cambiara, un fallo transitorio haria creer que el daemon
+# esta apagado (y se podria arrancar un segundo).
+_known_daemon_state = None
+
+
+def _remember_daemon_state(state):
+    """Guarda el ultimo estado conocido del daemon (ignora el desconocido)."""
+    global _known_daemon_state
+    if state in (DAEMON_RUNNING, DAEMON_STOPPED):
+        _known_daemon_state = state
+    return state
+
+
+def _reset_known_daemon_state():
+    """Olvida el ultimo estado conocido del daemon (solo para las pruebas)."""
+    global _known_daemon_state
+    _known_daemon_state = None
+
 
 def _friendly_error(exc):
     """(causa, acción) en criollo para un error de red/SO; el detalle crudo
@@ -336,9 +362,59 @@ def daemon_is_running():
     """True si el daemon de Instant2 está corriendo.
 
     Un probe que no responde NO es "está corriendo": el estado real lo
-    devuelve `daemon_probe_state`, que distingue las tres cosas.
+    devuelve `daemon_probe_state`, que distingue las tres cosas. Cuando el
+    probe no puede responder se conserva el último estado conocido: un
+    fallo transitorio no puede hacer creer que el daemon está apagado (y
+    que arranque un segundo daemon).
     """
-    return daemon_probe_state() == DAEMON_RUNNING
+    state = daemon_probe_state()
+    if state == DAEMON_UNKNOWN:
+        return _known_daemon_state == DAEMON_RUNNING
+    return state == DAEMON_RUNNING
+
+
+def _probe_daemon_process(pid, budget=None):
+    """(estado, motivo) del proceso que apunta el pidfile del daemon.
+
+    `estado` es DAEMON_RUNNING, DAEMON_STOPPED o DAEMON_UNKNOWN. `motivo`
+    explica un estado desconocido y nunca se lo confunde con el otro:
+      - PROBE_NO_IMAGE: el SO no respondió el probe de proceso (tasklist).
+      - PROBE_NO_CMDLINE: la imagen del proceso es la nuestra pero no se
+        pudo leer su línea de comandos (PowerShell/WMI no respondió).
+    """
+    if os.name == "nt":
+        tasklist_budget, ps_budget = _split_probe_budget(budget)
+        responded, code, listing = _run_probe(
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            tasklist_budget)
+        if not responded or code != 0:
+            return DAEMON_UNKNOWN, PROBE_NO_IMAGE
+        accepted_images = {"python.exe", "pythonw.exe", "instant2.exe"}
+        if getattr(sys, "frozen", False):
+            accepted_images.add(ntpath.basename(sys.executable).lower())
+        for row in listing.splitlines():
+            columns = [part.strip().strip('"') for part in row.split('","')]
+            if len(columns) > 1 and columns[1] == str(pid):
+                if columns[0].lower() not in accepted_images:
+                    return DAEMON_STOPPED, None
+                ours = _pid_is_instant(pid, timeout=ps_budget)
+                if ours is None:
+                    return DAEMON_UNKNOWN, PROBE_NO_CMDLINE
+                return (DAEMON_RUNNING if ours else DAEMON_STOPPED), None
+        return DAEMON_STOPPED, None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return DAEMON_STOPPED, None
+    except PermissionError:
+        # EPERM: el proceso existe pero no tenemos permiso -> vivo (G4).
+        return DAEMON_RUNNING, None
+    except OSError:
+        return DAEMON_UNKNOWN, PROBE_NO_IMAGE
+    ours = _pid_is_instant(pid)
+    if ours is None:
+        return DAEMON_UNKNOWN, PROBE_NO_CMDLINE
+    return (DAEMON_RUNNING if ours else DAEMON_STOPPED), None
 
 
 def daemon_probe_state(budget=None):
@@ -350,40 +426,9 @@ def daemon_probe_state(budget=None):
     """
     pid = _pid_value()
     if pid is None:
-        return DAEMON_STOPPED
-    if os.name == "nt":
-        tasklist_budget, ps_budget = _split_probe_budget(budget)
-        responded, code, listing = _run_probe(
-            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
-            tasklist_budget)
-        if not responded or code != 0:
-            return DAEMON_UNKNOWN
-        accepted_images = {"python.exe", "pythonw.exe", "instant2.exe"}
-        if getattr(sys, "frozen", False):
-            accepted_images.add(ntpath.basename(sys.executable).lower())
-        for row in listing.splitlines():
-            columns = [part.strip().strip('"') for part in row.split('","')]
-            if len(columns) > 1 and columns[1] == str(pid):
-                if columns[0].lower() not in accepted_images:
-                    return DAEMON_STOPPED
-                ours = _pid_is_instant(pid, timeout=ps_budget)
-                if ours is None:
-                    return DAEMON_UNKNOWN
-                return DAEMON_RUNNING if ours else DAEMON_STOPPED
-        return DAEMON_STOPPED
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return DAEMON_STOPPED
-    except PermissionError:
-        # EPERM: el proceso existe pero no tenemos permiso -> vivo (G4).
-        return DAEMON_RUNNING
-    except OSError:
-        return DAEMON_UNKNOWN
-    ours = _pid_is_instant(pid)
-    if ours is None:
-        return DAEMON_UNKNOWN
-    return DAEMON_RUNNING if ours else DAEMON_STOPPED
+        return _remember_daemon_state(DAEMON_STOPPED)
+    state, _reason = _probe_daemon_process(pid, budget=budget)
+    return _remember_daemon_state(state)
 
 
 def _display_input_name(name):
@@ -440,16 +485,17 @@ def _pid_is_instant(pid, timeout=None):
 
 
 def stop_daemon():
+    """Frena el daemon de Instant2.
+
+    True si el daemon quedó frenado, False si no había nada nuestro
+    corriendo y None si no se pudo verificar (el probe no respondió): en
+    ese caso no se afirma ni que esté vivo ni que esté apagado.
+    """
     from instant2_app.daemon import clear_pid
     pid = _pid_value()
     if pid is None:
         return False
-    state = daemon_probe_state()
-    if state == DAEMON_UNKNOWN:
-        # El probe no respondió: no se toca el pidfile ni se mata nada.
-        # Un PID puede ser nuestro o no: no se afirma ninguna de las dos.
-        log.warning("no se pudo verificar el PID %d; el daemon no se frena", pid)
-        return False
+    state, reason = _probe_daemon_process(pid)
     if state == DAEMON_STOPPED:
         # PID file rancio (proceso muerto o PID reciclado ajeno): se borra
         # solo si el contenido sigue siendo ese PID muerto (G1+G3). clear_pid
@@ -460,9 +506,19 @@ def stop_daemon():
         except OSError:
             pass
         return False
-    if not _pid_is_instant(pid):
-        log.warning("PID %d reciclado por el SO (no es Instant2); no se mata.", pid)
-        return False
+    if state == DAEMON_UNKNOWN and reason == PROBE_NO_IMAGE:
+        # El SO no respondio el probe de proceso: no hay ninguna evidencia
+        # para matar. El pidfile queda: si el daemon vive, el proximo stop
+        # lo frena. Tampoco se afirma que este PID sea nuestro.
+        log.warning("no se pudo verificar el PID %d; el daemon no se frena", pid)
+        return None
+    if reason == PROBE_NO_CMDLINE:
+        # La imagen del proceso es la nuestra pero no se pudo leer su linea
+        # de comandos. No se puede confirmar, pero el pidfile lo escribio el
+        # daemon y el que pide el stop quiere el daemon frenado: se frena
+        # igual (como antes de T4) y queda dicho en el log.
+        log.warning("no se pudo leer la linea de comandos del PID %d; "
+                    "se frena igual (el pidfile es nuestro)", pid)
     if os.name == "nt":
         try:
             subprocess.Popen(
@@ -1911,7 +1967,16 @@ class PanelLogic(PanelReadingActions):
         def checked(is_ours):
             if self._closed:
                 return
-            if not is_ours:
+            if is_ours is None:
+                # El probe no respondió: no se puede confirmar que el PID
+                # sea nuestro, pero el pidfile lo escribió el daemon y el
+                # que pide el stop quiere el daemon frenado: se frena igual
+                # (como antes de T4) y queda dicho en el log. Negarse a
+                # frenarlo dejaba el daemon viejo vivo con el binario
+                # nuevo encima.
+                log.warning("no se pudo verificar el PID %d; se frena igual "
+                            "(el pidfile es nuestro)", pid)
+            elif not is_ours:
                 log.warning("PID %d reciclado por el SO (no es Instant2); no se mata.", pid)
                 self._daemon_stop_pending = False
                 self.status_detail = "El daemon ya no estaba; actualizando estado…"
@@ -2572,13 +2637,19 @@ class PanelLogic(PanelReadingActions):
             # El probe tiene un piso de presupuesto: con el tiempo que
             # queda para el deadline se quedaría sin respuesta y un daemon
             # vivo parecería "no verificable" en vez de "sigue activo".
-            state = daemon_probe_state(
-                budget=max(remaining, _PROBE_BUDGET_FLOOR))
+            budget = max(remaining, _PROBE_BUDGET_FLOOR)
+            pid = _pid_value()
+            if pid is None:
+                return
+            state, reason = _probe_daemon_process(pid, budget=budget)
             if state == DAEMON_STOPPED:
                 return
-            alive = alive or state == DAEMON_RUNNING
-            # El deadline tiene prioridad sobre el probe caído: si el daemon
-            # se vio vivo y no se frenó, el problema es el daemon, no el
+            # La imagen del proceso es la nuestra: el daemon sigue vivo
+            # aunque no se haya podido leer su linea de comandos.
+            alive = (alive or state == DAEMON_RUNNING
+                     or reason == PROBE_NO_CMDLINE)
+            # El deadline tiene prioridad sobre el probe caido: si el daemon
+            # se vio vivo y no se freno, el problema es el daemon, no el
             # probe.
             if time.monotonic() >= deadline:
                 if alive:
@@ -2588,7 +2659,9 @@ class PanelLogic(PanelReadingActions):
                 raise RuntimeError(
                     "No se pudo verificar si el servicio de dictado está "
                     "activo: cerrá Instant2 por completo y reintentá.")
-            if state == DAEMON_UNKNOWN:
+            if state == DAEMON_UNKNOWN and reason == PROBE_NO_IMAGE:
+                # Ni siquiera sabemos si el proceso existe: no se frena nada
+                # a ciegas y se le dice al usuario qué hacer.
                 raise RuntimeError(
                     "No se pudo verificar si el servicio de dictado está "
                     "activo: cerrá Instant2 por completo y reintentá.")
