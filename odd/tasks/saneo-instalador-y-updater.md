@@ -169,7 +169,7 @@ Checks de la tercera tanda: `cd dictado && python -m unittest discover -s tests`
 
 Desviaciones y limites de esta tanda:
 
-- **Inno Setup no se pudo compilar ni correr**: no hay Inno Setup en esta maquina, asi que el comportamiento del `[Code]` nuevo (el rename del directorio legacy, el borrado del duplicado y el `Check` por archivo) queda verificado por lectura del script y por la guarda estatica, no por una instalacion real.
+- **Inno Setup no se pudo compilar ni correr en esta tanda**: el `[Code]` nuevo (el rename del directorio legacy, el borrado del duplicado y el `Check` por archivo) quedo verificado por lectura del script y por la guarda estatica. Esto lo corrigio la quinta tanda: habia Inno Setup 6.7.3 instalado en la maquina (en `%LOCALAPPDATA%\Programs\Inno Setup 6`, no en `Program Files`) y el script no compilaba.
 - **El `Check` de los modelos decide por nombre de archivo**: Setup llama a la funcion una vez por archivo del bundle y pasa el nombre con `CurrentFilename`; el archivo se busca por nombre en todo el directorio de modelos. Si un archivo con el mismo nombre estuviera en otro subdirectorio, se lo daria por instalado (la app verifica los pesos por hash y los vuelve a bajar si no verifican).
 - **El duplicado del directorio legacy se borra**: cuando `%LOCALAPPDATA%\instant2\models` ya tiene el modelo, la copia del legacy es redundante (la app solo acepta los pesos fijados por hash) y se elimina para que no quede huerfana. Queda escrito en el log de Inno (`/LOG=`).
 - **La nota vencida se descarta a las 24 horas**: una ventana mas corta (una hora) reportaria menos, pero reabrir la app a la manana siguiente tiene que seguir mostrando el fallo de la actualizacion de la noche.
@@ -206,3 +206,35 @@ Desviaciones y limites de esta tanda:
 - **El bundle offline lleva 3 GB de pesos del LLM**: `installer/instant2.iss` copia 4.010.135.264 bytes, de los que ~3 GB son el LLM opcional. Sacarlo del bundle cambia el producto (el instalador deja de ser offline para el LLM) y por lo tanto el release: estaba declarado fuera de alcance en este documento y sigue pendiente de una propuesta aparte.
 - **La lista `CANDIDATES` del runtime ya no cubre el 4B de Bonsai**: `bench_llm_runtime.py` apunta a `Ternary-Bonsai-2-9B-Q2_0.gguf`, pero el `.gguf` descargado en la maquina es el 4B (`Ternary-Bonsai-2-4B-Q2_0.gguf`). El 4B se midio en las corridas V2P (`bonsai2-4b-q2-0-revC`) con otro arnes, no con el runtime de correccion.
 
+
+### Quinta tanda (el script de Inno Setup no compilaba)
+
+El `.iss` que la tercera tanda dejo escrito **no compilaba**. Nadie lo noto
+porque el repo no tiene cobertura de Inno Setup y la maquina del maintainer
+tenia Inno Setup 6.7.3 instalado en `%LOCALAPPDATA%\Programs\Inno Setup 6`
+(ruta por usuario, no `Program Files`, que es donde se lo busca).
+
+- **El script de Inno Setup no compilaba** `fc2f600` `fix(installer): make the Inno Setup script compiles and install the models`: tres fallos en el `[Code]`.
+  1. La firma del `Check` era `(Installer: TInstaller; WizardForm: TWizardForm; Param: String)`. `TInstaller` **no existe** en el dialecto de Inno Setup 6 y el compilador para con `Unknown type 'TInstaller'`. La firma valida es la de sin parametros, como en los ejemplos oficiales de Inno 6.
+  2. Los comentarios de la seccion usaban `;`. En Pascal `;` es separador de sentencia, **no** un comentario, y el parser aborta con `'BEGIN' expected`. Ahora van con `//`.
+  3. El `Check` devolvia "ya esta instalado" **sin invertir**. En Inno Setup, `Check` devuelve `True` para **instalar** el archivo: el instalador saltaba justo los modelos que faltaban y volvia a copiar los que ya estaban. Con 4 GB de bundle, una maquina nueva se quedaba sin modelos y una maquina con los modelos pagaba la copia entera otra vez.
+  La prueba del instalador ahora **compila el script de verdad** cuando hay ISCC, y fija las tres guardas que habrian atrapado esto: la firma sin parametros, la semantica invertida y la prohibicion de comentarios `;` dentro del `[Code]`.
+
+Verificacion (Inno Setup 6.7.3, en la maquina del maintainer):
+
+- `ISCC.exe` sobre `installer/instant2.iss` con `AppVersion`, `SourceDir`, `ModelDir` e `IconFile` de prueba: **compila**, exit 0.
+- Instalacion real de prueba con un `.iss` derivado (los paths de modelos apuntando a un temporal, con un guard que aborta si queda alguna ruta real) y los **cuatro escenarios**:
+
+| escenario | resultado |
+|---|---|
+| sin modelos en ningun lado | se copia el bundle completo |
+| solo los del slug legacy | los legacy se **mueven** (0 bytes copiados) y solo se copia lo que faltaba (kokoro y LLM) |
+| solo los del slug nuevo | no se copia nada |
+| los dos | se borra el duplicado legacy, no se copia nada, no queda huerfano |
+
+- El orden es el correcto: `PrepareToInstall` mueve los modelos **antes** de que Setup evalue el `Check` por archivo, asi que el `Check` ya ve el destino y saltea lo que se acabo de mover.
+
+Limites y accidents de esta tanda:
+
+- **La primera ronda de instalaciones de prueba escribio en la maquina real**: el `DestDir` del `[Files]` de modelos es fijo (`{localappdata}\instant2\models`) y el probe solo aislaba las constantes de Pascal. Se crearon 7 archivos dummy en `%LOCALAPPDATA%\instant2\models` (que antes no existia) y **se borraron a mano**; el estado original quedo restaurado (`%LOCALAPPDATA%\instant\models` intacto, 640 MB, y `%LOCALAPPDATA%\instant2\models` otra vez inexistente). Los probes siguientes llevan un guard que aborta si el `.iss` derivado menciona una ruta real.
+- **El bundle offline sigue llevando 3 GB de pesos del LLM**: con el fix, una actualizacion sobre una maquina con los modelos del slug legacy copia 0 bytes de ASR, pero sigue copiando los ~3,3 GB de `kokoro-onnx` y del `.gguf` del LLM. Sacarlos cambia el producto y el release: sigue declarado fuera de alcance.
