@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -1196,6 +1197,128 @@ class T5ErrorToastLoggingTests(unittest.TestCase):
                 logic._report_pending_update()
         self.assertTrue(any("Actualización aplicada" in line
                             for line in captured.output))
+
+
+class StaleUpdateResultTests(unittest.TestCase):
+    """Las notas de actualización vencen: no se reportan para siempre.
+
+    Una nota que nunca se consumió (el usuario no volvió a abrir la app, o la
+    actualización se abortó) quedaba en el %APPDATA% y se reportaba en cada
+    arranque: un toast rojo "Actualización sin aplicar" días después de una
+    actualización que el usuario nunca pidió.
+    """
+
+    BAT = os.path.normpath(os.path.join(
+        os.path.dirname(__file__), "..", "..", "scripts", "instant2-update.bat"))
+
+    def _isolated(self, directory):
+        return _isolated_update_paths(directory)
+
+    def test_a_stale_helper_result_is_discarded_without_reporting_it(self):
+        """Un resultado rancio no se reporta: se borra y no hay toast."""
+        with tempfile.TemporaryDirectory() as temp:
+            result = os.path.join(temp, "helper-result.json")
+            log_path = os.path.join(temp, "update.log")
+            with open(log_path, "w", encoding="utf-8") as handle:
+                handle.write("ERROR: el daemon nuevo no arranco\n")
+            with open(result, "w", encoding="utf-8") as handle:
+                json.dump({"returncode": 1, "log": log_path,
+                           "ts": time.time() - gui._UPDATE_RESULT_TTL_SECONDS
+                           - 60}, handle)
+            (pending_patch, _log_patch, _installer_patch,
+             _result_patch) = self._isolated(temp)
+            with pending_patch, _log_patch, _installer_patch, _result_patch:
+                self.assertIsNone(gui._pending_update_report())
+            # La nota vencida no queda para el siguiente arranque.
+            self.assertFalse(os.path.exists(result))
+
+    def test_a_fresh_helper_result_is_still_reported(self):
+        """El caso legítimo se sigue reportando: reabrir la app right after."""
+        with tempfile.TemporaryDirectory() as temp:
+            result = os.path.join(temp, "helper-result.json")
+            log_path = os.path.join(temp, "update.log")
+            with open(log_path, "w", encoding="utf-8") as handle:
+                handle.write("ERROR: el daemon nuevo no arranco\n")
+            with open(result, "w", encoding="utf-8") as handle:
+                json.dump({"returncode": 1, "log": log_path,
+                           "ts": time.time()}, handle)
+            (pending_patch, _log_patch, _installer_patch,
+             _result_patch) = self._isolated(temp)
+            with pending_patch, _log_patch, _installer_patch, _result_patch:
+                report = gui._pending_update_report()
+            self.assertIsNotNone(report)
+            title, message, level = report
+            self.assertEqual(title, "Actualización sin aplicar")
+            self.assertEqual(level, "error")
+            self.assertIn("el daemon nuevo no arranco", message)
+
+    def test_a_stale_pending_note_is_discarded(self):
+        """La nota de la actualización en curso también vence."""
+        with tempfile.TemporaryDirectory() as temp:
+            pending = os.path.join(temp, "pending-update.json")
+            with open(pending, "w", encoding="utf-8") as handle:
+                json.dump({"version": "0.2.0", "log": "",
+                           "ts": time.time() - gui._UPDATE_RESULT_TTL_SECONDS
+                           - 60}, handle)
+            (pending_patch, _log_patch, _installer_patch,
+             _result_patch) = self._isolated(temp)
+            with pending_patch, _log_patch, _installer_patch, _result_patch:
+                self.assertIsNone(gui._pending_update_report())
+            self.assertFalse(os.path.exists(pending))
+
+    def test_a_note_without_a_timestamp_uses_the_date_of_the_file(self):
+        """Una nota sin `ts` (de una versión anterior) se fecha con su mtime."""
+        with tempfile.TemporaryDirectory() as temp:
+            result = os.path.join(temp, "helper-result.json")
+            with open(result, "w", encoding="utf-8") as handle:
+                json.dump({"returncode": 1, "log": ""}, handle)
+            old = time.time() - gui._UPDATE_RESULT_TTL_SECONDS - 60
+            os.utime(result, (old, old))
+            (pending_patch, _log_patch, _installer_patch,
+             _result_patch) = self._isolated(temp)
+            with pending_patch, _log_patch, _installer_patch, _result_patch:
+                self.assertIsNone(gui._pending_update_report())
+
+    def test_the_pending_note_carries_its_timestamp(self):
+        with tempfile.TemporaryDirectory() as temp:
+            pending = os.path.join(temp, "pending-update.json")
+            with patch("instant2_app.gui._pending_update_path",
+                       return_value=pending):
+                gui._write_pending_update("0.2.0", os.path.join(temp, "x.log"))
+            with open(pending, encoding="utf-8") as handle:
+                note = json.load(handle)
+            self.assertIn("ts", note)
+            self.assertAlmostEqual(note["ts"], time.time(), delta=60)
+
+    def test_the_installer_result_carries_its_timestamp(self):
+        with tempfile.TemporaryDirectory() as temp:
+            result = os.path.join(temp, "installer-result.json")
+            with patch("instant2_app.gui._installer_result_path",
+                       return_value=result):
+                gui._write_installer_result(5, os.path.join(temp, "x.log"))
+            with open(result, encoding="utf-8") as handle:
+                note = json.load(handle)
+            self.assertIn("ts", note)
+            self.assertAlmostEqual(note["ts"], time.time(), delta=60)
+
+    @unittest.skipUnless(os.name == "nt", "el helper es un .bat de Windows")
+    def test_the_helper_dates_its_own_result(self):
+        """El `.bat` anota la fecha de su resultado: sin ella no vencería."""
+        with tempfile.TemporaryDirectory() as temp:
+            appdata = os.path.join(temp, "appdata")
+            os.makedirs(appdata)
+            env = dict(os.environ)
+            env["APPDATA"] = appdata
+            env["INSTANT2_UPDATE_LOG_REDIRECTED"] = "1"
+            result = subprocess.run(
+                ["cmd", "/c", self.BAT], env=env, capture_output=True,
+                text=True, timeout=120)
+            self.assertEqual(result.returncode, 1)
+            path = os.path.join(appdata, "instant2", "helper-result.json")
+            with open(path, encoding="utf-8") as handle:
+                payload = json.load(handle)
+            self.assertIn("ts", payload)
+            self.assertAlmostEqual(payload["ts"], time.time(), delta=300)
 
 
 class T6WebEngineEnvTests(unittest.TestCase):

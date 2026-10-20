@@ -175,7 +175,19 @@ goto :eof
 REM Anota el codigo de salida para que la app lo lea en el arranque
 REM siguiente (mismo mecanismo que installer-result.json de Inno). El log
 REM va con barras "/" porque JSON no acepta "\".
+REM El "ts" (epoch, en segundos) es la fecha de la nota: sin ella la nota
+REM no vence nunca y el error se repite en cada arranque, dias despues.
+REM Si PowerShell no responde, la nota se escribe sin "ts" y la app usa la
+REM fecha de modificacion del archivo.
 :result
 set "RC=%~1"
->"%RESULT%" echo {"returncode":%RC%,"log":"%LOG:\=/%"}
+set "TS="
+for /f "delims=" %%T in ('powershell -NoProfile -Command "[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()"') do set "TS=%%T"
+set "TSOK="
+echo %TS%|findstr /R /C:"^[0-9][0-9]*$" >nul 2>&1 && set "TSOK=1"
+if defined TSOK (
+  >"%RESULT%" echo {"returncode":%RC%,"log":"%LOG:\=/%","ts":%TS%}
+) else (
+  >"%RESULT%" echo {"returncode":%RC%,"log":"%LOG:\=/%"}
+)
 goto :eof

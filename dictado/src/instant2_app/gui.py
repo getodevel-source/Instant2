@@ -256,9 +256,12 @@ def _write_pending_update(version, log_path, stdout_path=""):
     `stdout_path` es la salida cruda del helper (un archivo aparte del log
     del usuario): sirve para explicar un fallo que ni siquiera llegó al
     log (por ejemplo, que el helper no arrancó).
+
+    `ts` es el momento de la nota: sin fecha la nota no vence nunca y el
+    error se vuelve a reportar en cada arranque.
     """
     payload = {"version": str(version or ""), "log": str(log_path or ""),
-               "stdout": str(stdout_path or "")}
+               "stdout": str(stdout_path or ""), "ts": time.time()}
     try:
         path = _pending_update_path()
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -296,7 +299,8 @@ def _write_installer_result(returncode, log_path, version=""):
     try:
         payload = {"returncode": int(returncode),
                    "log": str(log_path or ""),
-                   "version": str(version or "")}
+                   "version": str(version or ""),
+                   "ts": time.time()}
     except (TypeError, ValueError):
         return
     try:
@@ -345,6 +349,52 @@ def _clear_helper_result():
         os.remove(_helper_result_path())
     except OSError:
         pass
+
+
+# Ventana de validez de las notas de actualización (`pending-update.json`,
+# `installer-result.json` y `helper-result.json`).
+#
+# Un fallo de actualización importa mientras el usuario todavía busca el
+# resultado: reabrir la app del día siguiente tiene que seguir mostrando el
+# error. Pero una nota vieja (una actualización que se abortó y nunca se volvió
+# a abrir) no puede reportarse para siempre: el toast rojo "Actualización sin
+# aplicar" repetido en cada arranque es exactamente el ruido sin explicación
+# que reportó el usuario. Un día es una ventana generosa para el "la abro otra
+# vez" y descarta lo que ya no tiene nada que ver con la sesión actual.
+_UPDATE_RESULT_TTL_SECONDS = 24 * 60 * 60
+
+
+def _note_timestamp(path, data):
+    """Epoch de una nota de actualización: su campo `ts` o la mtime.
+
+    El campo `ts` lo escribe la app; el helper portable lo escribe su `.bat`.
+    Si una nota no trae fecha (un archivo de una versión anterior), se usa la
+    mtime del archivo: es la mejor aproximación disponible.
+    """
+    raw = data.get("ts") if isinstance(data, dict) else None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+
+def _note_is_stale(path, data, now=None):
+    """True si la nota es más vieja que la ventana de validez.
+
+    Una nota sin fecha no se descarta: no se inventa un fallo que no se puede
+    ubicar en el tiempo. Una nota con fecha futura (el reloj del sistema se
+    movió) tampoco: se reporta.
+    """
+    stamp = _note_timestamp(path, data)
+    if stamp is None:
+        return False
+    if now is None:
+        now = time.time()
+    return (now - stamp) > _UPDATE_RESULT_TTL_SECONDS
 
 
 def _log_tail(path, lines=8):
@@ -418,7 +468,7 @@ def _launch_update_helper(script, target, expected, destination, root):
     return stdout_path
 
 
-def _pending_update_report():
+def _pending_update_report(now=None):
     """(título, mensaje, nivel) con el resultado de la actualización anterior.
 
     La app que está corriendo ES la versión instalada: acá se la compara con
@@ -433,21 +483,41 @@ def _pending_update_report():
     El helper portable hace lo mismo (cierra la app para reemplazar el
     binario): su `.bat` anota el código en `helper-result.json` y el
     arranque siguiente lo cuenta con el log del helper al lado.
+
+    Las notas vencen (`_UPDATE_RESULT_TTL_SECONDS`): una nota vieja se
+    descarta en silencio, sin toast. Si no se consumió nunca (el usuario
+    nunca volvió a abrir la app, o la actualización se abortó), el error
+    se repetiría en cada arranque, días después, sin que el usuario haya
+    pedido nada.
     """
-    data = _read_pending_update()
-    result = _read_installer_result()
-    helper = _read_helper_result()
-    if not data and not result and not helper:
+    sources = (
+        ("pending", _pending_update_path(), _read_pending_update()),
+        ("installer", _installer_result_path(), _read_installer_result()),
+        ("helper", _helper_result_path(), _read_helper_result()),
+    )
+    fresh = {}
+    for kind, path, payload in sources:
+        if not payload:
+            continue
+        if _note_is_stale(path, payload, now):
+            log.info("nota de actualización vencida (se descarta): %s", path)
+            continue
+        fresh[kind] = payload
+    # Las notas se consumen, vencidas o no: no se releen nunca más.
+    _clear_pending_update()
+    _clear_installer_result()
+    _clear_helper_result()
+    if not fresh:
         return None
+    data = fresh.get("pending")
+    result = fresh.get("installer")
+    helper = fresh.get("helper")
     expected = str((data or {}).get("version") or "")
     log_path = str((data or {}).get("log")
                    or (result or {}).get("log")
                    or (helper or {}).get("log") or "")
     stdout_path = str((data or {}).get("stdout") or "")
     current = _current_version()
-    _clear_pending_update()
-    _clear_installer_result()
-    _clear_helper_result()
     returncode = None
     source = result if result is not None else helper
     if source is not None:
