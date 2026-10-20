@@ -1199,6 +1199,177 @@ class T5ErrorToastLoggingTests(unittest.TestCase):
                             for line in captured.output))
 
 
+class HelperReopenTests(unittest.TestCase):
+    """El helper reabre el panel en TODOS sus caminos de salida.
+
+    La app se cierra a proposito (el helper tiene que reemplazar el
+    binario), asi que el que la devuelve es el helper: si un camino de fallo
+    se va sin reabrirla, el usuario se queda con la app cerrada y sin forma
+    de saber que paso.
+    """
+
+    BAT = os.path.normpath(os.path.join(
+        os.path.dirname(__file__), "..", "..", "scripts", "instant2-update.bat"))
+
+    def _fake_panel(self, directory):
+        """Un panel falso: anota cada vez que lo abren.
+
+        Es un `.vbs` (lo abre `wscript`, sin ventana de consola) que escribe
+        un archivo por llamada: "setup" es la reapertura del panel, "stop" es
+        el apagado del daemon que hace el helper antes de reemplazar el
+        binario.
+        """
+        panel = os.path.join(directory, "Instant2.exe.vbs")
+        with open(panel, "w", encoding="utf-8") as handle:
+            handle.write(
+                "Set fso = CreateObject(\"Scripting.FileSystemObject\")\r\n"
+                "Dim p\r\n"
+                "p = \"%s\\panel-\" & WScript.Arguments(0) & \".txt\"\r\n"
+                "Set f = fso.CreateTextFile(p, True)\r\n"
+                "f.WriteLine \"abierto\"\r\n"
+                "f.Close\r\n" % directory)
+        return panel
+
+    def _wait_for_reopen(self, directory, timeout=30.0):
+        """Espera a que el panel falso registre la reapertura."""
+        marker = os.path.join(directory, "panel-setup.txt")
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if os.path.isfile(marker):
+                return True
+            time.sleep(0.2)
+        return False
+
+    def _run_helper(self, args, directory, env=None):
+        environment = dict(os.environ)
+        environment["APPDATA"] = os.path.join(directory, "appdata")
+        environment["INSTANT2_UPDATE_LOG_REDIRECTED"] = "1"
+        if env:
+            environment.update(env)
+        return subprocess.run(["cmd", "/c", self.BAT, *args],
+                              env=environment, capture_output=True, text=True,
+                              timeout=120)
+
+    @unittest.skipUnless(os.name == "nt", "el helper es un .bat de Windows")
+    def test_a_hash_failure_reopens_the_panel(self):
+        """El hash que no coincide reabre el panel y sale con codigo 1."""
+        with tempfile.TemporaryDirectory() as temp:
+            os.makedirs(os.path.join(temp, "appdata"))
+            helper_dir = os.path.join(temp, "scripts")
+            os.makedirs(helper_dir)
+            shutil.copyfile(self.BAT, os.path.join(helper_dir,
+                                                    "instant2-update.bat"))
+            panel = self._fake_panel(temp)
+            source = os.path.join(temp, "nuevo.exe")
+            with open(source, "wb") as handle:
+                handle.write(b"binario nuevo")
+            digest = hashlib.sha256(b"binario nuevo").hexdigest()
+            wrong = "0" * 64
+
+            result = self._run_helper(
+                [source, wrong, panel], temp,
+                env={"APPDATA": os.path.join(temp, "appdata")})
+            reopened = self._wait_for_reopen(temp)
+            log = os.path.join(temp, "appdata", "instant2", "update.log")
+            with open(log, encoding="utf-8", errors="replace") as handle:
+                logged = handle.read()
+
+        self.assertEqual(result.returncode, 1)
+        # El panel se reabrio de verdad (el panel falso anotó la llamada).
+        self.assertTrue(reopened)
+        # El log dice que se reabrio y que la actualizacion fallo.
+        self.assertIn("[6/6] Reabriendo ventana...", logged)
+        self.assertIn("ERROR:", logged)
+        # Nunca el falso "Listo".
+        self.assertNotIn("Listo:", logged)
+
+    @unittest.skipUnless(os.name == "nt", "el helper es un .bat de Windows")
+    def test_a_locked_destination_reopens_the_panel(self):
+        """Con el destino tomado tambien se reabre el panel."""
+        with tempfile.TemporaryDirectory() as temp:
+            os.makedirs(os.path.join(temp, "appdata"))
+            helper_dir = os.path.join(temp, "scripts")
+            os.makedirs(helper_dir)
+            shutil.copyfile(self.BAT, os.path.join(helper_dir,
+                                                    "instant2-update.bat"))
+            panel = self._fake_panel(temp)
+            source = os.path.join(temp, "nuevo.exe")
+            with open(source, "wb") as handle:
+                handle.write(b"binario nuevo")
+            digest = hashlib.sha256(b"binario nuevo").hexdigest()
+
+            # El destino tomado: `move` no puede renombrarlo.
+            with open(panel, "rb") as handle:
+                result = self._run_helper(
+                    [source, digest, panel], temp,
+                    env={"APPDATA": os.path.join(temp, "appdata")})
+            reopened = self._wait_for_reopen(temp)
+            log = os.path.join(temp, "appdata", "instant2", "update.log")
+            with open(log, encoding="utf-8", errors="replace") as handle:
+                logged = handle.read()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertTrue(reopened)
+        self.assertIn("[6/6] Reabriendo ventana...", logged)
+        self.assertNotIn("Listo:", logged)
+
+    @unittest.skipUnless(os.name == "nt", "el helper es un .bat de Windows")
+    def test_a_helper_without_arguments_does_not_get_stuck(self):
+        """`start` con un ejecutable que no existe se queda esperando.
+
+        El helper tiene que seguir y salir con codigo 1: si se queda esperando
+        en la reapertura, el usuario no ve nunca el panel.
+        """
+        with tempfile.TemporaryDirectory() as temp:
+            os.makedirs(os.path.join(temp, "appdata"))
+            helper_dir = os.path.join(temp, "scripts")
+            os.makedirs(helper_dir)
+            shutil.copyfile(self.BAT, os.path.join(helper_dir,
+                                                    "instant2-update.bat"))
+            started = time.monotonic()
+            result = self._run_helper([], temp,
+                                      env={"APPDATA": os.path.join(temp,
+                                                                   "appdata")})
+            elapsed = time.monotonic() - started
+            log = os.path.join(temp, "appdata", "instant2", "update.log")
+            with open(log, encoding="utf-8", errors="replace") as handle:
+                logged = handle.read()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertLess(elapsed, 30)
+        self.assertIn("Uso:", logged)
+        self.assertNotIn("Listo:", logged)
+
+    @unittest.skipUnless(os.name == "nt", "el helper es un .bat de Windows")
+    def test_the_helper_result_is_written_before_the_panel_reopens(self):
+        """La app que reabre el helper lee el resultado: tiene que estar.
+
+        El resultado se anota antes de reabrir el panel: si se anotara
+        despues, la app que vuelve abrir leeria un archivo viejo (o nada).
+        """
+        with tempfile.TemporaryDirectory() as temp:
+            os.makedirs(os.path.join(temp, "appdata"))
+            helper_dir = os.path.join(temp, "scripts")
+            os.makedirs(helper_dir)
+            shutil.copyfile(self.BAT, os.path.join(helper_dir,
+                                                    "instant2-update.bat"))
+            panel = self._fake_panel(temp)
+            source = os.path.join(temp, "nuevo.exe")
+            with open(source, "wb") as handle:
+                handle.write(b"binario nuevo")
+            digest = hashlib.sha256(b"binario nuevo").hexdigest()
+            result = self._run_helper(
+                [source, "0" * 64, panel], temp,
+                env={"APPDATA": os.path.join(temp, "appdata")})
+            path = os.path.join(temp, "appdata", "instant2",
+                                "helper-result.json")
+            with open(path, encoding="utf-8") as handle:
+                payload = json.load(handle)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(payload["returncode"], 1)
+
+
 class StaleUpdateResultTests(unittest.TestCase):
     """Las notas de actualización vencen: no se reportan para siempre.
 

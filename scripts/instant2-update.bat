@@ -3,6 +3,10 @@ REM Aplica una version descargada y verificada, desde el repo o el portable.
 REM Uso: instant2-update.bat [nuevo-Instant2.exe] [sha256] [destino-Instant2.exe]
 REM Re-verifica el hash, frena Instant2, respalda el exe, reemplaza, comprueba
 REM que el daemon nuevo levante (si no, restaura) y abre el panel.
+REM El helper reabre el panel en TODOS sus caminos de salida, tambien en los
+REM que fallan: la app se cierra a proposito (hay que reemplazar el binario)
+REM y el que la devuelve es este script. Si no, el usuario se queda con la
+REM app cerrada y sin forma de saber que paso.
 REM En exito borra %DST%.bak (no se acumulan respaldos); en rollback se
 REM conserva para vuelta atras manual.
 REM El log %APPDATA%\instant2\update.log es de este helper: lo escribe con
@@ -22,9 +26,10 @@ if not exist "%LOGDIR%" mkdir "%LOGDIR%" >nul 2>&1
 set "ROOT=%~dp0.."
 set "RC=0"
 
-if "%~1"=="" goto :usage
-if "%~2"=="" goto :usage
-if not exist "%~1" goto :missing
+REM El destino se resuelve antes de validar los argumentos: el helper es el
+REM que reabre el panel en TODOS sus caminos de salida (la app se cierra a
+REM proposito para reemplazar el binario) y necesita saber cual es el
+REM ejecutable, tambien cuando la llamada vino mal formada.
 if not "%~3"=="" goto :explicit_dest
 if exist "%ROOT%\dist\Instant2.exe" set "DST=%ROOT%\dist\Instant2.exe"
 if defined DST goto :dest_ready
@@ -35,6 +40,10 @@ set "DST=%~3"
 :dest_ready
 set "PIDFILE=%APPDATA%\instant2\instant2.pid"
 for %%D in ("%DST%") do set "DSTFULL=%%~fD"
+
+if "%~1"=="" goto :usage
+if "%~2"=="" goto :usage
+if not exist "%~1" goto :missing
 if /I "%~f1"=="%DSTFULL%" goto :selfcopy
 
 set "MSG==== Actualizacion %DATE% %TIME% ==="
@@ -101,7 +110,9 @@ set "MSG=ERROR: el daemon nuevo no arranco; se restaura la version anterior."
 call :say
 del "%DST%" 2>nul
 if exist "%DST%.bak" move /Y "%DST%.bak" "%DST%" >nul
-start "" "%DST%" run 2>nul
+REM `start` con un ejecutable que no existe se queda esperando: solo se
+REM arranca el daemon viejo si el archivo quedo en su lugar.
+if exist "%DST%" start "" "%DST%" run 2>nul
 set "MSG=ERROR: la actualizacion NO se aplico; se revirtio a la version anterior."
 call :say
 set "MSG=Log completo: %LOG%"
@@ -121,10 +132,17 @@ REM vuelve a abrir lee el resultado y reporta el fallo con el log al lado.
 call :result %RC%
 set "MSG=[6/6] Reabriendo ventana..."
 call :say
-start "" "%DST%" setup 2>nul
-REM Sin terminal (CREATE_NO_WINDOW) `timeout` no puede leer la entrada:
-REM el ping espera los mismos segundos y no depende de la consola.
-ping -n 3 127.0.0.1 >nul 2>nul
+REM `start` con un ejecutable que no existe no vuelve: Windows se queda
+REM esperando. Solo se reabre el panel si el archivo esta.
+if exist "%DST%" (
+  start "" "%DST%" setup 2>nul
+  REM Sin terminal (CREATE_NO_WINDOW) `timeout` no puede leer la entrada:
+  REM el ping espera los mismos segundos y no depende de la consola.
+  ping -n 3 127.0.0.1 >nul 2>nul
+) else (
+  set "MSG=ERROR: no se pudo reabrir el panel: no existe %DST%"
+  call :say
+)
 if "%RC%"=="0" (
   set "MSG=Listo: Instant2 actualizado. Log: %LOG%"
 ) else (
@@ -133,37 +151,39 @@ if "%RC%"=="0" (
 call :say
 exit /b %RC%
 
+REM Los caminos de fallo tambien reabren el panel (y salen con codigo 1): la
+REM app se cierra a proposito y el helper es el que la devuelve.
 :usage
 set "MSG=Uso: instant2-update.bat [nuevo-Instant2.exe] [sha256] [destino-Instant2.exe]"
 call :say
-call :result 1
-exit /b 1
+set "RC=1"
+goto :reopen
 :missing
 set "MSG=ERROR: no existe el archivo a instalar: %~1"
 call :say
-call :result 1
-exit /b 1
+set "RC=1"
+goto :reopen
 :selfcopy
 set "MSG=ERROR: el origen es el propio destino; nada que instalar."
 call :say
-call :result 1
-exit /b 1
+set "RC=1"
+goto :reopen
 :hashfail
 set "MSG=ERROR: el SHA256 no coincide; no se instala nada."
 call :say
-call :result 1
-exit /b 1
+set "RC=1"
+goto :reopen
 :locked
 set "MSG=ERROR: el destino sigue en uso; cerra Instant2 y reintenta. Destino: %DST%"
 call :say
-call :result 1
-exit /b 1
+set "RC=1"
+goto :reopen
 :copyfail
 set "MSG=ERROR: no se pudo copiar el archivo nuevo al destino: %DST%"
 call :say
 if exist "%DST%.bak" move /Y "%DST%.bak" "%DST%" >nul
-call :result 1
-exit /b 1
+set "RC=1"
+goto :reopen
 
 REM Escribe el mensaje en el log y, si la salida no esta ya redirigida al
 REM log (la app la redirige), tambien en la consola.
