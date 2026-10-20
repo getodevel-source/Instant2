@@ -903,6 +903,31 @@ class T5ErrorToastLoggingTests(unittest.TestCase):
             logic.toast("Actualización lista", "v0.2.0 se descargó")
             logic.toast("Aviso", "cuidado", level="warn")
 
+    def test_the_two_lines_of_an_error_toast_have_the_same_prefix(self):
+        """Un solo grep tiene que encontrar las dos lineas del error.
+
+        `_toast_error` deja el traceback y `toast()` deja el mensaje que ve
+        el usuario: con prefijos distintos no se podian correlacionar.
+        """
+        logic, _emitted = _logic()
+        with self.assertLogs("instant2", level="ERROR") as captured:
+            gui._toast_error(logic, "Actualización sin aplicar",
+                             RuntimeError("se abortó el instalador"))
+        self.assertGreaterEqual(len(captured.output), 2)
+        for line in captured.output:
+            self.assertIn("toast de error: Actualización sin aplicar:", line)
+
+    def test_a_successful_update_is_also_logged(self):
+        """El actualizador tiene que ser observable cuando sale bien."""
+        logic, _emitted = _logic()
+        with patch("instant2_app.gui._pending_update_report",
+                   return_value=("Actualización aplicada",
+                                 "Instant2 quedó en v0.2.0.", "info")):
+            with self.assertLogs("instant2", level="INFO") as captured:
+                logic._report_pending_update()
+        self.assertTrue(any("Actualización aplicada" in line
+                            for line in captured.output))
+
 
 class T6WebEngineEnvTests(unittest.TestCase):
     """T6: el hijo no hereda el `_MEIPASS` del padre."""

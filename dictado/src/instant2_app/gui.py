@@ -158,7 +158,9 @@ def _toast_error(logic, title, exc):
     cause, action = _friendly_error(exc)
     raw = str(exc) if exc is not None else ""
     detail = _public_error_detail(type(exc).__name__, raw)
-    log.warning("%s: %s", title, detail, exc_info=True)
+    # Mismo prefijo que `toast()`: las dos lineas se encuentran con un solo
+    # grep y el traceback queda pegado al error que ve el usuario.
+    log.error("toast de error: %s: %s", title, detail, exc_info=True)
     logic.toast(title, f"{cause}\n{action}\nDetalle: {detail}", level="error")
 
 
@@ -2542,6 +2544,9 @@ class PanelLogic(PanelReadingActions):
         if report is None:
             return
         title, message, level = report
+        # Tambien el exito queda escrito: el actualizador tiene que ser
+        # observable tambien cuando sale bien (no solo cuando falla).
+        log.info("actualización: %s: %s", title, message)
         self.toast(title, message, level=level)
 
     def _install_ready(self, target, expected):
