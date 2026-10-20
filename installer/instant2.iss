@@ -89,7 +89,7 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 ; Los modelos que el usuario ya tiene NO se vuelven a copiar: el Check
 ; saltea cada archivo que ya esta en el destino (y PrepareToInstall deja
 ; ahi los del slug legacy "instant", moviendolos, no copiandolos).
-Source: "{#ModelDir}\*"; DestDir: "{localappdata}\instant2\models"; Flags: ignoreversion recursesubdirs createallsubdirs uninsneveruninstall; Check: ModelAlreadyInstalled
+Source: "{#ModelDir}\*"; DestDir: "{localappdata}\instant2\models"; Flags: ignoreversion recursesubdirs createallsubdirs uninsneveruninstall; Check: ShouldInstallModel
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
@@ -121,13 +121,17 @@ Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\stop-bundled-runtime.ps1"" ""{app}\llm-runtime"""; RunOnceId: "StopBundledLlamaServer"; Flags: runhidden
 
 [Code]
-; El bundle de modelos son 4 GB. Los que el usuario ya tiene no se vuelven
-; a copiar:
-;   - PrepareToInstall mueve los del directorio legacy (el slug viejo,
-;     "%LOCALAPPDATA%\instant\models") al de Instant2. Es un rename: no se
-;     copia ni un byte y la copia vieja no queda huerfana.
-;   - El Check de la entrada de modelos saltea cada archivo que ya esta en
-;     el destino, asi que una copia incompleta se completa sin recopiarla.
+// El bundle de modelos son 4 GB. Los que el usuario ya tiene no se vuelven
+// a copiar:
+//   - PrepareToInstall mueve los del directorio legacy (el slug viejo,
+//     "%LOCALAPPDATA%\instant\models") al de Instant2. Es un rename: no se
+//     copia ni un byte y la copia vieja no queda huerfana.
+//   - El Check de la entrada de modelos saltea cada archivo que ya esta en
+//     el destino, asi que una copia incompleta se completa sin recopiarla.
+//
+// OJO: en el [Code] el ";" no es un comentario (en Pascal es separador de
+// sentencia) y rompe el parseo con "'BEGIN' expected". Los comentarios de
+// esta seccion van con "//"; los ";" de las secciones de datos si valen.
 
 const
   ModelsDir = '{localappdata}\instant2\models';
@@ -173,14 +177,19 @@ begin
   end;
 end;
 
-{ Check de la entrada de modelos: si el archivo ya esta en el directorio de
-  datos, no se copia otra vez (los archivos del bundle pesan hasta 3 GB).
-  Setup llama a esta funcion una vez por archivo del bundle (no por
-  entrada) y dice cual es con CurrentFilename. }
-function ModelAlreadyInstalled(Installer: TInstaller; WizardForm: TWizardForm; Param: String): Boolean;
+// Check de la entrada de modelos: el archivo NO se copia si ya esta en el
+// directorio de datos (los del bundle pesan hasta 3 GB). Setup llama a esta
+// funcion una vez por archivo del bundle (no por entrada) y dice cual es con
+// CurrentFileName.
+//
+// OJO con la semantica: Check devuelve True para INSTALAR el archivo. Asi
+// que "ya esta instalado" se tiene que devolver invertido. La firma sin
+// parametros es la que acepta Inno Setup 6: la de (TInstaller, TWizardForm,
+// String) no compila, porque TInstaller no existe en ese dialecto.
+function ShouldInstallModel(): Boolean;
 begin
-  Result := FindModelFile(ExpandConstant(ModelsDir),
-    ExtractFileName(CurrentFilename));
+  Result := not FindModelFile(ExpandConstant(ModelsDir),
+    ExtractFileName(CurrentFileName));
 end;
 
 { Reutiliza los modelos del directorio legacy. Si el directorio nuevo no
