@@ -317,7 +317,13 @@ def _run_probe(args, timeout):
 
 
 def _split_probe_budget(budget):
-    """Reparte los segundos disponibles entre tasklist y PowerShell."""
+    """Reparte los segundos disponibles entre tasklist y PowerShell.
+
+    Es el UNICO reparto: el timeout que sale de acá se pasa tal cual al
+    probe de PowerShell. Repartirlo otra vez le dejaba 6 s en vez de 10 y
+    `Get-CimInstance Win32_Process` con el WMI frio se pasa de 6 s con
+    facilidad (el probe caia en 'desconocido' y frenaba la actualizacion).
+    """
     if budget is None:
         return _PROBE_TASKLIST_TIMEOUT, _PROBE_POWERSHELL_TIMEOUT
     budget = max(float(budget), 0.1)
@@ -360,7 +366,7 @@ def daemon_probe_state(budget=None):
             if len(columns) > 1 and columns[1] == str(pid):
                 if columns[0].lower() not in accepted_images:
                     return DAEMON_STOPPED
-                ours = _pid_is_instant(pid, budget=ps_budget)
+                ours = _pid_is_instant(pid, timeout=ps_budget)
                 if ours is None:
                     return DAEMON_UNKNOWN
                 return DAEMON_RUNNING if ours else DAEMON_STOPPED
@@ -392,19 +398,23 @@ def _display_input_name(name):
     return label
 
 
-def _pid_is_instant(pid, budget=None):
+def _pid_is_instant(pid, timeout=None):
     """El PID file puede quedar rancio y el SO reciclar el número: antes de
     matar se confirma que la línea de comando sea de Instant2.
 
     True si es Instant2, False si es de otro proceso y None si el probe no
     pudo responder: un probe caído no es "es Instant2".
+
+    `timeout` son los segundos del probe de PowerShell (no es un
+    presupuesto total: no se reparte otra vez acá).
     """
     if os.name == "nt":
-        _tasklist_budget, ps_budget = _split_probe_budget(budget)
+        if timeout is None:
+            timeout = _PROBE_POWERSHELL_TIMEOUT
         responded, code, command = _run_probe(
             ["powershell", "-NoProfile", "-Command",
              f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine"],
-            ps_budget)
+            timeout)
         if not responded or code != 0:
             return None
         command = (command or "").casefold()

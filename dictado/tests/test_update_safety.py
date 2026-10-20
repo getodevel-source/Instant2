@@ -537,6 +537,32 @@ class T4DaemonProbeTests(unittest.TestCase):
         self.assertGreater(tasklist, 0)
         self.assertGreater(powershell, 0)
 
+    def test_the_powershell_probe_gets_its_whole_timeout(self):
+        """El probe de PowerShell no puede perder tiempo en un segundo reparto.
+
+        `Get-CimInstance Win32_Process` con el WMI frio se pasa de 6 s con
+        facilidad: si el probe se queda corto, el estado cae en
+        'desconocido' y la actualizacion se frena sin motivo.
+        """
+        listing = '"Instant2.exe","4242","Consola","1","1","100 K"\n'
+        with patch("instant2_app.gui.os.name", "nt"), \
+                patch("instant2_app.gui._pid_value", return_value=4242), \
+                patch("instant2_app.gui._run_probe",
+                      return_value=(True, 0, listing)) as probe:
+            gui.daemon_probe_state()
+        timeouts = [call.args[1] for call in probe.call_args_list]
+        self.assertEqual(timeouts[0], gui._PROBE_TASKLIST_TIMEOUT)
+        # El ultimo probe es el de PowerShell: recibe su timeout entero.
+        self.assertEqual(timeouts[-1], gui._PROBE_POWERSHELL_TIMEOUT)
+
+    def test_the_pid_probe_uses_the_timeout_it_receives(self):
+        """El timeout que recibe el probe se usa tal cual: no se reparte."""
+        with patch("instant2_app.gui.os.name", "nt"), \
+                patch("instant2_app.gui._run_probe",
+                      return_value=(True, 0, "")) as probe:
+            gui._pid_is_instant(4242, timeout=7.5)
+        self.assertEqual(probe.call_args.args[1], 7.5)
+
     def test_installer_wait_distinguishes_a_live_daemon_from_a_dead_probe(self):
         logic, emitted = _logic()
         logic._pending_update = _release()
