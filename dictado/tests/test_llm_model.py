@@ -293,6 +293,26 @@ class PanelLLMModelStateTests(unittest.TestCase):
         self.assertTrue(state["canceling"])
         self.assertTrue(logic._llm_model_cancel_event.is_set())
 
+    def test_the_downloaded_model_is_wired_when_the_user_chosen_none(self):
+        logic, _emitted = make_logic(self.data_dir)
+        with patch("instant2_app.gui.config.save") as saved:
+            logic._use_downloaded_llm_model()
+        self.assertEqual(
+            logic.cfg["llm_model_path"],
+            os.path.join(self.data_dir, "llm", "Qwen_Qwen3.5-4B-Q4_K_M.gguf"))
+        self.assertTrue(saved.called)
+
+    def test_a_model_chosen_by_hand_is_not_replaced(self):
+        logic, _emitted = make_logic(self.data_dir)
+        chosen = os.path.join(self.data_dir, "otro.gguf")
+        with open(chosen, "wb") as handle:
+            handle.write(b"x")
+        logic.cfg["llm_model_path"] = chosen
+        with patch("instant2_app.gui.config.save") as saved:
+            logic._use_downloaded_llm_model()
+        self.assertEqual(logic.cfg["llm_model_path"], chosen)
+        self.assertFalse(saved.called)
+
 
 if __name__ == "__main__":
     unittest.main()

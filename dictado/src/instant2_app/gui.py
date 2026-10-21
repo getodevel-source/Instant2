@@ -2640,7 +2640,11 @@ class PanelLogic(PanelReadingActions):
         self.push_state()
 
     def _use_downloaded_llm_model(self):
-        """Apunta la config al modelo descargado si el usuario no eligió otro."""
+        """Apunta la config al modelo descargado si el usuario no eligió otro.
+
+        Si la persona ya había elegido un GGUF (o el que había en la config
+        sigue existiendo), no se toca nada: su elección manda.
+        """
         from instant2_app import llm_model
 
         path = llm_model.model_path(self.data_dir)
@@ -2649,13 +2653,10 @@ class PanelLogic(PanelReadingActions):
             return
         self.cfg["llm_model_path"] = path
         try:
-            stored = config.load()
-            stored["llm_model_path"] = path
-            config.save(stored)
-        except OSError:
+            self.save_config(False)
+        except Exception:  # noqa: BLE001  (un fallo al guardar no rompe el panel)
             log.warning("no pude guardar la ruta del modelo de lenguaje",
                         exc_info=True)
-        self.sync_llm_runtime()
 
     # ----------------------------------------------------------- diagnóstico
 
