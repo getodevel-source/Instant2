@@ -39,6 +39,14 @@ class TestIsolationTests(unittest.TestCase):
             with patch.dict(os.environ, {"INSTANT2_DATA": directory}):
                 self.assertEqual(paths.resolve_data_dir(), directory)
 
+    def test_the_migration_step_does_nothing_with_the_override(self):
+        """Con `INSTANT2_DATA` a mano no se toca el directorio anterior."""
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(os.environ, {"INSTANT2_DATA": directory}):
+                result = paths.migrate_legacy_models_once()
+        self.assertTrue(result.get("skipped"))
+        self.assertEqual(result.get("reason"), "override")
+
 
 if __name__ == "__main__":
     unittest.main()

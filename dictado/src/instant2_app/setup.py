@@ -113,6 +113,10 @@ def _real_inputs():
 def cmd_setup(argv=None):
     o = _parse_args(argv)
     print("== instant2 setup ==")
+    # La migración de los modelos del producto anterior es un paso del
+    # arranque: acá se pide una sola vez.
+    from instant2_app.paths import migrate_legacy_models_once
+    migrate_legacy_models_once()
     cfg = config.load()
     rc = 0
     from instant2_app import deps

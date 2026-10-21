@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import sys
+import time
 
 from instant2_app.identity import APP_SLUG
 
@@ -44,6 +45,11 @@ CONFIG_DIR_ENV = "INSTANT2_CONFIG_DIR"
 # Sufijo de la copia anterior que se conserva cuando el destino no está
 # verificado (una descarga parcial, por ejemplo).
 LEGACY_SUFFIX = ".legacy"
+# Marcas de la migración: la deja constancia de que ya se hizo y el lock evita
+# que dos procesos a la vez se pisen.
+MIGRATION_MARKER = ".legacy-models-migrated"
+MIGRATION_LOCK = ".legacy-models-migrated.lock"
+MIGRATION_LOCK_STALE_SECONDS = 900
 
 
 def config_dir():
@@ -283,21 +289,116 @@ def migrate_legacy_models(data_dir=None, legacy_dir=None):
     return result
 
 
+def _acquire_migration_lock(path):
+    """Toma el lock de la migración; False si otro proceso lo tiene."""
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        # Un lock de un proceso muerto no bloquea la migración para siempre.
+        try:
+            age = time.time() - os.path.getmtime(path)
+        except OSError:
+            age = 0.0
+        if age < MIGRATION_LOCK_STALE_SECONDS:
+            return False
+        try:
+            os.remove(path)
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except OSError:
+            return False
+    except OSError:
+        return False
+    try:
+        os.write(fd, str(os.getpid()).encode("ascii"))
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+    return True
+
+
+def _release_migration_lock(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _write_migration_marker(path):
+    """Deja la marca de "migración hecha" (escritura atómica)."""
+    try:
+        ensure_private_dir(os.path.dirname(path) or ".")
+        temp = f"{path}.tmp-{os.getpid()}"
+        with open(temp, "w", encoding="utf-8") as handle:
+            handle.write("1\n")
+        os.replace(temp, path)
+        return True
+    except OSError:
+        log.warning("no pude dejar la marca de la migración de modelos",
+                    exc_info=True)
+        return False
+
+
+def migrate_legacy_models_once(data_dir=None, legacy_dir=None):
+    """Migra los modelos del producto anterior una sola vez por máquina.
+
+    Es el paso explícito del arranque (panel, daemon y asistente de setup):
+    `resolve_data_dir()` es solo una consulta y no mueve ni borra nada.
+
+    - Con `INSTANT2_DATA` configurado a mano el override gana: no se toca nada.
+    - La marca (`.legacy-models-migrated`) deja constancia de que ya se hizo:
+      el paso es idempotente y no se repite en cada arranque.
+    - Si el panel y el daemon arrancan a la vez, el lock evita que se pisen.
+    - Si la migración falla, no se deja la marca: el próximo arranque reintenta.
+
+    Nunca propaga un error: una migración fallida no puede impedir que la app
+    arranque.
+    """
+    override = os.environ.get("INSTANT2_DATA")
+    if override and override.strip():
+        return {"skipped": True, "reason": "override"}
+    current = os.path.abspath(data_dir or user_data_dir())
+    legacy = os.path.abspath(legacy_dir or legacy_user_data_dir())
+    if os.path.normcase(legacy) == os.path.normcase(current):
+        return {"skipped": True, "reason": "same-dir"}
+    if not os.path.isdir(legacy):
+        return {"skipped": True, "reason": "no-legacy"}
+    marker = os.path.join(current, MIGRATION_MARKER)
+    if os.path.isfile(marker):
+        return {"skipped": True, "reason": "already-done"}
+    # El lock vive en el directorio padre: crear el destino antes de la
+    # migración impediría el renombrado completo (que no copia un byte).
+    parent = os.path.dirname(current) or "."
+    try:
+        ensure_private_dir(parent)
+    except OSError:
+        return {"skipped": True, "reason": "no-dest"}
+    lock = os.path.join(parent, MIGRATION_LOCK)
+    if not _acquire_migration_lock(lock):
+        return {"skipped": True, "reason": "locked"}
+    try:
+        result = migrate_legacy_models(current, legacy)
+        if not result.get("failed"):
+            _write_migration_marker(marker)
+        return result
+    finally:
+        _release_migration_lock(lock)
+
+
 def resolve_data_dir():
     """Use the explicit override or Instant2's own per-user model directory.
 
     Never infer the location from cwd or a sibling checkout: either can belong
     to the original Instant installation.
 
-    Sin override, se reaprovechan los modelos del producto anterior: el
-    instalador ya no los copia, así que la app los mueve una sola vez.
+    Es una función de consulta: no mueve ni borra nada. La reutilización de
+    los modelos del producto anterior es un paso explícito del arranque
+    (`migrate_legacy_models_once`).
     """
     env = os.environ.get("INSTANT2_DATA")
     if env and env.strip():
         return os.path.expanduser(os.path.expandvars(env.strip()))
-    data_dir = user_data_dir()
-    migrate_legacy_models(data_dir)
-    return data_dir
+    return user_data_dir()
 
 
 def model_paths(data_dir=None):

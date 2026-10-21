@@ -181,7 +181,6 @@ def main(argv=None):
     if args.cmd == "check":
         from instant2_app.daemon import cmd_check
         return cmd_check(cfg)
-
     if args.cmd == "update":
         from instant2_app import update as update_module
         return update_module.cmd_update(
@@ -190,6 +189,10 @@ def main(argv=None):
             allow_source_apply=bool(getattr(args, "allow_source_apply", False)))
     from instant2_app.daemon_lifecycle import (
         acquire_daemon_mutex, release_daemon_mutex)
+    # El daemon es parte del arranque: le toca la migración de los modelos del
+    # producto anterior (una sola vez por máquina).
+    from instant2_app.paths import migrate_legacy_models_once
+    migrate_legacy_models_once()
     mutex = acquire_daemon_mutex()
     if mutex is None:
         logging.getLogger("instant2").info(

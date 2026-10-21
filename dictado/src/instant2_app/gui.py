@@ -3536,6 +3536,10 @@ class _WebPanel:
 
 def run_gui(page="home", autostart_override=None, start_daemon_on_open=False):
     mutex = None
+    # La migración de los modelos del producto anterior es un paso del
+    # arranque, no una efecto secundario de "donde están mis datos".
+    from instant2_app.paths import migrate_legacy_models_once
+    migrate_legacy_models_once()
     try:
         if sys.platform == "win32":
             # Icono propio en la barra de tareas: sin AppUserModelID explícito,

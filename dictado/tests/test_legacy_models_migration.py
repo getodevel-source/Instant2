@@ -118,6 +118,53 @@ class LegacyMigrationTests(unittest.TestCase):
             os.path.join(self.legacy, "parakeet-v3-int8", "encoder.int8.onnx")))
         self.assertFalse(os.path.exists(self.current))
 
+    def test_resolve_data_dir_does_not_move_anything(self):
+        """`resolve_data_dir()` es una consulta: no toca el disco."""
+        _make_tree(self.legacy, "parakeet-v3-int8", "encoder.int8.onnx")
+        with patch.object(paths, "user_data_dir", return_value=self.current), \
+                patch.object(paths, "legacy_user_data_dir", return_value=self.legacy):
+            got = paths.resolve_data_dir()
+        self.assertEqual(os.path.realpath(got), os.path.realpath(self.current))
+        # Nada se movió: la migración es un paso aparte.
+        self.assertTrue(os.path.isfile(
+            os.path.join(self.legacy, "parakeet-v3-int8", "encoder.int8.onnx")))
+        self.assertFalse(os.path.exists(self.current))
+
+    def test_the_explicit_step_moves_the_legacy_directory(self):
+        _make_tree(self.legacy, "parakeet-v3-int8", "encoder.int8.onnx")
+        with patch.object(paths, "user_data_dir", return_value=self.current), \
+                patch.object(paths, "legacy_user_data_dir", return_value=self.legacy):
+            result = paths.migrate_legacy_models_once()
+        self.assertTrue(result.get("moved"))
+        self.assertFalse(os.path.exists(self.legacy))
+        self.assertTrue(os.path.isfile(
+            os.path.join(self.current, "parakeet-v3-int8", "encoder.int8.onnx")))
+
+    def test_the_explicit_step_happens_only_once(self):
+        _make_tree(self.legacy, "parakeet-v3-int8", "encoder.int8.onnx")
+        with patch.object(paths, "user_data_dir", return_value=self.current), \
+                patch.object(paths, "legacy_user_data_dir", return_value=self.legacy):
+            paths.migrate_legacy_models_once()
+            marker = os.path.join(self.current, paths.MIGRATION_MARKER)
+            self.assertTrue(os.path.isfile(marker))
+            # La marca queda: la migración no se repite en cada arranque.
+            _make_tree(self.legacy, "parakeet-v3-int8", "encoder.int8.onnx")
+            again = paths.migrate_legacy_models_once()
+        self.assertTrue(again.get("skipped"))
+        self.assertEqual(again.get("reason"), "already-done")
+
+    def test_the_explicit_step_respects_the_user_override(self):
+        _make_tree(self.legacy, "parakeet-v3-int8", "encoder.int8.onnx")
+        override = os.path.join(self.root, "otro")
+        os.environ["INSTANT2_DATA"] = override
+        with patch.object(paths, "user_data_dir", return_value=self.current), \
+                patch.object(paths, "legacy_user_data_dir", return_value=self.legacy):
+            result = paths.migrate_legacy_models_once()
+        self.assertTrue(result.get("skipped"))
+        self.assertEqual(result.get("reason"), "override")
+        self.assertTrue(os.path.isfile(
+            os.path.join(self.legacy, "parakeet-v3-int8", "encoder.int8.onnx")))
+
     def test_a_partial_download_does_not_destroy_the_legacy_copy(self):
         """El destino con una descarga parcial no habilita el borrado."""
         # El destino tiene el `llm/` a medio descargar...
@@ -157,6 +204,23 @@ class LegacyMigrationTests(unittest.TestCase):
         self.assertEqual(result["removed_duplicates"], 1)
         self.assertEqual(result["kept_aside"], 0)
         self.assertFalse(os.path.exists(self.legacy))
+
+    def test_two_migrations_at_the_same_time_keep_the_models(self):
+        """El lock evita que dos procesos se pisen: nunca se pierde un archivo."""
+        _make_tree(self.legacy, "silero-vad", "silero_vad.onnx")
+        os.makedirs(self.current, exist_ok=True)
+        _write(self.current, b"parcial", "llm", "Qwen.partial")
+        with patch.object(paths, "user_data_dir", return_value=self.current), \
+                patch.object(paths, "legacy_user_data_dir", return_value=self.legacy):
+            first = paths.migrate_legacy_models_once()
+            # El segundo proceso ve la marca y no hace nada.
+            second = paths.migrate_legacy_models_once()
+        self.assertTrue(first.get("skipped") or first.get("merged"))
+        self.assertTrue(second.get("skipped"))
+        self.assertTrue(os.path.isfile(
+            os.path.join(self.current, "silero-vad", "silero_vad.onnx")))
+        self.assertTrue(os.path.isfile(
+            os.path.join(self.current, "llm", "Qwen.partial")))
 
     def test_a_failure_does_not_propagate(self):
         _make_tree(self.legacy, "parakeet-v3-int8", "encoder.int8.onnx")
