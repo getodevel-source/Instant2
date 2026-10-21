@@ -1,10 +1,12 @@
-; Instant2 Windows installer: per-user, no elevation, no model weights.
-; The build pipeline passes AppVersion, SourceDir and IconFile.
-; The installer ships the app and the llama.cpp runtime; the app downloads
-; the voice components (ASR, TTS and the optional local LLM) itself.
-; GitHub releases contain Instant2-Setup.exe and, if the payload ever needs
-; it, every numbered .bin volume. Keep the .exe, all .bin files and their
-; .sha256 sidecars together.
+; Instant2 Windows installer: per-user, no elevation.
+; The build pipeline passes AppVersion, SourceDir and IconFile. The full
+; build also passes ModelDir: the voice models (ASR + TTS, ~951 MB) travel
+; inside the setup so a fresh install dictates and reads offline from the
+; first minute. The optional 3 GB local LLM is never bundled: the app
+; downloads it on demand from Settings.
+; Every build is a single file (DiskSpanning=no). A split installer makes
+; Inno ask for "the disk" with Instant2-Setup-1.bin, and whoever downloaded
+; only the .exe cannot install.
 ; Uninstall deliberately preserves %APPDATA%\instant2 and
 ; %LOCALAPPDATA%\instant2, including downloaded models and preferences.
 
@@ -16,6 +18,12 @@
 #endif
 #ifndef IconFile
   #define IconFile "..\dictado\build\instant2.ico"
+#endif
+; Sin OutputBase, el instalador completo. El release tambien publica
+; Instant2-Update.exe (la app sola, sin ModelDir) para que el actualizador
+; in-app no vuelva a bajar los modelos que ya estan en el disco.
+#ifndef OutputBase
+  #define OutputBase "Instant2-Setup"
 #endif
 
 #define AppName "Instant2"
@@ -54,16 +62,18 @@ DisableReadyPage=yes
 ; Sin admin: todo vive bajo %LOCALAPPDATA% y el registro del usuario.
 PrivilegesRequired=lowest
 OutputDir=..\dist
-OutputBaseFilename=Instant2-Setup
+OutputBaseFilename={#OutputBase}
 SetupIconFile={#IconFile}
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
 Compression=lzma2/fast
 SolidCompression=no
-; GitHub limits each release asset to less than 2 GiB. Inno creates the setup
-; executable and sequential .bin volumes; keep every volume below that limit.
-DiskSpanning=yes
-DiskSliceSize=1900000000
+; UN SOLO ARCHIVO, siempre. Con DiskSpanning=yes Inno parte el instalador en
+; Setup.exe (el programa) + Setup-1.bin (los datos): quien baja solo el .exe
+; se queda con un instalador que pide "el disco" con el .bin y no instala
+; nada. El payload completo (app + voz) pesa menos de 2 GB, asi que entra en
+; un solo archivo.
+DiskSpanning=no
 WizardStyle=modern
 CloseApplications=force
 RestartApplications=no
@@ -82,9 +92,14 @@ Name: "desktopicon"; Description: "Crear un acceso directo en el escritorio"; Gr
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; El instalador NO lleva pesos de modelo: la app descarga sus componentes
-; de voz (ASR, TTS y el LLM local opcional) al directorio de datos del
-; usuario, que sobrevive a las actualizaciones y a la desinstalacion.
+#ifdef ModelDir
+; Los pesos de voz (reconocimiento + lectura en voz alta) van al directorio de
+; datos del usuario, que sobrevive a las actualizaciones y a la desinstalacion.
+; El LLM de 3 GB no se incluye nunca. `ShouldInstallModel` saltea lo que ya
+; esta en el destino (o en el directorio legacy, que la app mueve al arrancar):
+; asi una actualizacion no recopia 951 MB de modelos.
+Source: "{#ModelDir}\*"; DestDir: "{localappdata}\instant2\models"; Flags: ignoreversion recursesubdirs createallsubdirs uninsneveruninstall; Check: ShouldInstallModel
+#endif
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
@@ -116,16 +131,80 @@ Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\stop-bundled-runtime.ps1"" ""{app}\llm-runtime"""; RunOnceId: "StopBundledLlamaServer"; Flags: runhidden
 
 [Code]
-// El instalador no lleva pesos de modelo: la app descarga sus componentes de
-// voz al directorio de datos del usuario. Lo unico que hay que hacer antes de
-// copiar los archivos es liberar los binarios que tienen bloqueados los
-// archivos de {app}:
+// El instalador copia los pesos de voz al directorio de datos del usuario.
+// Lo unico que hay que hacer antes de copiar es liberar los binarios que
+// tienen bloqueados los archivos de {app}:
 //   - El daemon de Instant2 se frena con el propio ejecutable ("stop").
 //   - El runtime de llama.cpp incluido se frena con el script que lo acompana.
 //
 // OJO: en el [Code] el ";" no es un comentario (en Pascal es separador de
 // sentencia) y rompe el parseo con "'BEGIN' expected". Los comentarios de
 // esta seccion van con "//"; los ";" de las secciones de datos si valen.
+
+#ifdef ModelDir
+const
+  ModelsDir = '{localappdata}\instant2\models';
+  LegacyModelsDir = '{localappdata}\instant\models';
+
+{ ¿Hay un archivo con ese nombre en el directorio de modelos o en alguno de
+  sus subdirectorios? }
+function FindModelFile(Directory, Name: String): Boolean;
+var
+  Found: TFindRec;
+  SubDir: String;
+begin
+  Result := False;
+  if Name = '' then
+    Exit;
+  if FileExists(Directory + '\' + Name) then
+  begin
+    Result := True;
+    Exit;
+  end;
+  if not DirExists(Directory) then
+    Exit;
+  if FindFirst(Directory + '\*', Found) then
+  begin
+    try
+      repeat
+        if (Found.Name <> '.') and (Found.Name <> '..') then
+        begin
+          SubDir := Directory + '\' + Found.Name;
+          if DirExists(SubDir) then
+          begin
+            if FindModelFile(SubDir, Name) then
+            begin
+              Result := True;
+              Exit;
+            end;
+          end;
+        end;
+      until not FindNext(Found);
+    finally
+      FindClose(Found);
+    end;
+  end;
+end;
+
+// Check de la entrada de modelos: devuelve True para INSTALAR el archivo, asi
+// que "ya esta" se devuelve invertido.
+//
+// Se saltea el archivo que ya esta en el directorio de datos actual O en el
+// legacy ("%LOCALAPPDATA%\instant\models"): la app mueve los del slug viejo al
+// arrancar (rename, sin recopiar) y copiarlos aca dejaria 951 MB duplicados.
+// El instalador no borra ni mueve nada del directorio legacy: de eso se ocupa
+// la app, que verifica el destino antes de borrar.
+//
+// La firma sin parametros es la que acepta Inno Setup 6: la de (TInstaller,
+// TWizardForm, String) no compila, porque TInstaller no existe en este dialecto.
+function ShouldInstallModel(): Boolean;
+begin
+  Result := not (FindModelFile(ExpandConstant(ModelsDir),
+    ExtractFileName(CurrentFileName)) or
+    FindModelFile(ExpandConstant(LegacyModelsDir),
+    ExtractFileName(CurrentFileName)));
+end;
+#endif
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var

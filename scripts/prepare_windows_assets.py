@@ -1,19 +1,27 @@
-r"""Stage the Windows app-side assets that the installer ships.
+r"""Stage the Windows installer payload.
 
-The Windows installer carries the app and the llama.cpp runtime; the voice
-components (ASR, TTS and the optional local LLM) are downloaded by the app
-itself, so they are not staged here and the installer stays small. This
-script prepares what the installer *does* carry: the llama.cpp runtime in
-`{app}\llm-runtime`, the third-party notices, the helper that stops the
-bundled runtime and the license texts.
+The installer is a single file and carries two things: the app (the
+PyInstaller directory the build already produced) and, for the full build,
+the voice models. The voice models are what make a fresh install dictate and
+read aloud offline from the first minute; they are staged into a separate
+directory that Inno Setup copies to `%LOCALAPPDATA%\instant2\models`.
 
-Model weights are never checked into this repository. The llama.cpp archive
-is downloaded from its pinned release and verified by size and SHA-256.
+The optional local LLM (~3 GB) is never staged: the app downloads it on
+demand from Settings. That is what keeps the installer at ~1.1 GB instead of
+4 GB, and the in-app updater at ~204 MB (the app-only build, without
+`--models-dir`).
+
+Model weights are never checked into this repository. Locally, files already
+verified in the user's model directory are reused; CI downloads the same
+pinned assets, and every file is verified by size and SHA-256 before it is
+staged.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 import shutil
 import sys
@@ -25,7 +33,10 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "dictado" / "src"))
 
-from instant2_app import models  # noqa: E402
+from instant2_app import models, tts  # noqa: E402
+from instant2_app.paths import (  # noqa: E402
+    PARAKEET_SUBDIR, VAD_SUBDIR, model_paths,
+)
 
 
 LLAMA_TAG = "b11573"
@@ -37,6 +48,104 @@ LLAMA_ZIP_URL = (
     "https://github.com/ggml-org/llama.cpp/releases/download/"
     f"{LLAMA_TAG}/{LLAMA_ZIP_NAME}"
 )
+
+# Exact file set of the voice payload. There is deliberately no `llm/` entry:
+# bundling the 3 GB GGUF is what made the old installer 4 GB.
+VOICE_MODEL_FILES = (
+    f"{PARAKEET_SUBDIR}/encoder.int8.onnx",
+    f"{PARAKEET_SUBDIR}/decoder.int8.onnx",
+    f"{PARAKEET_SUBDIR}/joiner.int8.onnx",
+    f"{PARAKEET_SUBDIR}/tokens.txt",
+    f"{VAD_SUBDIR}/silero_vad.onnx",
+    "kokoro-onnx/kokoro-v1.0.onnx",
+    "kokoro-onnx/voices-dora-v1.0.npz",
+)
+
+
+def _hash(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _copy_verified(source: Path, destination: Path, expected) -> bool:
+    """Copy a model file only when the source matches its pinned hash."""
+    ok, _reason = models.verify_file(str(source), expected)
+    if not ok:
+        return False
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if source.resolve() != destination.resolve():
+        shutil.copyfile(source, destination)
+    ok, reason = models.verify_file(str(destination), expected)
+    if not ok:
+        raise models.ModelIntegrityError(
+            f"la copia de {source.name} no verifica: {reason}")
+    return True
+
+
+def _copy_source_models(source_data: Path, payload: Path) -> None:
+    """Reuse only model files whose pinned size and SHA-256 already match."""
+    source_paths = model_paths(str(source_data))
+    target_paths = model_paths(str(payload))
+    for key, name in (("encoder", "encoder.int8.onnx"),
+                      ("decoder", "decoder.int8.onnx"),
+                      ("joiner", "joiner.int8.onnx"),
+                      ("tokens", "tokens.txt")):
+        _copy_verified(Path(source_paths[key]), Path(target_paths[key]),
+                       models.PARAKEET_SHA256[name])
+    _copy_verified(Path(source_paths["vad"]), Path(target_paths["vad"]),
+                   models.VAD_SHA256)
+
+    source_tts = tts.asset_paths(str(source_data))
+    target_tts = tts.asset_paths(str(payload))
+    _copy_verified(Path(source_tts["model"]), Path(target_tts["model"]),
+                   tts.MODEL_FILE)
+
+    if tts._voice_archive_valid(source_tts["voices"]):
+        _copy_verified(Path(source_tts["voices"]), Path(target_tts["voices"]),
+                       (os.path.getsize(source_tts["voices"]),
+                        _hash(Path(source_tts["voices"]))))
+    else:
+        source_raw = Path(source_tts["voice_source"])
+        if models.verify_file(str(source_raw), tts.DORA_FILE)[0]:
+            _copy_verified(source_raw, Path(target_tts["voice_source"]),
+                           tts.DORA_FILE)
+
+
+def _stage_models(payload_dir: Path, source_data: Path) -> dict:
+    payload_dir.mkdir(parents=True, exist_ok=True)
+    if any(payload_dir.iterdir()):
+        raise RuntimeError(
+            f"el directorio de modelos debe estar vacío: {payload_dir}")
+    _copy_source_models(source_data, payload_dir)
+
+    # Missing files are downloaded through their integrity-checked paths.
+    models.download_models(str(payload_dir))
+    tts.ensure_model(str(payload_dir))
+
+    invalid = {name: value
+               for name, value in models.check_integrity(str(payload_dir)).items()
+               if value is not True}
+    tts_paths = tts.asset_paths(str(payload_dir))
+    ok, reason = models.verify_file(tts_paths["model"], tts.MODEL_FILE)
+    if invalid or not ok or not tts._voice_archive_valid(tts_paths["voices"]):
+        raise models.ModelIntegrityError(
+            f"los modelos de voz no verifican: ASR={invalid}, Kokoro={reason}")
+
+    expected = set(VOICE_MODEL_FILES)
+    actual = {path.relative_to(payload_dir).as_posix()
+              for path in payload_dir.rglob("*") if path.is_file()}
+    if actual != expected:
+        raise RuntimeError(
+            "el payload de voz contiene archivos inesperados o le faltan: "
+            f"faltan={sorted(expected - actual)}, "
+            f"sobran={sorted(actual - expected)}")
+    return {"files": len(actual),
+            "bytes": sum(path.stat().st_size
+                         for path in payload_dir.rglob("*")
+                         if path.is_file())}
 
 
 def _fetch_if_missing(url: str, destination: Path, expected) -> None:
@@ -97,12 +206,25 @@ def _stage_runtime(app_dir: Path, cache_dir: Path) -> dict:
             "zip_sha256": LLAMA_ZIP_SHA256, "files": len(written)}
 
 
-def prepare(app_dir: Path, cache_dir: Path) -> dict:
+def prepare(app_dir: Path, cache_dir: Path, models_dir: Path = None,
+            source_data_dir: Path = None) -> dict:
     app_dir.mkdir(parents=True, exist_ok=True)
-    runtime = _stage_runtime(app_dir, cache_dir)
-    server = app_dir / "llm-runtime" / "llama-server.exe"
-    if not server.is_file() or server.stat().st_size == 0:
-        raise RuntimeError("llama-server no quedó preparado")
+    result = {"runtime": _stage_runtime(app_dir, cache_dir)}
+    if models_dir is not None:
+        voice = _stage_models(models_dir, source_data_dir)
+        result["models"] = voice
+        files = [{"path": path.relative_to(models_dir).as_posix(),
+                  "size": path.stat().st_size, "sha256": _hash(path)}
+                 for path in sorted(models_dir.rglob("*")) if path.is_file()]
+        (app_dir / "voice-model-bundle.json").write_text(
+            json.dumps({
+                "schema": 1,
+                "bundle": "Instant2 Windows voice model bundle",
+                "llm_bundled": False,
+                "files": files,
+                "total_bytes": sum(item["size"] for item in files),
+            }, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
 
     shutil.copyfile(ROOT / "THIRD-PARTY-NOTICES.txt",
                     app_dir / "THIRD-PARTY-NOTICES.txt")
@@ -112,20 +234,38 @@ def prepare(app_dir: Path, cache_dir: Path) -> dict:
     license_dir.mkdir(parents=True, exist_ok=True)
     for license_file in (ROOT / "docs" / "licenses").glob("*.txt"):
         shutil.copyfile(license_file, license_dir / license_file.name)
-    return {"runtime": runtime}
+    return result
 
 
 def main(argv=None) -> int:
+    from instant2_app.paths import resolve_data_dir
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app-dir", type=Path, required=True,
                         help="directorio PyInstaller que instala Instant2")
+    parser.add_argument("--models-dir", type=Path,
+                        help="stage the voice models here (full installer); "
+                             "omit it for the app-only update installer")
+    parser.add_argument("--source-data-dir", type=Path,
+                        help="reuse only verified local model files "
+                             "(default: the user's model directory)")
     parser.add_argument("--cache-dir", type=Path,
                         default=(Path(tempfile.gettempdir())
-                                / "instant2-llama-runtime-cache"))
+                                 / "instant2-windows-cache"))
     args = parser.parse_args(argv)
-    result = prepare(args.app_dir.resolve(), args.cache_dir.resolve())
+    source = (args.source_data_dir.resolve() if args.source_data_dir
+              else Path(resolve_data_dir()).resolve())
+    result = prepare(args.app_dir.resolve(), args.cache_dir.resolve(),
+                     args.models_dir.resolve() if args.models_dir else None,
+                     source)
     print("Recursos de Windows listos: "
           f"{result['runtime']['files']} archivos del runtime llama.cpp.")
+    if "models" in result:
+        print(f"Payload de voz verificado: {result['models']['files']} archivos, "
+              f"{result['models']['bytes'] / (1024 ** 2):.0f} MB (sin LLM).")
+    else:
+        print("Instalador solo app: sin modelos (los que ya estan en el "
+              "directorio de datos no se tocan).")
     print(f"llama.cpp {result['runtime']['tag']} listo con CPU y Vulkan.")
     return 0
 

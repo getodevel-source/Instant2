@@ -5,15 +5,18 @@ probar de verdad solo si hay ISCC en la maquina. Por eso estas pruebas tienen
 dos capas:
 
 1. Guardas estaticas sobre los invariantes del script (baratas, siempre
-   corren). Cubren los errores que rompieron la compilacion una vez:
-   la firma del Check, la semantica de su resultado y el uso de ";" como
+   corren). Cubren los errores que rompieron la instalacion una vez:
+   la firma del Check, la semantica de su resultado, el uso de ";" como
    comentario dentro del [Code] (en Pascal ";" es separador de sentencia, no
-   un comentario, y rompe el parseo con "'BEGIN' expected"). Y cubren el
-   contrato nuevo: el instalador NO lleva pesos de modelo (los descarga la
-   app), pero SI sigue parando el daemon y el runtime de llama.cpp.
+   un comentario) y, sobre todo, el instalador partido en volumenes: con
+   DiskSpanning=yes Inno genera Setup.exe + Setup-1.bin y quien baja solo el
+   .exe se queda con un instalador que pide "el disco".
 2. Una compilacion real del script cuando ISCC esta disponible. Se saltea
-   si no lo hay (en CI solo lo instala el job de release).
+   si no lo hay (en CI solo lo instala el job de release). Compila las dos
+   variantes: el instalador completo (con modelos de voz) y el de
+   actualizacion (solo app).
 """
+import importlib.util
 import os
 import re
 import shutil
@@ -29,6 +32,7 @@ ROOT = os.path.normpath(os.path.join(
     os.path.dirname(__file__), "..", ".."))
 ISS = os.path.join(ROOT, "installer", "instant2.iss")
 ICON = os.path.join(ROOT, "dictado", "build", "instant2.ico")
+ASSETS_SCRIPT = os.path.join(ROOT, "scripts", "prepare_windows_assets.py")
 
 ISCC_CANDIDATES = (
     r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
@@ -61,48 +65,86 @@ def _section(name):
     return match.group(1) if match else ""
 
 
+def _function(name):
+    code = _section("Code")
+    match = re.search(r"function\s+" + re.escape(name) + r"\(.*?\nend;",
+                      code, re.S)
+    return match.group(0) if match else ""
+
+
+def _assets_module():
+    spec = importlib.util.spec_from_file_location(
+        "prepare_windows_assets", ASSETS_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class InstallerPayloadTests(unittest.TestCase):
-    """El instalador no lleva pesos de modelo: los descarga la app."""
+    """El instalador completo lleva la voz; el LLM de 3 GB nunca."""
 
-    def test_the_files_section_has_no_models_entry(self):
+    def test_the_files_section_has_a_conditional_models_entry(self):
         entry = _section("Files")
-        models = [line for line in entry.splitlines()
-                  if line.startswith("Source:") and "ModelDir" in line]
-        self.assertEqual(models, [],
-                         "el instalador ya no copia pesos de modelo: %r"
-                         % models)
+        match = re.search(r"#ifdef ModelDir(.*?)#endif", entry, re.S)
+        self.assertIsNotNone(
+            match, "falta la entrada de modelos bajo #ifdef ModelDir")
+        block = match.group(1)
+        self.assertIn('Source: "{#ModelDir}\\*"', block)
+        self.assertIn('DestDir: "{localappdata}\\instant2\\models"', block)
+        self.assertIn("Check: ShouldInstallModel", block)
+        self.assertIn("uninsneveruninstall", block)
 
-    def test_the_script_never_mentions_the_model_directory(self):
-        # Ni la define ni la interpola: con la entrada presente y el
-        # directorio vacio, ISCC aborta con "No files found matching".
-        text = _script()
-        self.assertNotIn("{#ModelDir}", text)
-        self.assertNotIn("ModelDir", text)
+    def test_the_models_entry_has_no_llm(self):
+        module = _assets_module()
+        self.assertTrue(module.VOICE_MODEL_FILES)
+        llm = [path for path in module.VOICE_MODEL_FILES
+               if path.startswith("llm/")]
+        self.assertEqual(llm, [], "el LLM de 3 GB no se empaqueta: %r" % llm)
+        self.assertIn("kokoro-onnx/kokoro-v1.0.onnx", module.VOICE_MODEL_FILES)
+        self.assertIn("parakeet-v3-int8/encoder.int8.onnx",
+                      module.VOICE_MODEL_FILES)
 
-    def test_no_source_line_ships_a_model_payload(self):
-        for line in _section("Files").splitlines():
-            if line.startswith("Source:"):
-                self.assertNotIn("model", line.lower(),
-                                 "el instalador no debe copiar pesos: %r" % line)
+    def test_the_installer_is_always_a_single_file(self):
+        setup = _section("Setup")
+        directives = [line.strip() for line in setup.splitlines()
+                      if line.strip() and not line.lstrip().startswith(";")]
+        # Con DiskSpanning=yes Inno parte el setup en .exe + .bin y el que baja
+        # solo el .exe no puede instalar: pide "el disco".
+        self.assertIn("DiskSpanning=no", directives)
+        self.assertFalse([line for line in directives
+                          if line.startswith("DiskSpanning=")
+                          and line != "DiskSpanning=no"])
+        self.assertFalse([line for line in directives
+                          if line.startswith("DiskSliceSize=")])
 
-    def test_the_code_section_has_no_model_helpers(self):
+    def test_the_output_name_comes_from_a_define(self):
+        self.assertIn("OutputBaseFilename={#OutputBase}", _section("Setup"))
+        self.assertIn('#define OutputBase "Instant2-Setup"', _script())
+        # El release compila dos variantes con nombres distintos.
+        self.assertIn("Instant2-Update.exe", _script())
+
+    def test_the_code_section_skips_existing_and_legacy_models(self):
+        body = _function("ShouldInstallModel")
+        self.assertTrue(body, "falta ShouldInstallModel")
+        # Check devuelve True para INSTALAR: "ya esta" va invertido.
+        self.assertIn("Result := not (", body)
+        self.assertIn("ExpandConstant(ModelsDir)", body)
+        self.assertIn("ExpandConstant(LegacyModelsDir)", body)
+        self.assertIn("ExtractFileName(CurrentFileName)", body)
+
+    def test_the_installer_never_deletes_legacy_models(self):
+        # La app es la que mueve los modelos del slug viejo, y solo borra
+        # cuando verificó el destino. El instalador no borra ni mueve nada.
         code = _section("Code")
-        for name in ("ReuseLegacyModels", "ShouldInstallModel", "FindModelFile"):
-            self.assertNotIn(name, code)
+        self.assertNotIn("DelTree", code)
+        self.assertNotIn("ReuseLegacyModels", code)
 
     def test_the_installer_still_stops_the_daemon(self):
-        code = _section("Code")
-        prepare = re.search(
-            r"function PrepareToInstall\(.*?\nend;", code, re.S)
-        self.assertIsNotNone(prepare)
-        self.assertIn("'stop'", prepare.group(0))
+        body = _function("PrepareToInstall")
+        self.assertIn("'stop'", body)
 
     def test_the_installer_still_stops_the_llama_runtime(self):
-        code = _section("Code")
-        prepare = re.search(
-            r"function PrepareToInstall\(.*?\nend;", code, re.S)
-        self.assertIsNotNone(prepare)
-        body = prepare.group(0)
+        body = _function("PrepareToInstall")
         self.assertIn("stop-bundled-runtime.ps1", body)
         self.assertIn("llm-runtime", body)
 
@@ -150,32 +192,68 @@ class InstallerRunTests(unittest.TestCase):
 class InstallerCompilesTests(unittest.TestCase):
     """El script tiene que compilar de verdad (si hay Inno Setup)."""
 
-    def test_the_installer_script_compiles(self):
+    def _compile(self, out_dir, extra_defines):
+        iscc = _iscc()
+        app_dir = os.path.join(os.path.dirname(out_dir), "app")
+        models_dir = os.path.join(os.path.dirname(out_dir), "models")
+        shutil.rmtree(app_dir, ignore_errors=True)
+        shutil.rmtree(models_dir, ignore_errors=True)
+        os.makedirs(os.path.join(models_dir, "parakeet-v3-int8"))
+        os.makedirs(app_dir)
+        with open(os.path.join(app_dir, "Instant2.exe"), "w") as handle:
+            handle.write("stub")
+        with open(os.path.join(models_dir, "parakeet-v3-int8", "tokens.txt"),
+                  "w") as handle:
+            handle.write("stub")
+        os.makedirs(out_dir, exist_ok=True)
+        result = subprocess.run(
+            [iscc,
+             "/DAppVersion=0.1.8",
+             "/DSourceDir=%s" % app_dir,
+             "/DIconFile=%s" % ICON,
+             "/O%s" % out_dir,
+             *extra_defines,
+             ISS],
+            capture_output=True, text=True, cwd=ROOT)
+        self.assertEqual(
+            result.returncode, 0,
+            "el script de Inno Setup no compila:\n%s" % result.stdout)
+        return sorted(os.listdir(out_dir))
+
+    def _check_single_file(self, produced, expected):
+        self.assertIn(expected, produced)
+        volumes = [name for name in produced if name.endswith(".bin")]
+        self.assertEqual(
+            volumes, [],
+            "el instalador se partió en volúmenes (.bin): %r" % volumes)
+
+    def test_the_full_installer_compiles_to_a_single_file(self):
         iscc = _iscc()
         if not iscc:
             self.skipTest("Inno Setup no esta instalado en esta maquina")
         if not os.path.isfile(ICON):
             self.skipTest("falta el icono %s" % ICON)
         with tempfile.TemporaryDirectory() as work:
-            app_dir = os.path.join(work, "app")
             out_dir = os.path.join(work, "out")
-            for path in (app_dir, out_dir):
-                os.makedirs(path)
-            with open(os.path.join(app_dir, "Instant2.exe"), "w") as handle:
-                handle.write("stub")
-            # Sin directorio de modelos: el instalador no lleva pesos y el
-            # script no puede referenciar uno que no existe.
-            result = subprocess.run(
-                [iscc,
-                 "/DAppVersion=0.1.5",
-                 "/DSourceDir=%s" % app_dir,
-                 "/DIconFile=%s" % ICON,
-                 "/O%s" % out_dir,
-                 ISS],
-                capture_output=True, text=True, cwd=ROOT)
-            self.assertEqual(
-                result.returncode, 0,
-                "el script de Inno Setup no compila:\n%s" % result.stdout)
+            models = os.path.join(work, "models")
+            produced = self._compile(out_dir, [
+                "/DModelDir=%s" % models,
+                "/DOutputBase=Instant2-Setup",
+            ])
+            self._check_single_file(produced, "Instant2-Setup.exe")
+
+    def test_the_update_installer_compiles_without_models(self):
+        iscc = _iscc()
+        if not iscc:
+            self.skipTest("Inno Setup no esta instalado en esta maquina")
+        if not os.path.isfile(ICON):
+            self.skipTest("falta el icono %s" % ICON)
+        with tempfile.TemporaryDirectory() as work:
+            out_dir = os.path.join(work, "out")
+            produced = self._compile(out_dir, [
+                "/DOutputBase=Instant2-Update",
+            ])
+            self._check_single_file(produced, "Instant2-Update.exe")
 
 
 if __name__ == "__main__":

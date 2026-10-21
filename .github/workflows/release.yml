@@ -140,11 +140,16 @@ jobs:
             --copy-metadata kokoro-onnx \
             --hidden-import misaki.espeak \
             dictado/src/instant2_app/__main__.py
-          # El instalador lleva la app y el runtime de llama.cpp; los modelos
-          # los descarga la app, asi que el release ya no arrastra 4 GB.
-          python scripts/prepare_windows_assets.py --app-dir dist/Instant2
+          # El instalador completo lleva la app, el runtime de llama.cpp y los
+          # modelos de voz (~951 MB): una instalación nueva dicta y lee sin
+          # internet desde el primer minuto. El LLM de 3 GB no se incluye.
+          # Además se compila el instalador solo app (sin --models-dir): es el
+          # que baja el actualizador in-app, porque los modelos ya están en el
+          # directorio de datos y no hay que volver a copiarlos.
+          python scripts/prepare_windows_assets.py --app-dir dist/Instant2 --models-dir dist/Instant2-Models
           VERSION="$(python -c 'import sys; sys.path.insert(0, "dictado/src"); from instant2_app import __version__; print(__version__)')"
           SOURCE="$(python -c 'import os; print(os.path.abspath("dist/Instant2"))')"
+          MODELS="$(python -c 'import os; print(os.path.abspath("dist/Instant2-Models"))')"
           # Inno Setup viene preinstalado en las imágenes de los runners.
           ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
           if [ ! -f "$ISCC" ]; then ISCC="/c/Program Files/Inno Setup 6/ISCC.exe"; fi
@@ -155,18 +160,30 @@ jobs:
           # "You may not specify more than one script filename").
           MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
             "$ISCC" "/DAppVersion=$VERSION" "/DSourceDir=$SOURCE" \
-            "/DIconFile=$ICON_PATH" installer/instant2.iss
+            "/DModelDir=$MODELS" "/DIconFile=$ICON_PATH" \
+            "/DOutputBase=Instant2-Setup" installer/instant2.iss
+          MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
+            "$ISCC" "/DAppVersion=$VERSION" "/DSourceDir=$SOURCE" \
+            "/DIconFile=$ICON_PATH" \
+            "/DOutputBase=Instant2-Update" installer/instant2.iss
           python - <<'PY'
           from pathlib import Path
-          files = sorted(Path("dist").glob("Instant2-Setup*"))
-          binaries = [path for path in files
-                      if path.suffix.lower() in (".exe", ".bin")]
-          if not any(path.name == "Instant2-Setup.exe" for path in binaries):
-              raise SystemExit("Inno Setup no generó Instant2-Setup.exe")
-          for path in binaries:
+          files = sorted(path for path in Path("dist").glob("Instant2-*")
+                         if path.suffix.lower() in (".exe", ".bin"))
+          # Un solo archivo por instalador: si Inno partió el setup, quien baje
+          # solo el .exe se queda con un instalador que pide "el disco".
+          split = [path.name for path in files if path.suffix.lower() == ".bin"]
+          if split:
+              raise SystemExit(f"Inno partió el instalador en volúmenes: {split}")
+          for name in ("Instant2-Setup.exe", "Instant2-Update.exe"):
+              if not any(path.name == name for path in files):
+                  raise SystemExit(f"Inno Setup no generó {name}")
+          for path in files:
               if path.stat().st_size >= 2_000_000_000:
                   raise SystemExit(f"El asset excede 2 GB: {path.name}")
-          print("Instalador de Windows listo:", ", ".join(path.name for path in binaries))
+          sizes = ", ".join(f"{path.name} ({path.stat().st_size / 1e6:.0f} MB)"
+                            for path in files)
+          print("Instaladores de Windows listos:", sizes)
           PY
 
       - name: Prepare macOS signing identity (optional)
@@ -363,7 +380,8 @@ jobs:
               Where-Object { $_.FullName -match "\\x64\\signtool.exe$" } |
               Sort-Object FullName -Descending | Select-Object -First 1
             if (-not $signtool) { throw "No se encontró SignTool en Windows SDK." }
-            foreach ($file in @("dist/Instant2.exe", "dist/Instant2-Setup.exe")) {
+            foreach ($file in @("dist/Instant2.exe", "dist/Instant2-Setup.exe",
+                                "dist/Instant2-Update.exe")) {
               & $signtool.FullName sign /fd SHA256 /f $pfx `
                 /p $env:SIGNING_PFX_PASSWORD /tr https://timestamp.digicert.com `
                 /td SHA256 $file
@@ -454,8 +472,9 @@ jobs:
           python - <<'PY'
           import hashlib
           from pathlib import Path
-          files = sorted(path for path in Path("dist").glob("Instant2-Setup*")
-                         if path.suffix.lower() in (".exe", ".bin"))
+          files = sorted(path for path in Path("dist").glob("Instant2-*")
+                         if path.name in ("Instant2-Setup.exe",
+                                          "Instant2-Update.exe"))
           for path in files:
               digest = hashlib.sha256()
               with path.open("rb") as handle:
@@ -479,7 +498,10 @@ jobs:
         with:
           name: instant2-windows-installer
           path: |
-            dist/Instant2-Setup*
+            dist/Instant2-Setup.exe
+            dist/Instant2-Setup.exe.sha256
+            dist/Instant2-Update.exe
+            dist/Instant2-Update.exe.sha256
 
       - name: Upload notarized macOS disk image
         if: runner.os == 'macOS' && vars.ENABLE_CODE_SIGNING == 'true'
