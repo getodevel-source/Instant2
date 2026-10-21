@@ -15,11 +15,29 @@ _ACTION_SETUP = 2
 _ACTION_DIAGNOSTICS = 3
 
 
+def winfunctype(*argtypes):
+    """El tipo de callback de Windows: `ctypes.WINFUNCTYPE`.
+
+    Vive en `ctypes`, no en `ctypes.wintypes`: el nombre
+    `ctypes.wintypes.WINFUNCTYPE` no existe (ni en 3.12 ni en 3.14) y la
+    app instalada 0.1.0 crasheaba al arrancar el panel por tomarlo de alla
+    ("module 'ctypes.wintypes' has no attribute 'WINFUNCTYPE'"). Se resuelve
+    aca, en un solo lugar, para que no vuelva a pasar y para que un
+    interprete que no lo traiga falle con un mensaje claro.
+    """
+    factory = getattr(ctypes, "WINFUNCTYPE", None)
+    if factory is None:
+        raise AttributeError(
+            "ctypes.WINFUNCTYPE no existe: este interprete de Python no "
+            "trae el tipo de callback de Windows")
+    return factory(*argtypes)
+
+
 def _user32():
     dll = ctypes.WinDLL("user32", use_last_error=True)
     dll.FindWindowW.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR)
     dll.FindWindowW.restype = wintypes.HWND
-    dll.EnumWindows.argtypes = (ctypes.WINFUNCTYPE(
+    dll.EnumWindows.argtypes = (winfunctype(
         wintypes.BOOL, wintypes.HWND, wintypes.LPARAM), wintypes.LPARAM)
     dll.EnumWindows.restype = wintypes.BOOL
     dll.GetClassNameW.argtypes = (wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
@@ -76,7 +94,7 @@ def _find_our_gui(user32):
     enum_is_real = getattr(enum, "argtypes", None) is not None
     if enum_is_real:
         try:
-            callback_type = ctypes.WINFUNCTYPE(
+            callback_type = winfunctype(
                 wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
         except AttributeError:
             enum_is_real = False

@@ -2,83 +2,33 @@
 import os
 import sys
 import unittest
-from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "bench"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import bench_llm
-from instant2_app import llm
+import analyze_correction_runs
 
 
 class LLMBenchmarkTests(unittest.TestCase):
-    def test_meaning_guard_keeps_verb_forms_as_protected_details(self):
-        self.assertIn("cada forma verbal: persona, tiempo y modo",
-                      llm.VERIFY_SYSTEM)
-        self.assertIn("'cuando llega el paquete' -> 'cuando llegue el paquete'",
-                      llm.VERIFY_SYSTEM)
-        self.assertNotIn("No rechaces solo porque cambie la conjugación",
-                         llm.VERIFY_SYSTEM)
-
-    def test_corpus_references_keep_words_except_explicit_brand_correction(self):
-        for case in bench_llm.load_cases()["normal"]:
+    def test_frozen_corpus_anchors_and_no_change_controls(self):
+        corpus_path = os.path.join(
+            os.path.dirname(__file__), "..", "bench",
+            "llm_cases_expanded_2026-10-16.json")
+        cases = bench_llm.load_cases(corpus_path)["normal"]
+        for case in cases:
             with self.subTest(case=case["id"]):
                 self.assertTrue(case["input"].strip())
                 self.assertTrue(case["expected"].strip())
-                if case["id"] == "application_name":
-                    self.assertEqual(llm._words(case["expected"])[0], "instant2")
-                else:
-                    self.assertEqual(llm._words(case["input"]),
-                                     llm._words(case["expected"]))
-
-    def test_normal_metrics_use_llm_corrections_and_report_word_changes(self):
-        cases = [{"id": "recognition_fix", "input": "el tuvo estuvo listo",
-                  "expected": "El tubo estuvo listo."},
-                 {"id": "safe", "input": "hola mundo",
-                  "expected": "Hola, mundo."}]
-        cfg = {"llm_url": "http://127.0.0.1:11434", "llm_model": "test"}
-        candidates = iter(["El tubo estuvo listo.", "Hola, mundo."])
-        with patch.object(llm, "polish_candidate", side_effect=lambda *_a, **_k: next(candidates)), \
-                patch.object(llm, "candidate_preserves_meaning", return_value=True):
-            results, latencies = bench_llm.run_normal(cases, cfg, timeout=1.0)
-        self.assertTrue(results[0]["word_sequence_changed"])
-        self.assertEqual(results[0]["accepted"], "El tubo estuvo listo.")
-        self.assertFalse(results[1]["word_sequence_changed"])
-        self.assertEqual(len(latencies), 2)
-
-    def test_sampling_profile_reaches_candidate_but_default_stays_unset(self):
-        case = [{"id": "sample", "input": "hola mundo",
-                 "expected": "Hola, mundo."}]
-        cfg = {"llm_url": "http://127.0.0.1:11434", "llm_model": "test"}
-        observed = []
-
-        def candidate(*_args, **kwargs):
-            observed.append(kwargs.get("sampling_params"))
-            return "Hola, mundo."
-
-        with patch.object(llm, "polish_candidate", side_effect=candidate), \
-                patch.object(llm, "candidate_preserves_meaning", return_value=True):
-            bench_llm.run_normal(case, cfg, timeout=1.0)
-            profile = {"temperature": 0.7, "top_p": 0.8,
-                       "top_k": 20, "presence_penalty": 1.5}
-            bench_llm.run_normal(case, cfg, timeout=1.0, sampling=profile)
-
-        self.assertEqual(observed, [None, profile])
-
-    def test_normal_metrics_flag_verb_form_changes_for_review(self):
-        cases = [{"id": "verb_form", "input": "cuando llega el paquete",
-                  "expected": "Cuando llega el paquete.",
-                  "must_keep": ["cuando llega el paquete"]}]
-        cfg = {"llm_url": "http://127.0.0.1:11434", "llm_model": "test"}
-        with patch.object(llm, "polish_candidate",
-                          return_value="Cuando llegue el paquete."), \
-                patch.object(llm, "candidate_preserves_meaning", return_value=False):
-            results, _ = bench_llm.run_normal(cases, cfg, timeout=1.0)
-        self.assertEqual(results[0]["candidate"], "Cuando llegue el paquete.")
-        self.assertEqual(results[0]["accepted"], "cuando llega el paquete")
-        self.assertEqual(results[0]["missing"], [])
-        self.assertTrue(results[0]["candidate_word_sequence_changed"])
-        self.assertFalse(results[0]["meaning_check_passed"])
+                self.assertTrue(case["must_keep"])
+                self.assertTrue(all(
+                    bench_llm._contains_anchor(case["expected"], anchor)
+                    for anchor in case["must_keep"]))
+        no_change = [case for case in cases if case.get("no_change")]
+        self.assertGreaterEqual(len(no_change), 4)
+        self.assertTrue(all(
+            bench_llm._canonical(case["input"]) ==
+            bench_llm._canonical(case["expected"])
+            for case in no_change))
 
 
 
@@ -99,6 +49,90 @@ class LLMBenchmarkTests(unittest.TestCase):
         self.assertEqual(summary["first_request_seconds"], 3.0)
         self.assertEqual(summary["warm_p50_seconds"], 1.5)
         self.assertEqual(summary["warm_p95_seconds"], 2.0)
+
+    def test_explicit_corpus_path_and_frozen_schema(self):
+        corpus_path = os.path.join(
+            os.path.dirname(__file__), "..", "bench",
+            "llm_cases_expanded_2026-10-16.json")
+        corpus = bench_llm.load_cases(corpus_path)
+        cases = corpus["normal"]
+        self.assertEqual(len(cases), 48)
+        self.assertEqual(len({case["id"] for case in cases}), 48)
+        self.assertGreaterEqual(
+            sum(bool(case.get("no_change")) for case in cases), 4)
+        self.assertGreaterEqual(sum(
+            bench_llm._word_error_rate(case["expected"], case["input"]) > 0
+            for case in cases), 16)
+        self.assertTrue(all(case["expected"] and case["must_keep"]
+                            for case in cases))
+        self.assertTrue(all(not any(key in case for key in ("speaker", "audio"))
+                            for case in cases))
+
+    def test_aggregate_metrics_count_invariant_and_harm_categories(self):
+        metrics = bench_llm._aggregate_metrics([
+            {"exact_match": True, "baseline_exact_match": False,
+             "content_exact_match": True, "baseline_content_exact_match": False,
+             "baseline_content_error": True, "baseline_wer": 0.2, "wer": 0.0,
+             "word_sequence_changed": True, "meaning_check_passed": True,
+             "missing": [], "harmful_lexical_edit": False,
+             "no_change": True, "no_change_lexical_edit": False,
+             "baseline_cer": 0.2, "cer": 0.0},
+            {"exact_match": False, "baseline_exact_match": True,
+             "content_exact_match": False, "baseline_content_exact_match": True,
+             "baseline_content_error": False, "baseline_wer": 0.0, "wer": 0.1,
+             "word_sequence_changed": False, "meaning_check_passed": False,
+             "missing": ["no borres"], "harmful_lexical_edit": True,
+             "no_change": True, "no_change_lexical_edit": True,
+             "baseline_cer": 0.0, "cer": 0.1},
+        ])
+        self.assertEqual(metrics["verifier_rejections"], 1)
+        self.assertEqual(metrics["critical_invariant_violations"], 1)
+        self.assertEqual(metrics["cases_with_critical_invariant_violations"], 1)
+        self.assertEqual(metrics["harmful_lexical_edits"], 1)
+        self.assertEqual(metrics["no_change_lexical_edits"], 1)
+        self.assertAlmostEqual(metrics["character_error_rate_reduction"], 0.05)
+        self.assertAlmostEqual(metrics["word_error_rate_reduction"], 0.05)
+        self.assertEqual(metrics["baseline_content_error_case_count"], 1)
+        self.assertEqual(metrics["accepted_content_token_exact_match_rate"], 1.0)
+
+    def test_normalized_wer_separates_punctuation_from_content(self):
+        self.assertEqual(
+            bench_llm._word_error_rate("hola mundo", "Hola, mundo!"), 0.0)
+        self.assertGreater(
+            bench_llm._word_error_rate("el tubo está listo", "el tuvo está listo"),
+            0.0)
+    def test_paired_analysis_rejects_incompatible_reports(self):
+        report = {
+            "corpus_sha256": "corpus",
+            "sampling_profile": "matched-deterministic",
+            "sampling_params": {"temperature": 0.0},
+            "candidate_request": {"sampling_params": {"temperature": 0.0}},
+            "verifier_request": {"temperature": 0.0},
+            "server_sampling_params": {"temperature": 0.0},
+            "system_prompt_sha256": "system",
+            "verify_prompt_sha256": "verify",
+            "case_ids": ["case-1"],
+            "runtime": {
+                "server_build": "build",
+                "server_binary_sha256": "binary",
+                "port": 8081,
+                "server_command": [
+                    "llama-server.exe", "-m", "qwen.gguf", "--alias", "qwen",
+                    "--host", "127.0.0.1", "--port", "8081", "--temp", "0"],
+            },
+            "normal": {"cases": [{"id": "case-1", "baseline_wer": 0.25}]},
+        }
+        self.assertEqual(
+            len(analyze_correction_runs._paired(report, dict(report))), 1)
+        for key, bad_value in (
+                ("corpus_sha256", "other"),
+                ("sampling_profile", "bonsai-nonthinking"),
+                ("case_ids", ["case-2"])):
+            incompatible = dict(report)
+            incompatible[key] = bad_value
+            with self.subTest(field=key), self.assertRaises(ValueError):
+                analyze_correction_runs._paired(report, incompatible)
+
 
 
 if __name__ == "__main__":

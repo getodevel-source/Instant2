@@ -124,6 +124,11 @@ def main(argv=None):
         panel = terminate_existing_gui()
         if stopped or panel:
             print("Instant2 detenido.")
+        elif stopped is None:
+            # El probe del SO no respondió: no se afirma que no haya nada
+            # corriendo.
+            print("No se pudo comprobar si el servicio de dictado sigue "
+                  "vivo; cerrá Instant2 a mano si sigue abierto.")
         else:
             print("No había nada corriendo.")
         return 0

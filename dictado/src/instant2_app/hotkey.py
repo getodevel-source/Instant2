@@ -404,6 +404,8 @@ class WindowsPressHotkey:
         import ctypes
         from ctypes import wintypes
 
+        from instant2_app.gui_lifecycle import winfunctype
+
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
         self._thread_id = kernel32.GetCurrentThreadId()
@@ -422,7 +424,7 @@ class WindowsPressHotkey:
                         ("flags", wintypes.DWORD), ("time", wintypes.DWORD),
                         ("dwExtraInfo", ctypes.c_size_t)]
 
-        callback_type = ctypes.WINFUNCTYPE(
+        callback_type = winfunctype(
             ctypes.c_ssize_t, ctypes.c_int, ctypes.c_size_t, ctypes.c_void_p)
 
         def callback(code, message, data):

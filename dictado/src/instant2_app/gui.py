@@ -31,7 +31,7 @@ import time
 from instant2_app import audio, autostart, config, context, hotkey, models
 from instant2_app.launch import app_command, app_environment
 from instant2_app.identity import APP_NAME
-from instant2_app.paths import resolve_data_dir
+from instant2_app.paths import config_dir, resolve_data_dir
 
 log = logging.getLogger("instant2")
 
@@ -76,6 +76,49 @@ def _threads_is_valid(value):
 
 
 _UPDATE_MODES = ("notify", "auto", "off")
+# Tope de espera del instalador: copia los 4 GB de modelos, puede tardar.
+_INSTALL_TIMEOUT = 3600
+# Tope de cada probe del SO: tasklist y PowerShell no pueden colgarse.
+_PROBE_TASKLIST_TIMEOUT = 5.0
+_PROBE_POWERSHELL_TIMEOUT = 10.0
+# Piso del presupuesto del probe: aunque quede poco tiempo para el
+# deadline, el probe necesita su presupuesto completo para responder. Sin
+# este piso, un daemon vivo parece "no verificable" cuando no queda tiempo.
+_PROBE_BUDGET_FLOOR = _PROBE_TASKLIST_TIMEOUT + _PROBE_POWERSHELL_TIMEOUT
+# Margen para frenar el daemon: tiene que ser MAYOR que el peor caso de un
+# probe (5 s + 10 s), si no el deadline es inalcanzable y la actualización
+# se cuelga sin poder distinguir por que.
+DAEMON_STOP_DEADLINE = 20.0
+
+DAEMON_RUNNING = "running"
+DAEMON_STOPPED = "stopped"
+DAEMON_UNKNOWN = "unknown"
+
+# Motivos de un probe del SO que no pudo responder. No son lo mismo: con
+# PROBE_NO_IMAGE no hay ninguna evidencia del proceso; con
+# PROBE_NO_CMDLINE la imagen del proceso es la nuestra y lo que falta es
+# leer su linea de comandos.
+PROBE_NO_IMAGE = "no-image"
+PROBE_NO_CMDLINE = "no-cmdline"
+
+# Ultimo estado conocido del daemon. Un probe que no responde NO lo
+# cambia: si lo cambiara, un fallo transitorio haria creer que el daemon
+# esta apagado (y se podria arrancar un segundo).
+_known_daemon_state = None
+
+
+def _remember_daemon_state(state):
+    """Guarda el ultimo estado conocido del daemon (ignora el desconocido)."""
+    global _known_daemon_state
+    if state in (DAEMON_RUNNING, DAEMON_STOPPED):
+        _known_daemon_state = state
+    return state
+
+
+def _reset_known_daemon_state():
+    """Olvida el ultimo estado conocido del daemon (solo para las pruebas)."""
+    global _known_daemon_state
+    _known_daemon_state = None
 
 
 def _friendly_error(exc):
@@ -115,7 +158,9 @@ def _toast_error(logic, title, exc):
     cause, action = _friendly_error(exc)
     raw = str(exc) if exc is not None else ""
     detail = _public_error_detail(type(exc).__name__, raw)
-    log.warning("%s: %s", title, detail, exc_info=True)
+    # Mismo prefijo que `toast()`: las dos lineas se encuentran con un solo
+    # grep y el traceback queda pegado al error que ve el usuario.
+    log.error("toast de error: %s: %s", title, detail, exc_info=True)
     logic.toast(title, f"{cause}\n{action}\nDetalle: {detail}", level="error")
 
 
@@ -176,6 +221,341 @@ def _workdir():
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 
+def _update_log_path():
+    """Log del helper de actualización: %APPDATA%\\instant2\\update.log."""
+    return os.path.join(config_dir(), "update.log")
+
+
+def _installer_log_path():
+    """Log de Inno Setup: %APPDATA%\\instant2\\installer.log."""
+    return os.path.join(config_dir(), "installer.log")
+
+
+def _pending_update_path():
+    """Nota de la actualización en curso: %APPDATA%\\instant2\\pending-update.json."""
+    return os.path.join(config_dir(), "pending-update.json")
+
+
+def _installer_result_path():
+    """Codigo de salida del instalador: %APPDATA%\\instant2\\installer-result.json."""
+    return os.path.join(config_dir(), "installer-result.json")
+
+
+def _helper_result_path():
+    """Codigo de salida del helper portable: %APPDATA%\\instant2\\helper-result.json."""
+    return os.path.join(config_dir(), "helper-result.json")
+
+
+def _write_pending_update(version, log_path, stdout_path=""):
+    """Deja anotada la actualización que se pidió aplicar.
+
+    El instalador y el helper tienen que cerrar la app para poder
+    reemplazar el binario, así que la comprobación de la versión instalada
+    recién puede hacerse en el arranque siguiente.
+
+    `stdout_path` es la salida cruda del helper (un archivo aparte del log
+    del usuario): sirve para explicar un fallo que ni siquiera llegó al
+    log (por ejemplo, que el helper no arrancó).
+
+    `ts` es el momento de la nota: sin fecha la nota no vence nunca y el
+    error se vuelve a reportar en cada arranque.
+    """
+    payload = {"version": str(version or ""), "log": str(log_path or ""),
+               "stdout": str(stdout_path or ""), "ts": time.time()}
+    try:
+        path = _pending_update_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+    except OSError:
+        log.warning("no se pudo anotar la actualización pendiente",
+                    exc_info=True)
+
+
+def _read_pending_update():
+    try:
+        with open(_pending_update_path(), encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _clear_pending_update():
+    try:
+        os.remove(_pending_update_path())
+    except OSError:
+        pass
+
+
+def _write_installer_result(returncode, log_path, version=""):
+    """Anota el codigo de salida del instalador para el arranque siguiente.
+
+    El instalador de Inno cierra el panel (Restart Manager) para poder
+    reemplazar los archivos: el proceso que lo espera puede morir antes de
+    leer su codigo de salida. Este archivo es lo que permite contarlo
+    igual (y con el log de Inno al lado).
+    """
+    try:
+        payload = {"returncode": int(returncode),
+                   "log": str(log_path or ""),
+                   "version": str(version or ""),
+                   "ts": time.time()}
+    except (TypeError, ValueError):
+        return
+    try:
+        path = _installer_result_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+    except OSError:
+        log.warning("no se pudo anotar el resultado del instalador",
+                    exc_info=True)
+
+
+def _read_installer_result():
+    try:
+        with open(_installer_result_path(), encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _clear_installer_result():
+    try:
+        os.remove(_installer_result_path())
+    except OSError:
+        pass
+
+
+def _read_helper_result():
+    """Codigo de salida del helper portable (lo escribe el `.bat`).
+
+    El helper reemplaza el binario mientras la app esta cerrada: el
+    proceso que lo lanzo puede morir antes de contar como termino. Es el
+    mismo mecanismo que `installer-result.json`, pero para el portable.
+    """
+    try:
+        with open(_helper_result_path(), encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _clear_helper_result():
+    try:
+        os.remove(_helper_result_path())
+    except OSError:
+        pass
+
+
+# Ventana de validez de las notas de actualización (`pending-update.json`,
+# `installer-result.json` y `helper-result.json`).
+#
+# Un fallo de actualización importa mientras el usuario todavía busca el
+# resultado: reabrir la app del día siguiente tiene que seguir mostrando el
+# error. Pero una nota vieja (una actualización que se abortó y nunca se volvió
+# a abrir) no puede reportarse para siempre: el toast rojo "Actualización sin
+# aplicar" repetido en cada arranque es exactamente el ruido sin explicación
+# que reportó el usuario. Un día es una ventana generosa para el "la abro otra
+# vez" y descarta lo que ya no tiene nada que ver con la sesión actual.
+_UPDATE_RESULT_TTL_SECONDS = 24 * 60 * 60
+
+
+def _note_timestamp(path, data):
+    """Epoch de una nota de actualización: su campo `ts` o la mtime.
+
+    El campo `ts` lo escribe la app; el helper portable lo escribe su `.bat`.
+    Si una nota no trae fecha (un archivo de una versión anterior), se usa la
+    mtime del archivo: es la mejor aproximación disponible.
+    """
+    raw = data.get("ts") if isinstance(data, dict) else None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+
+def _note_is_stale(path, data, now=None):
+    """True si la nota es más vieja que la ventana de validez.
+
+    Una nota sin fecha no se descarta: no se inventa un fallo que no se puede
+    ubicar en el tiempo. Una nota con fecha futura (el reloj del sistema se
+    movió) tampoco: se reporta.
+    """
+    stamp = _note_timestamp(path, data)
+    if stamp is None:
+        return False
+    if now is None:
+        now = time.time()
+    return (now - stamp) > _UPDATE_RESULT_TTL_SECONDS
+
+
+def _log_tail(path, lines=8):
+    """Últimas líneas de un log: el toast del fallo lleva el detalle."""
+    if not path:
+        return ""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            content = handle.read().splitlines()
+    except OSError:
+        return ""
+    return "\n".join(content[-lines:])
+
+
+def _installer_failure(returncode, log_path):
+    """Error con el log de Inno adjunto: el toast tiene que poder explicar."""
+    message = (f"El instalador terminó con código {returncode}; no se "
+               f"actualizó Instant2. Log: {log_path}")
+    tail = _log_tail(log_path)
+    if tail:
+        message += "\n\nÚltimas líneas del log:\n" + tail
+    return RuntimeError(message)
+
+
+def _helper_stdout_path():
+    """Dónde va la salida del helper: un archivo aparte del log del usuario.
+
+    El log del usuario (`%APPDATA%\\instant2\\update.log`) lo escribe el
+    helper con `>>`. Si el padre lo abriera para apuntar ahí la salida
+    del hijo, los dos se pelearían por el archivo (Windows no deja
+    escribir con el handle tomado) y los mensajes del helper no llegarían
+    nunca al log: en el log solo quedaría el error de compartición del
+    sistema. Por eso el padre no abre ese archivo.
+    """
+    import tempfile
+    return os.path.join(tempfile.gettempdir(),
+                        f"instant2_update_{os.getpid()}",
+                        "helper-stdout.log")
+
+
+def _launch_update_helper(script, target, expected, destination, root):
+    """Lanza el helper portable sin ventana de consola.
+
+    Devuelve la ruta del archivo donde queda la salida del hijo (el ruido
+    de `cmd`, no los mensajes del helper: esos van al log del usuario).
+    """
+    stdout_path = _helper_stdout_path()
+    try:
+        os.makedirs(os.path.dirname(stdout_path), exist_ok=True)
+        output = open(stdout_path, "a", encoding="utf-8", errors="replace")
+    except OSError:
+        # Sin archivo donde apuntar la salida: mejor el null que la
+        # consola de la app (el helper no debe verse).
+        output = subprocess.DEVNULL
+    env = dict(os.environ)
+    # El helper sabe que su salida ya está redirigida: no la escribe dos
+    # veces (ni en la consola ni en el log del usuario).
+    env["INSTANT2_UPDATE_LOG_REDIRECTED"] = "1"
+    try:
+        # Sin CREATE_NO_WINDOW el helper abre una terminal con sus pasos
+        # en medio de la actualización.
+        subprocess.Popen(
+            ["cmd", "/c", script, target, expected, destination], cwd=root,
+            env=env, stdout=output, stderr=subprocess.STDOUT,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    finally:
+        if output is not subprocess.DEVNULL:
+            # El hijo ya tiene su propia copia del handle: el padre puede
+            # cerrar el suyo sin perder la salida del helper.
+            output.close()
+    return stdout_path
+
+
+def _pending_update_report(now=None):
+    """(título, mensaje, nivel) con el resultado de la actualización anterior.
+
+    La app que está corriendo ES la versión instalada: acá se la compara con
+    la que se pidió. Si no coinciden, la actualización no se aplicó y el
+    log dice por qué.
+
+    El instalador de Inno cierra el panel para poder reemplazar los
+    archivos, así que el proceso que lo espera puede morir antes de leer
+    su código de salida: por eso el worker lo anota en
+    `installer-result.json` y esta nota lo lee en el arranque siguiente.
+
+    El helper portable hace lo mismo (cierra la app para reemplazar el
+    binario): su `.bat` anota el código en `helper-result.json` y el
+    arranque siguiente lo cuenta con el log del helper al lado.
+
+    Las notas vencen (`_UPDATE_RESULT_TTL_SECONDS`): una nota vieja se
+    descarta en silencio, sin toast. Si no se consumió nunca (el usuario
+    nunca volvió a abrir la app, o la actualización se abortó), el error
+    se repetiría en cada arranque, días después, sin que el usuario haya
+    pedido nada.
+    """
+    sources = (
+        ("pending", _pending_update_path(), _read_pending_update()),
+        ("installer", _installer_result_path(), _read_installer_result()),
+        ("helper", _helper_result_path(), _read_helper_result()),
+    )
+    fresh = {}
+    for kind, path, payload in sources:
+        if not payload:
+            continue
+        if _note_is_stale(path, payload, now):
+            log.info("nota de actualización vencida (se descarta): %s", path)
+            continue
+        fresh[kind] = payload
+    # Las notas se consumen, vencidas o no: no se releen nunca más.
+    _clear_pending_update()
+    _clear_installer_result()
+    _clear_helper_result()
+    if not fresh:
+        return None
+    data = fresh.get("pending")
+    result = fresh.get("installer")
+    helper = fresh.get("helper")
+    expected = str((data or {}).get("version") or "")
+    log_path = str((data or {}).get("log")
+                   or (result or {}).get("log")
+                   or (helper or {}).get("log") or "")
+    stdout_path = str((data or {}).get("stdout") or "")
+    current = _current_version()
+    returncode = None
+    source = result if result is not None else helper
+    if source is not None:
+        try:
+            returncode = int(source.get("returncode"))
+        except (TypeError, ValueError):
+            returncode = None
+    if returncode is not None and returncode != 0:
+        # El instalador o el helper fallaron: el log va con el mensaje.
+        quien = "El instalador" if result is not None else "El actualizador"
+        message = (f"{quien} terminó con código {returncode}; no se "
+                   f"actualizó Instant2. Log: {log_path}")
+        tail = _log_tail(log_path)
+        if tail:
+            message += "\n\nÚltimas líneas del log:\n" + tail
+        extra = _log_tail(stdout_path)
+        if extra:
+            message += "\n\nSalida del actualizador:\n" + extra
+        return ("Actualización sin aplicar", message, "error")
+    if not expected:
+        # Sin versión anotada no se puede afirmar que la actualización se
+        # aplicó: se dice "no se sabe", nunca "aplicada".
+        return ("Actualización sin verificar",
+                "No quedó anotada qué versión se pidió instalar: no se "
+                f"puede confirmar si la actualización se aplicó. Esta app "
+                f"está en v{current}.", "warn")
+    if expected != current:
+        message = (f"Se pidió actualizar a v{expected} y esta app sigue en "
+                   f"v{current}: la actualización no se aplicó.")
+        if log_path:
+            message += f"\n\nLog: {log_path}"
+            tail = _log_tail(log_path)
+            if tail:
+                message += "\n\nÚltimas líneas del log:\n" + tail
+        return ("Actualización sin aplicar", message, "error")
+    return ("Actualización aplicada", f"Instant2 quedó en v{current}.", "info")
+
+
 def _pid_value():
     from instant2_app.daemon import pid_path
     try:
@@ -185,43 +565,110 @@ def _pid_value():
         return None
 
 
-def daemon_is_running():
-    """True si el PID file apunta al daemon, incluso en el binario portable.
+def _run_probe(args, timeout):
+    """Ejecuta un probe del SO. Devuelve (respondió, código, salida).
 
-    Windows también valida la línea de comando. El ejecutable portable puede
-    llamarse Instant2-MVP.exe en vez de instant2.exe.
+    `encoding`/`errors` explícitos: la salida de tasklist o de PowerShell
+    puede traer bytes que no son UTF-8 y un UnicodeDecodeError (un
+    ValueError, no un OSError) abortaría la actualización.
     """
-    pid = _pid_value()
-    if pid is None:
-        return False
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        result = subprocess.run(
+            args, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=timeout, creationflags=flags)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return False, None, ""
+    return True, result.returncode, result.stdout or ""
+
+
+def _split_probe_budget(budget):
+    """Reparte los segundos disponibles entre tasklist y PowerShell.
+
+    Es el UNICO reparto: el timeout que sale de acá se pasa tal cual al
+    probe de PowerShell. Repartirlo otra vez le dejaba 6 s en vez de 10 y
+    `Get-CimInstance Win32_Process` con el WMI frio se pasa de 6 s con
+    facilidad (el probe caia en 'desconocido' y frenaba la actualizacion).
+    """
+    if budget is None:
+        return _PROBE_TASKLIST_TIMEOUT, _PROBE_POWERSHELL_TIMEOUT
+    budget = max(float(budget), 0.1)
+    tasklist = min(_PROBE_TASKLIST_TIMEOUT, budget * 0.4)
+    powershell = min(_PROBE_POWERSHELL_TIMEOUT, budget - tasklist)
+    return tasklist, max(powershell, 0.1)
+
+
+def daemon_is_running():
+    """True si el daemon de Instant2 está corriendo.
+
+    Un probe que no responde NO es "está corriendo": el estado real lo
+    devuelve `daemon_probe_state`, que distingue las tres cosas. Cuando el
+    probe no puede responder se conserva el último estado conocido: un
+    fallo transitorio no puede hacer creer que el daemon está apagado (y
+    que arranque un segundo daemon).
+    """
+    state = daemon_probe_state()
+    if state == DAEMON_UNKNOWN:
+        return _known_daemon_state == DAEMON_RUNNING
+    return state == DAEMON_RUNNING
+
+
+def _probe_daemon_process(pid, budget=None):
+    """(estado, motivo) del proceso que apunta el pidfile del daemon.
+
+    `estado` es DAEMON_RUNNING, DAEMON_STOPPED o DAEMON_UNKNOWN. `motivo`
+    explica un estado desconocido y nunca se lo confunde con el otro:
+      - PROBE_NO_IMAGE: el SO no respondió el probe de proceso (tasklist).
+      - PROBE_NO_CMDLINE: la imagen del proceso es la nuestra pero no se
+        pudo leer su línea de comandos (PowerShell/WMI no respondió).
+    """
     if os.name == "nt":
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        try:
-            result = subprocess.run(
-                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
-                capture_output=True, text=True, timeout=5, creationflags=flags)
-        except (OSError, subprocess.TimeoutExpired):
-            return False
+        tasklist_budget, ps_budget = _split_probe_budget(budget)
+        responded, code, listing = _run_probe(
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            tasklist_budget)
+        if not responded or code != 0:
+            return DAEMON_UNKNOWN, PROBE_NO_IMAGE
         accepted_images = {"python.exe", "pythonw.exe", "instant2.exe"}
         if getattr(sys, "frozen", False):
             accepted_images.add(ntpath.basename(sys.executable).lower())
-        for row in result.stdout.splitlines():
+        for row in listing.splitlines():
             columns = [part.strip().strip('"') for part in row.split('","')]
             if len(columns) > 1 and columns[1] == str(pid):
                 if columns[0].lower() not in accepted_images:
-                    return False
-                return _pid_is_instant(pid)
-        return False
+                    return DAEMON_STOPPED, None
+                ours = _pid_is_instant(pid, timeout=ps_budget)
+                if ours is None:
+                    return DAEMON_UNKNOWN, PROBE_NO_CMDLINE
+                return (DAEMON_RUNNING if ours else DAEMON_STOPPED), None
+        return DAEMON_STOPPED, None
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
-        return False
+        return DAEMON_STOPPED, None
     except PermissionError:
         # EPERM: el proceso existe pero no tenemos permiso -> vivo (G4).
-        return True
+        return DAEMON_RUNNING, None
     except OSError:
-        return False
-    return _pid_is_instant(pid)
+        return DAEMON_UNKNOWN, PROBE_NO_IMAGE
+    ours = _pid_is_instant(pid)
+    if ours is None:
+        return DAEMON_UNKNOWN, PROBE_NO_CMDLINE
+    return (DAEMON_RUNNING if ours else DAEMON_STOPPED), None
+
+
+def daemon_probe_state(budget=None):
+    """Estado del daemon: 'running' | 'stopped' | 'unknown'.
+
+    'unknown' es "el probe no pudo responder", no "no está": un probe
+    caído no significa que el PID sea de Instant2 ni que el daemon esté
+    apagado. `budget` acota los segundos que puede tardar el probe.
+    """
+    pid = _pid_value()
+    if pid is None:
+        return _remember_daemon_state(DAEMON_STOPPED)
+    state, _reason = _probe_daemon_process(pid, budget=budget)
+    return _remember_daemon_state(state)
 
 
 def _display_input_name(name):
@@ -236,19 +683,26 @@ def _display_input_name(name):
     return label
 
 
-def _pid_is_instant(pid):
+def _pid_is_instant(pid, timeout=None):
     """El PID file puede quedar rancio y el SO reciclar el número: antes de
-    matar se confirma que la línea de comando sea de Instant2."""
+    matar se confirma que la línea de comando sea de Instant2.
+
+    True si es Instant2, False si es de otro proceso y None si el probe no
+    pudo responder: un probe caído no es "es Instant2".
+
+    `timeout` son los segundos del probe de PowerShell (no es un
+    presupuesto total: no se reparte otra vez acá).
+    """
     if os.name == "nt":
-        try:
-            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            result = subprocess.run(
-                ["powershell", "-NoProfile", "-Command",
-                 f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine"],
-                capture_output=True, text=True, timeout=10, creationflags=flags)
-        except (OSError, subprocess.TimeoutExpired):
-            return True
-        command = (result.stdout or "").casefold()
+        if timeout is None:
+            timeout = _PROBE_POWERSHELL_TIMEOUT
+        responded, code, command = _run_probe(
+            ["powershell", "-NoProfile", "-Command",
+             f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine"],
+            timeout)
+        if not responded or code != 0:
+            return None
+        command = (command or "").casefold()
         args = [part.strip('"') for part in command.split()]
         return "instant2" in command and "run" in args[1:]
     command = ""
@@ -257,26 +711,32 @@ def _pid_is_instant(pid):
             command = handle.read().replace(b"\0", b" ").decode(
                 "utf-8", "replace")
     except (FileNotFoundError, PermissionError, OSError, ValueError):
-        try:
-            result = subprocess.run(
-                ["ps", "-p", str(int(pid)), "-o", "args="],
-                capture_output=True, text=True, timeout=10)
-        except (OSError, subprocess.SubprocessError, ValueError):
-            return True
-        if result.returncode != 0:
+        responded, code, output = _run_probe(
+            ["ps", "-p", str(int(pid)), "-o", "args="],
+            _PROBE_POWERSHELL_TIMEOUT)
+        if not responded:
+            return None
+        if code != 0:
             return False
-        command = result.stdout or ""
+        command = output or ""
     command = command.casefold()
     args = [part.strip('"') for part in command.split()]
     return "instant2" in command and "run" in args[1:]
 
 
 def stop_daemon():
+    """Frena el daemon de Instant2.
+
+    True si el daemon quedó frenado, False si no había nada nuestro
+    corriendo y None si no se pudo verificar (el probe no respondió): en
+    ese caso no se afirma ni que esté vivo ni que esté apagado.
+    """
     from instant2_app.daemon import clear_pid
     pid = _pid_value()
     if pid is None:
         return False
-    if not daemon_is_running():
+    state, reason = _probe_daemon_process(pid)
+    if state == DAEMON_STOPPED:
         # PID file rancio (proceso muerto o PID reciclado ajeno): se borra
         # solo si el contenido sigue siendo ese PID muerto (G1+G3). clear_pid
         # ahora acepta el PID esperado porque no es el getpid() del llamador.
@@ -286,9 +746,19 @@ def stop_daemon():
         except OSError:
             pass
         return False
-    if not _pid_is_instant(pid):
-        log.warning("PID %d reciclado por el SO (no es Instant2); no se mata.", pid)
-        return False
+    if state == DAEMON_UNKNOWN and reason == PROBE_NO_IMAGE:
+        # El SO no respondio el probe de proceso: no hay ninguna evidencia
+        # para matar. El pidfile queda: si el daemon vive, el proximo stop
+        # lo frena. Tampoco se afirma que este PID sea nuestro.
+        log.warning("no se pudo verificar el PID %d; el daemon no se frena", pid)
+        return None
+    if reason == PROBE_NO_CMDLINE:
+        # La imagen del proceso es la nuestra pero no se pudo leer su linea
+        # de comandos. No se puede confirmar, pero el pidfile lo escribio el
+        # daemon y el que pide el stop quiere el daemon frenado: se frena
+        # igual (como antes de T4) y queda dicho en el log.
+        log.warning("no se pudo leer la linea de comandos del PID %d; "
+                    "se frena igual (el pidfile es nuestro)", pid)
     if os.name == "nt":
         try:
             subprocess.Popen(
@@ -834,6 +1304,11 @@ class PanelLogic(PanelReadingActions):
     def toast(self, title, message="", level="info", actions=(), ms=4500):
         if self._closed:
             return
+        if level == "error":
+            # Todo error que ve el usuario tiene que quedar en el log: un
+            # toast sin rastro no se puede diagnosticar despues. Los que
+            # pasan por `_toast_error` dejan además el traceback.
+            log.error("toast de error: %s: %s", title, message)
         toast_id = f"t{time.monotonic_ns()}"
         if actions:
             self._toast_callbacks[toast_id] = [
@@ -864,6 +1339,7 @@ class PanelLogic(PanelReadingActions):
         self._toast_callbacks.clear()
         self.push_state()
         self._nudge_setup_if_needed()
+        self._report_pending_update()
 
     def _op_navigate(self, message):
         self.navigate(message.get("page") or "home")
@@ -1709,13 +2185,28 @@ class PanelLogic(PanelReadingActions):
             log.warning("el daemon no confirmó inicio dentro del plazo")
         self.push_state()
 
-    def stop_daemon_flow(self, restart=False):
+    def stop_daemon_flow(self, restart=False, on_restart=None):
+        """Frena el daemon (y opcionalmente lo vuelve a levantar).
+
+        `on_restart` recibe True si el daemon queda (o queda levantándose)
+        con la versión nueva, False si no se reinició nada y None si no se
+        sabe (hay otro freno en curso). El llamador lo usa para no prometer
+        un reinicio que no ocurrió (por ejemplo, cuando el PID del pidfile
+        estaba reciclado y no había nada que reiniciar).
+        """
         if self._daemon_stop_pending:
+            self._restart_notified(on_restart, None)
             return
         pid = _pid_value()
         if pid is None or not self._last_daemon_running:
             if restart:
-                self._start_daemon()
+                started = self._start_daemon()
+                # `_start_daemon` no hace nada si el daemon ya está
+                # corriendo: en ese caso hay servicio y no hay nada que
+                # reiniciar.
+                self._restart_notified(on_restart,
+                                       bool(self._last_daemon_running
+                                            or started))
             else:
                 self.refresh_daemon()
             return
@@ -1731,11 +2222,23 @@ class PanelLogic(PanelReadingActions):
         def checked(is_ours):
             if self._closed:
                 return
-            if not is_ours:
+            if is_ours is None:
+                # El probe no respondió: no se puede confirmar que el PID
+                # sea nuestro, pero el pidfile lo escribió el daemon y el
+                # que pide el stop quiere el daemon frenado: se frena igual
+                # (como antes de T4) y queda dicho en el log. Negarse a
+                # frenarlo dejaba el daemon viejo vivo con el binario
+                # nuevo encima.
+                log.warning("no se pudo verificar el PID %d; se frena igual "
+                            "(el pidfile es nuestro)", pid)
+            elif not is_ours:
                 log.warning("PID %d reciclado por el SO (no es Instant2); no se mata.", pid)
                 self._daemon_stop_pending = False
                 self.status_detail = "El daemon ya no estaba; actualizando estado…"
                 self.refresh_daemon()
+                # El PID reciclado no es nuestro daemon: no se frena nada y
+                # no hay nada que reiniciar.
+                self._restart_notified(on_restart, False)
                 return
             try:
                 if os.name == "nt":
@@ -1744,11 +2247,25 @@ class PanelLogic(PanelReadingActions):
                                      creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
                 else:
                     os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                # El proceso ya no existe: el daemon no estaba corriendo. No
+                # es un fallo, asi que no se avisa como error (en Windows
+                # taskkill falla en silencio y el caso es el mismo: el
+                # proceso se fue solo). Avisarlo como error era un toast
+                # mentiroso sobre un daemon que no estaba.
+                log.info("el daemon (PID %d) ya no estaba corriendo", pid)
+                self._daemon_stop_pending = False
+                self.status_detail = "El daemon ya no estaba; actualizando estado…"
+                self.push_state()
+                self.refresh_daemon()
+                self._restart_notified(on_restart, False)
+                return
             except OSError as exc:
                 self._daemon_stop_pending = False
                 self.status_detail = "No se pudo detener Instant2."
                 self.push_state()
                 _toast_error(self, "No se pudo detener Instant2", exc)
+                self._restart_notified(on_restart, False)
                 return
             self.status_detail = "Cerrando Instant2…"
             self.push_state()
@@ -1756,6 +2273,7 @@ class PanelLogic(PanelReadingActions):
                 return
             if restart:
                 self.schedule(350, self._wait_before_restart)
+                self._restart_notified(on_restart, True)
             else:
                 self.schedule(700, self._settle_stop_attempt)
 
@@ -1766,8 +2284,20 @@ class PanelLogic(PanelReadingActions):
             self.status_detail = "No se pudo comprobar el estado de Instant2."
             self.push_state()
             _toast_error(self, "No se pudo detener Instant2", error)
+            self._restart_notified(on_restart, False)
 
         self.tasks.submit(check, checked, failed)
+
+    @staticmethod
+    def _restart_notified(on_restart, restarted):
+        """Avisa el resultado del reinicio (si a alguien le importa)."""
+        if on_restart is None:
+            return
+        try:
+            on_restart(restarted)
+        except Exception:  # noqa: BLE001  (un aviso que falla no rompe nada)
+            log.warning("no se pudo avisar el resultado del reinicio",
+                        exc_info=True)
 
     def _settle_stop_attempt(self):
         if self._closed:
@@ -2210,6 +2740,24 @@ class PanelLogic(PanelReadingActions):
                              lambda: self._install_ready(target, expected)),
                             ("Después", lambda: None)))
 
+    def _pending_version(self):
+        """La versión que se pidió instalar (la del release pendiente)."""
+        ready = self._ready_update or ()
+        if len(ready) > 2 and ready[2]:
+            return str(ready[2])
+        return str((self._pending_update or {}).get("latest", "") or "")
+
+    def _report_pending_update(self):
+        """Cuenta el resultado de la actualización anterior, si quedó a medias."""
+        report = _pending_update_report()
+        if report is None:
+            return
+        title, message, level = report
+        # Tambien el exito queda escrito: el actualizador tiene que ser
+        # observable tambien cuando sale bien (no solo cuando falla).
+        log.info("actualización: %s: %s", title, message)
+        self.toast(title, message, level=level)
+
     def _install_ready(self, target, expected):
         from instant2_app import update as update_module
 
@@ -2226,7 +2774,11 @@ class PanelLogic(PanelReadingActions):
         self.update_button = "Preparando actualización…"
         self.push_state()
         mode = update_module.install_mode()
+        version = self._pending_version()
         if mode == "installed":
+            # El instalador cierra la app: se anota qué se pidió para
+            # poder verificar la versión instalada en el próximo arranque.
+            _write_pending_update(version, _installer_log_path())
             self._install_via_setup(target, expected)
             return
         if sys.platform != "win32" and getattr(sys, "frozen", False):
@@ -2268,25 +2820,83 @@ class PanelLogic(PanelReadingActions):
                 f"sobre tu binario de Instant2 (SHA256 {expected[:16]}…).",
                 level="warn")
             return
+        # El helper también cierra la app: se anota qué se pidió para poder
+        # verificar la versión instalada en el próximo arranque.
+        stdout_path = _helper_stdout_path()
+        _write_pending_update(version, _update_log_path(), stdout_path)
         try:
-            subprocess.Popen(
-                ["cmd", "/c", script, target, expected, destination], cwd=root)
+            _launch_update_helper(script, target, expected, destination, root)
         except Exception as exc:  # noqa: BLE001  (se informa al usuario)
-            self._update_install_pending = False
-            self.update_button = f"Reiniciar para aplicar v{(self._pending_update or {}).get('latest', '')}"
-            self.push_state()
-            _toast_error(self, "Actualizaciones", exc)
+            # El helper ni siquiera arranco: se reporta por la misma via que
+            # el resto de los fallos (y se limpia la nota, asi el proximo
+            # arranque no repite el error con otro toast).
+            self._update_install_failed(exc)
             return
         self.close()
 
     def _install_via_setup(self, installer_path, expected):
-        """Modo instalado (Windows): el Setup nuevo actualiza y reabre solo."""
-        # Frenar y esperar al daemon puede tardar varios segundos. Hacerlo en
-        # el worker evita congelar el panel mientras Windows suelta sus archivos.
+        """Modo instalado (Windows): el Setup nuevo actualiza y reabre solo.
+
+        Todo lo bloqueante va en el worker: verificar el instalador, frenar
+        el daemon y ESPERAR al instalador. El hilo de UI tiene que seguir
+        respondiendo: el instalador de Inno manda WM_CLOSE al panel y un
+        hilo congelado no lo procesa (Inno escala a matar el proceso).
+        """
+        version = self._pending_version()
         self.tasks.submit(
-            lambda _emit: self._prepare_installer(),
-            lambda _value: self._launch_setup_installer(installer_path, expected),
+            lambda _emit: self._run_installer(installer_path, expected, version),
+            self._installer_finished,
             self._update_install_failed)
+
+    @staticmethod
+    def _run_installer(installer_path, expected=None, version=""):
+        """Verifica, frena el daemon y espera al instalador. (hilo worker)
+
+        Devuelve (codigo de salida, log de Inno, instalador). La espera
+        puede tardar minutos (copia los 4 GB de modelos): por eso esto
+        corre fuera del hilo de UI.
+        """
+        log_path = _installer_log_path()
+        _verify_install_file(installer_path, expected)
+        os.makedirs(config_dir(), exist_ok=True)
+        PanelLogic._prepare_installer()
+        # /LOG deja el detalle de Inno en un archivo: sin eso, un aborto
+        # del instalador es invisible. Se espera el proceso y se lee su
+        # código de salida: sirve cuando el instalador falla antes de
+        # cerrar el panel (Inno lo cierra después para copiar los archivos).
+        # Con comillas: Inno parsea la linea de comandos cruda y un espacio
+        # en el %APPDATA% mandaba el log a otro lado.
+        result = subprocess.run(
+            [installer_path, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+             f'/LOG="{log_path}"'],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=_INSTALL_TIMEOUT)
+        # El codigo se anota aparte: Inno puede cerrar el panel mientras
+        # esperamos y este proceso morir sin llegar a contarlo.
+        _write_installer_result(result.returncode, log_path, version)
+        return result.returncode, log_path, installer_path
+
+    def _installer_finished(self, outcome):
+        """El instalador terminó: se informa en el hilo de UI.
+
+        Ojo: Inno cierra el panel (Restart Manager) para poder reemplazar
+        los archivos, así que muchas veces este callback no llega: el
+        mecanismo que verifica el resultado de verdad es la nota
+        `pending-update.json` (más `installer-result.json`), que el
+        arranque siguiente lee y compara con la versión instalada.
+        """
+        if self._closed:
+            return
+        returncode, log_path, installer_path = outcome
+        if returncode != 0:
+            self._update_install_failed(
+                _installer_failure(returncode, log_path))
+            return
+        log.info("instalador %s terminado con codigo 0 (log: %s)",
+                 installer_path, log_path)
+        # La app que sigue corriendo es la versión vieja: se cierra para que
+        # el usuario la abra de nuevo y vea la versión nueva.
+        self.close()
 
     @staticmethod
     def _prepare_installer():
@@ -2294,29 +2904,54 @@ class PanelLogic(PanelReadingActions):
         # puede cerrarlo, así que se frena acá y se espera a que suelte
         # los archivos antes de copiar encima.
         stop_daemon()
-        deadline = time.monotonic() + 8.0
-        while daemon_is_running() and time.monotonic() < deadline:
-            time.sleep(0.1)
-        if daemon_is_running():
-            raise RuntimeError("El servicio de dictado sigue activo. Cerralo y reintentá.")
-
-    def _launch_setup_installer(self, installer_path, expected=None):
-        if self._closed:
-            return
-        try:
-            _verify_install_file(installer_path, expected)
-            subprocess.Popen(
-                [installer_path, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
-                close_fds=True)
-        except Exception as exc:  # noqa: BLE001  (se informa al usuario)
-            self._update_install_failed(exc)
-            return
-        log.info("instalador %s lanzado en silencio", installer_path)
-        self.close()
+        deadline = time.monotonic() + DAEMON_STOP_DEADLINE
+        alive = False
+        while True:
+            remaining = deadline - time.monotonic()
+            # El probe tiene un piso de presupuesto: con el tiempo que
+            # queda para el deadline se quedaría sin respuesta y un daemon
+            # vivo parecería "no verificable" en vez de "sigue activo".
+            budget = max(remaining, _PROBE_BUDGET_FLOOR)
+            pid = _pid_value()
+            if pid is None:
+                return
+            state, reason = _probe_daemon_process(pid, budget=budget)
+            if state == DAEMON_STOPPED:
+                return
+            # La imagen del proceso es la nuestra: el daemon sigue vivo
+            # aunque no se haya podido leer su linea de comandos.
+            alive = (alive or state == DAEMON_RUNNING
+                     or reason == PROBE_NO_CMDLINE)
+            # El deadline tiene prioridad sobre el probe caido: si el daemon
+            # se vio vivo y no se freno, el problema es el daemon, no el
+            # probe.
+            if time.monotonic() >= deadline:
+                if alive:
+                    raise RuntimeError(
+                        "El servicio de dictado sigue activo. "
+                        "Cerralo y reintentá.")
+                raise RuntimeError(
+                    "No se pudo verificar si el servicio de dictado está "
+                    "activo: cerrá Instant2 por completo y reintentá.")
+            if state == DAEMON_UNKNOWN and reason == PROBE_NO_IMAGE:
+                # Ni siquiera sabemos si el proceso existe: no se frena nada
+                # a ciegas y se le dice al usuario qué hacer.
+                raise RuntimeError(
+                    "No se pudo verificar si el servicio de dictado está "
+                    "activo: cerrá Instant2 por completo y reintentá.")
+            # 0.3 s entre probes: el sondeo no tiene que ser agresivo (cada
+            # tasklist.exe cuesta ~0.25 s en esta máquina).
+            time.sleep(0.3)
 
     def _update_install_failed(self, error):
         if self._closed:
             return
+        # El fallo se está contando ahora: no queda nada pendiente para
+        # reportar en el próximo arranque (ni la nota ni el resultado del
+        # instalador, que sinon el usuario veria dos toasts rojos).
+        _clear_pending_update()
+        _clear_installer_result()
+        _clear_helper_result()
         self._update_install_pending = False
         self.update_button = (f"Reintentar instalación v"
                               f"{(self._pending_update or {}).get('latest', '')}")
@@ -2349,11 +2984,31 @@ class PanelLogic(PanelReadingActions):
             _toast_error(self, "Actualizaciones", exc)
             return
         log.info("binario actualizado en %s", applied)
+        # El reinicio del dictado no se promete: se cuenta lo que pasó. Con
+        # el PID reciclado no hay daemon al que reiniciar y el mensaje
+        # anterior ("Se reinicia el dictado con ella") era mentira.
+        self.stop_daemon_flow(restart=True, on_restart=self._update_restart_note)
+
+    def _update_restart_note(self, restarted):
+        """Dice si el dictado quedó reiniciado con la versión nueva."""
+        if restarted is None:
+            # No se sabe: no se promete ni se niega nada.
+            self.toast("Actualizaciones",
+                       "Versión nueva aplicada al binario. Reabrí el panel "
+                       "para tenerla también acá.",
+                       level="info")
+            return
+        if restarted:
+            self.toast("Actualizaciones",
+                       "Versión nueva aplicada al binario. Se reinicia el "
+                       "dictado con ella; reabrí el panel para tenerla también acá.",
+                       level="info")
+            return
         self.toast("Actualizaciones",
-                   "Versión nueva aplicada al binario. Se reinicia el "
-                   "dictado con ella; reabrí el panel para tenerla también acá.",
-                   level="info")
-        self.stop_daemon_flow(restart=True)
+                   "Versión nueva aplicada al binario, pero el dictado no se "
+                   "reinició: el servicio ya no estaba corriendo. Abrilo de "
+                   "nuevo para seguir dictando.",
+                   level="warn")
 
     # ------------------------------------------------------------- navegación
 

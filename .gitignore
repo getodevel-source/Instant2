@@ -3,6 +3,11 @@
 models/
 *.onnx
 
+# Pesos GGUF: son descargas de varios GB (a veces de la raiz del repo, como el
+# .gguf de 1,1 GB que dejo una corrida del benchmark). No son codigo: se
+# regeneran bajandolos y ningun .gguf se ha versionado nunca.
+*.gguf
+
 # Python
 __pycache__/
 .pytest_cache/
@@ -23,6 +28,7 @@ venv/
 .herdr-web-ui/
 .ui-review/
 .audit-eight/
+.codegraph/
 basura/
 
 # Logs
@@ -48,3 +54,8 @@ dictado/bench/private-real-audio-summary.json
 dictado/bench/.fleurs_es_cache/
 # Cache de benches (corpus descargado/TTS, se regenera solo).
 dictado/bench/.bias_cache/
+# Salida generada del benchmark (680 archivos, ~87 MB). Ademas contiene las
+# CLAVES CIEGAS del paquete de evaluacion (blinded_key_v2p.json,
+# blinded_key.ALL.json, blinded_review.ALL.jsonl): versionarlas publicaria la
+# clave y destruiria la revision ciega. Se ignora el arbol entero.
+dictado/bench/results/

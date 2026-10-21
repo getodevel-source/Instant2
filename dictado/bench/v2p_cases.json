@@ -1,0 +1,3517 @@
+{
+  "schema": "instant2-v2p-corpus/1",
+  "purpose": "Synthetic Spanish/Argentine Voice-to-Prompt references. Author-written gold, frozen before any model output. No user audio, no user text, no private data.",
+  "coverage": {
+    "ordinary": "Pedido simple sin condiciones.",
+    "ambiguous": "Referente incompleto: el prompt debe conservar la ambiguedad, nunca inventar el dato.",
+    "filler": "Disfluencia del habla: muletillas, falsos arranques, autoreparaciones.",
+    "long": "Dictado largo con varias oraciones.",
+    "multi_condition": "Varias condiciones simultaneas que deben llegar todas al prompt.",
+    "context_available_explicit": "Dato dicho en el propio pedido (provenance explicit).",
+    "context_available_retrieved": "Dato traido de contexto provisto por el usuario (provenance retrieved).",
+    "context_absent_unknown": "Dato ausente: debe quedar marcado como desconocido, sin fabricar (provenance unknown).",
+    "history_relevant": "Turno previo que aporta un dato que el prompt debe conservar.",
+    "history_irrelevant": "Turno previo que no debe filtrarse al prompt.",
+    "selection_authorized": "Texto seleccionado con autorizacion explicita de usarlo.",
+    "selection_absent": "Texto seleccionado SIN autorizacion: su contenido nunca debe aparecer."
+  },
+  "field_notes": {
+    "input": "Lo que el ASR entrega: minusculas, sin puntuacion, con algun error tipico.",
+    "reference_prompt": "Gold escrito a mano: el prompt que la persona queria. Nunca se envia al modelo.",
+    "expected.context[].kind": "explicit | retrieved | unknown | history | selection",
+    "anchors": "Frases que un prompt fiel debe contener (chequeo literal, sensible a tildes).",
+    "forbidden": "Frases cuya presencia delata invento o fuga de contexto no autorizado.",
+    "missing_context_markers": "Formulaciones aceptables de 'no lo se' (informativo: el invariante duro es forbidden ausente).",
+    "history": "Turno previo que el runner puede inyectar cuando la dimension context=history esta activa.",
+    "selection": "Texto seleccionado; authorized=false significa que el runner no debe inyectarlo y el prompt no puede usarlo.",
+    "provided_context": "Contexto aportado por el usuario (kind=retrieved) que el runner puede inyectar con context=provided.",
+    "expected.mode": "Forma de salida pedida en el dictado. null = el hablante no la dijo: el prompt no debe inventarla.",
+    "expected.destination": "Canal/destino pedido en el dictado (solo si el dictado lo nombra, p.ej. 'correo' -> email). null = desconocido: el prompt no puede asumir un canal, pero una ausencia de canal NO es un dato faltante salvo que el pedido no se pueda ejecutar sin elegirlo (p.ej. 'mandaselo a Laura' -> 'envialo a Laura' es correcto; no hay que declarar 'canal de entrega' como faltante).",
+    "expected.restrictions": "Solo restricciones que el hablante dijo. Una entrada es una frase literal o {\"any\": [variantes]} cuando la flexion legitima cambia (priorizar/priorizando). El chequeo ignora palabras funcionales (de, la, en, un...) pero nunca negaciones ni cuantificadores, asi que 'sin X' no puede pasar como 'con X'. Las expectativas del arnes viven en 'evaluator' y NO se exigen al output como si fueran pedidos del usuario.",
+    "evaluator": "Politica del arnes (no gold del pedido): 'policy' describe errores a observar y 'must_use_context' los datos que el contexto provisto/historial aporta y que el prompt debe conservar."
+  },
+  "cases": [
+    {
+      "id": "ordinary_01",
+      "category": "ordinary",
+      "tags": [
+        "mode:libre",
+        "destination:email"
+      ],
+      "input": "che arma me un resumen del informe de ventas de octubre y mandaselo a laura mendez antes del viernes",
+      "reference_prompt": "Genera un resumen del informe de ventas de octubre y enviaselo a Laura Mendez antes del viernes.",
+      "expected": {
+        "intent": "Pedir un resumen del informe de ventas de octubre y su envio a Laura Mendez antes del viernes.",
+        "constraints": [
+          "resumen del informe de ventas de octubre",
+          "enviar a Laura Mendez",
+          "antes del viernes"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "informe de ventas de octubre"
+          },
+          {
+            "kind": "explicit",
+            "value": "destinataria Laura Mendez"
+          },
+          {
+            "kind": "explicit",
+            "value": "plazo viernes"
+          }
+        ],
+        "unknowns": [],
+        "mode": "resumen",
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "informe de ventas",
+        "Laura Mendez",
+        "viernes"
+      ],
+      "forbidden": [
+        "informe de gastos",
+        "jueves",
+        "Martine",
+        "correo",
+        "mail",
+        "email"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 45
+      },
+      "notes": "Pedido mas comun del set: una accion, un objeto, un destinatario y un plazo.",
+      "evaluator": {
+        "policy": [
+          "no nombrar un canal que el hablante no dijo (correo, mail, email)",
+          "el canal no hace falta para ejecutar: no lo marques como dato faltante ni lo inventes"
+        ]
+      }
+    },
+    {
+      "id": "ordinary_02",
+      "category": "ordinary",
+      "tags": [
+        "mode:mensaje",
+        "destination:chat"
+      ],
+      "input": "decile a martin que la reunion pasa para el martes a las tres de la tarde",
+      "reference_prompt": "Decile a Martin que la reunion pasa para el martes a las tres de la tarde.",
+      "expected": {
+        "intent": "Avisar a Martin que la reunion se mueve al martes a las tres de la tarde.",
+        "constraints": [
+          "avisar a Martin",
+          "martes",
+          "tres de la tarde"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "destinatario Martin"
+          },
+          {
+            "kind": "explicit",
+            "value": "nuevo dia martes"
+          },
+          {
+            "kind": "explicit",
+            "value": "hora tres de la tarde"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "Martin",
+        "martes",
+        "tres de la tarde"
+      ],
+      "forbidden": [
+        "miercoles",
+        "cuatro de la tarde",
+        "manana"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 40
+      }
+    },
+    {
+      "id": "ordinary_03",
+      "category": "ordinary",
+      "tags": [
+        "mode:mensaje",
+        "destination:chat"
+      ],
+      "input": "escribi un mensaje para el grupo del equipo avisando que el deploy salio bien",
+      "reference_prompt": "Escribi un mensaje para el grupo del equipo avisando que el deploy salio bien.",
+      "expected": {
+        "intent": "Avisar al grupo del equipo que el deploy salio bien.",
+        "constraints": [
+          "mensaje para el grupo del equipo",
+          "deploy salio bien"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "deploy salio bien"
+          }
+        ],
+        "unknowns": [],
+        "mode": "mensaje",
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "grupo del equipo",
+        "deploy"
+      ],
+      "forbidden": [
+        "rollback",
+        "staging",
+        "salio mal"
+      ],
+      "length": {
+        "min_words": 6,
+        "max_words": 40
+      }
+    },
+    {
+      "id": "ordinary_04",
+      "category": "ordinary",
+      "tags": [
+        "mode:lista",
+        "destination:documento"
+      ],
+      "input": "haceme una lista de tareas para preparar la demo del jueves",
+      "reference_prompt": "Hace una lista de tareas para preparar la demo del jueves.",
+      "expected": {
+        "intent": "Obtener una lista de tareas para preparar la demo del jueves.",
+        "constraints": [
+          "formato lista de tareas",
+          "demo del jueves"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "demo del jueves"
+          }
+        ],
+        "unknowns": [],
+        "mode": "lista",
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "lista de tareas",
+        "demo",
+        "jueves"
+      ],
+      "forbidden": [
+        "cronograma del sprint",
+        "viernes"
+      ],
+      "length": {
+        "min_words": 6,
+        "max_words": 40
+      }
+    },
+    {
+      "id": "ordinary_05",
+      "category": "ordinary",
+      "tags": [
+        "mode:documento",
+        "destination:documento"
+      ],
+      "input": "pasame el texto de la reunion de ayer a formato de acta",
+      "reference_prompt": "Pasa el texto de la reunion de ayer a formato de acta.",
+      "expected": {
+        "intent": "Convertir el texto de la reunion de ayer en un acta.",
+        "constraints": [
+          "entrada: texto de la reunion de ayer",
+          "salida: formato de acta"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "reunion de ayer"
+          }
+        ],
+        "unknowns": [],
+        "mode": "acta",
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "reunion de ayer",
+        "acta"
+      ],
+      "forbidden": [
+        "reunion del lunes",
+        "informe de ventas"
+      ],
+      "length": {
+        "min_words": 6,
+        "max_words": 40
+      }
+    },
+    {
+      "id": "ordinary_06",
+      "category": "ordinary",
+      "tags": [
+        "mode:email",
+        "destination:email"
+      ],
+      "input": "redacta un correo corto para pedirle a recursos humanos los dias de vacaciones que me quedan",
+      "reference_prompt": "Redacta un correo corto para pedirle a Recursos Humanos los dias de vacaciones que me quedan.",
+      "expected": {
+        "intent": "Pedir a Recursos Humanos los dias de vacaciones disponibles.",
+        "constraints": [
+          "correo corto",
+          "destinatario Recursos Humanos",
+          "objeto: dias de vacaciones disponibles"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "destinatario Recursos Humanos"
+          },
+          {
+            "kind": "explicit",
+            "value": "dias de vacaciones disponibles"
+          }
+        ],
+        "unknowns": [],
+        "mode": "correo",
+        "destination": "email",
+        "restrictions": [
+          "corto"
+        ]
+      },
+      "anchors": [
+        "Recursos Humanos",
+        "vacaciones"
+      ],
+      "forbidden": [
+        "aumento de sueldo",
+        "renuncia"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 45
+      }
+    },
+    {
+      "id": "ordinary_07",
+      "category": "ordinary",
+      "tags": [
+        "mode:resumen",
+        "destination:documento"
+      ],
+      "input": "resumi en tres puntos lo que hablamos sobre el presupuesto trimestral",
+      "reference_prompt": "Resumi en tres puntos lo que hablamos sobre el presupuesto trimestral.",
+      "expected": {
+        "intent": "Resumir en tres puntos la conversacion sobre el presupuesto trimestral.",
+        "constraints": [
+          "formato: tres puntos",
+          "tema: presupuesto trimestral"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "presupuesto trimestral"
+          },
+          {
+            "kind": "explicit",
+            "value": "formato de tres puntos"
+          }
+        ],
+        "unknowns": [],
+        "mode": "resumen",
+        "destination": null,
+        "restrictions": [
+          "tres puntos"
+        ]
+      },
+      "anchors": [
+        "tres puntos",
+        "presupuesto trimestral"
+      ],
+      "forbidden": [
+        "cinco puntos",
+        "presupuesto anual"
+      ],
+      "length": {
+        "min_words": 6,
+        "max_words": 40
+      }
+    },
+    {
+      "id": "ordinary_08",
+      "category": "ordinary",
+      "tags": [
+        "mode:libre",
+        "destination:ninguno"
+      ],
+      "input": "traducime esta frase al ingles el sistema funciona bien",
+      "reference_prompt": "Traduci esta frase al ingles: el sistema funciona bien.",
+      "expected": {
+        "intent": "Traducir al ingles la frase dictada.",
+        "constraints": [
+          "idioma destino ingles",
+          "frase: el sistema funciona bien"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "idioma destino ingles"
+          },
+          {
+            "kind": "explicit",
+            "value": "frase a traducir"
+          }
+        ],
+        "unknowns": [],
+        "mode": "traduccion",
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "ingles"
+      ],
+      "forbidden": [
+        "frances",
+        "portugues"
+      ],
+      "length": {
+        "min_words": 4,
+        "max_words": 40
+      }
+    },
+    {
+      "id": "ambiguous_01",
+      "category": "ambiguous",
+      "tags": [
+        "provenance:unknown",
+        "referent:missing"
+      ],
+      "input": "mandale eso a laura",
+      "reference_prompt": "Envia eso a Laura.",
+      "expected": {
+        "intent": "Enviar a Laura algo que el hablante no nombra.",
+        "constraints": [
+          "destinataria Laura"
+        ],
+        "context": [
+          {
+            "kind": "unknown",
+            "value": "que es eso"
+          }
+        ],
+        "unknowns": [
+          "que es eso"
+        ],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "Laura"
+      ],
+      "forbidden": [
+        "informe",
+        "presupuesto",
+        "resumen",
+        "contrato",
+        "correo",
+        "mail",
+        "email"
+      ],
+      "missing_context_markers": [
+        "eso",
+        "sin especificar",
+        "no especificado",
+        "el contenido"
+      ],
+      "length": {
+        "min_words": 3,
+        "max_words": 30
+      },
+      "notes": "El referente es el hueco del pedido: rellenarlo con cualquier objeto es invento.",
+      "evaluator": {
+        "policy": [
+          "el canal no hace falta para ejecutar: no lo marques como dato faltante ni lo inventes"
+        ]
+      }
+    },
+    {
+      "id": "ambiguous_02",
+      "category": "ambiguous",
+      "tags": [
+        "provenance:unknown",
+        "referent:missing"
+      ],
+      "input": "arreglalo antes del lunes",
+      "reference_prompt": "Arregla eso antes del lunes.",
+      "expected": {
+        "intent": "Arreglar algo no nombrado antes del lunes.",
+        "constraints": [
+          "plazo lunes"
+        ],
+        "context": [
+          {
+            "kind": "unknown",
+            "value": "que hay que arreglar"
+          }
+        ],
+        "unknowns": [
+          "que hay que arreglar"
+        ],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "lunes"
+      ],
+      "forbidden": [
+        "servidor",
+        "bug",
+        "formulario",
+        "error 500"
+      ],
+      "missing_context_markers": [
+        "eso",
+        "sin especificar",
+        "no especificado"
+      ],
+      "length": {
+        "min_words": 3,
+        "max_words": 30
+      }
+    },
+    {
+      "id": "ambiguous_03",
+      "category": "ambiguous",
+      "tags": [
+        "provenance:unknown",
+        "referent:missing"
+      ],
+      "input": "revisa el archivo ese que te mande",
+      "reference_prompt": "Revisa el archivo que te mande.",
+      "expected": {
+        "intent": "Revisar un archivo no nombrado que el hablante ya envio.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "unknown",
+            "value": "que archivo"
+          }
+        ],
+        "unknowns": [
+          "que archivo"
+        ],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "archivo"
+      ],
+      "forbidden": [
+        "informe",
+        "planilla",
+        "pdf",
+        "presupuesto"
+      ],
+      "missing_context_markers": [
+        "ese archivo",
+        "sin especificar",
+        "no especificado"
+      ],
+      "length": {
+        "min_words": 3,
+        "max_words": 30
+      }
+    },
+    {
+      "id": "ambiguous_04",
+      "category": "ambiguous",
+      "tags": [
+        "provenance:unknown",
+        "referent:missing"
+      ],
+      "input": "hace lo que hablamos",
+      "reference_prompt": "Hace lo que hablamos.",
+      "expected": {
+        "intent": "Ejecutar una accion ya conversada que el hablante no repite.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "unknown",
+            "value": "que accion concreta"
+          }
+        ],
+        "unknowns": [
+          "que accion concreta"
+        ],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [],
+      "forbidden": [
+        "refactorizar",
+        "migrar",
+        "mudanza",
+        "presupuesto"
+      ],
+      "missing_context_markers": [
+        "lo que hablamos",
+        "sin especificar",
+        "no especificado"
+      ],
+      "length": {
+        "min_words": 3,
+        "max_words": 30
+      }
+    },
+    {
+      "id": "ambiguous_05",
+      "category": "ambiguous",
+      "tags": [
+        "provenance:unknown",
+        "referent:missing"
+      ],
+      "input": "compara las dos versiones y decime cual conviene",
+      "reference_prompt": "Compara las dos versiones y decime cual conviene.",
+      "expected": {
+        "intent": "Comparar dos versiones no identificadas y recomendar una.",
+        "constraints": [
+          "comparar dos versiones",
+          "recomendar una"
+        ],
+        "context": [
+          {
+            "kind": "unknown",
+            "value": "que dos versiones"
+          }
+        ],
+        "unknowns": [
+          "que dos versiones"
+        ],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "dos versiones"
+      ],
+      "forbidden": [
+        "version 2.0",
+        "v1",
+        "v2"
+      ],
+      "missing_context_markers": [
+        "dos versiones",
+        "sin especificar",
+        "no especificado"
+      ],
+      "length": {
+        "min_words": 4,
+        "max_words": 35
+      }
+    },
+    {
+      "id": "ambiguous_06",
+      "category": "ambiguous",
+      "tags": [
+        "provenance:unknown",
+        "referent:missing"
+      ],
+      "input": "ponele el titulo que te dije",
+      "reference_prompt": "Ponele el titulo que te dije.",
+      "expected": {
+        "intent": "Aplicar un titulo ya mencionado que el hablante no repite.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "unknown",
+            "value": "que titulo"
+          }
+        ],
+        "unknowns": [
+          "que titulo"
+        ],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [],
+      "forbidden": [
+        "informe final",
+        "resumen ejecutivo",
+        "acta de cierre"
+      ],
+      "missing_context_markers": [
+        "el titulo que te dije",
+        "sin especificar",
+        "no especificado"
+      ],
+      "length": {
+        "min_words": 3,
+        "max_words": 30
+      }
+    },
+    {
+      "id": "filler_01",
+      "category": "filler",
+      "tags": [
+        "disfluency:muletilla",
+        "mode:plan"
+      ],
+      "input": "eh mira o sea necesito que que armes un plan de trabajo para la migracion digamos para el mes que viene",
+      "reference_prompt": "Arma un plan de trabajo para la migracion del mes que viene.",
+      "expected": {
+        "intent": "Obtener un plan de trabajo para la migracion del mes que viene.",
+        "constraints": [
+          "plan de trabajo",
+          "migracion",
+          "mes que viene"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "migracion"
+          },
+          {
+            "kind": "explicit",
+            "value": "mes que viene"
+          }
+        ],
+        "unknowns": [],
+        "mode": "plan",
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "plan de trabajo",
+        "migracion"
+      ],
+      "forbidden": [
+        "este mes",
+        "migracion de datos"
+      ],
+      "length": {
+        "min_words": 5,
+        "max_words": 35
+      },
+      "notes": "Las muletillas no son contenido: el prompt no debe contenerlas."
+    },
+    {
+      "id": "filler_02",
+      "category": "filler",
+      "tags": [
+        "disfluency:autoreparacion",
+        "negation:corregida"
+      ],
+      "input": "bueno este como te decia mandale mandale el mail a juan no a juan no a julieta",
+      "reference_prompt": "Envia el mail a Julieta.",
+      "expected": {
+        "intent": "Enviar el mail a Julieta.",
+        "constraints": [
+          "destinataria Julieta"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "destinataria Julieta"
+          }
+        ],
+        "unknowns": [],
+        "mode": "email",
+        "destination": "email",
+        "restrictions": []
+      },
+      "anchors": [
+        "Julieta"
+      ],
+      "forbidden": [
+        "Juan"
+      ],
+      "length": {
+        "min_words": 3,
+        "max_words": 30
+      },
+      "notes": "Autoreparacion: el destinatario descartado no puede aparecer."
+    },
+    {
+      "id": "filler_03",
+      "category": "filler",
+      "tags": [
+        "disfluency:repeticion"
+      ],
+      "input": "o sea quiero quiero que revises revisa el presupuesto si el presupuesto del area",
+      "reference_prompt": "Revisa el presupuesto del area.",
+      "expected": {
+        "intent": "Revisar el presupuesto del area.",
+        "constraints": [
+          "presupuesto del area"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "presupuesto del area"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "presupuesto del area"
+      ],
+      "forbidden": [
+        "presupuesto anual",
+        "presupuesto de marketing"
+      ],
+      "length": {
+        "min_words": 3,
+        "max_words": 30
+      }
+    },
+    {
+      "id": "filler_04",
+      "category": "filler",
+      "tags": [
+        "disfluency:repeticion",
+        "mode:resumen"
+      ],
+      "input": "digamos haceme un un resumen un resumen corto del documento de especificacion",
+      "reference_prompt": "Hace un resumen corto del documento de especificacion.",
+      "expected": {
+        "intent": "Obtener un resumen corto del documento de especificacion.",
+        "constraints": [
+          "resumen corto",
+          "documento de especificacion"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "documento de especificacion"
+          }
+        ],
+        "unknowns": [],
+        "mode": "resumen",
+        "destination": null,
+        "restrictions": [
+          "corto"
+        ]
+      },
+      "anchors": [
+        "resumen corto",
+        "especificacion"
+      ],
+      "forbidden": [
+        "resumen extenso",
+        "documento de diseño"
+      ],
+      "length": {
+        "min_words": 4,
+        "max_words": 30
+      }
+    },
+    {
+      "id": "filler_05",
+      "category": "filler",
+      "tags": [
+        "disfluency:repeticion",
+        "mode:plan"
+      ],
+      "input": "ehh arma arma el cronograma para el sprint para el sprint que viene",
+      "reference_prompt": "Arma el cronograma para el sprint que viene.",
+      "expected": {
+        "intent": "Obtener el cronograma del sprint que viene.",
+        "constraints": [
+          "cronograma",
+          "sprint que viene"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "sprint que viene"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "cronograma",
+        "sprint"
+      ],
+      "forbidden": [
+        "sprint pasado",
+        "trimestre"
+      ],
+      "length": {
+        "min_words": 4,
+        "max_words": 30
+      }
+    },
+    {
+      "id": "filler_06",
+      "category": "filler",
+      "tags": [
+        "disfluency:repeticion",
+        "negation:presente"
+      ],
+      "input": "si si dale escribile a soporte que el sistema que el sistema no anda",
+      "reference_prompt": "Escribile a Soporte que el sistema no anda.",
+      "expected": {
+        "intent": "Avisar a Soporte que el sistema no funciona.",
+        "constraints": [
+          "destinatario Soporte",
+          "el sistema no anda"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "destinatario Soporte"
+          },
+          {
+            "kind": "explicit",
+            "value": "falla del sistema"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "Soporte",
+        "no anda"
+      ],
+      "forbidden": [
+        "anda bien",
+        "funciona correctamente",
+        "correo",
+        "mail",
+        "email"
+      ],
+      "length": {
+        "min_words": 5,
+        "max_words": 30
+      },
+      "notes": "Invariante de negacion: 'no anda' no puede volverse afirmativo.",
+      "evaluator": {
+        "policy": [
+          "no convertir la negacion en afirmacion",
+          "el canal no hace falta para ejecutar: no lo marques como dato faltante ni lo inventes"
+        ]
+      }
+    },
+    {
+      "id": "filler_07",
+      "category": "filler",
+      "tags": [
+        "disfluency:autoreparacion",
+        "mode:documento"
+      ],
+      "input": "empeza de nuevo olvidate hace lo vos o sea genera el informe de cierre",
+      "reference_prompt": "Genera el informe de cierre.",
+      "expected": {
+        "intent": "Generar el informe de cierre.",
+        "constraints": [
+          "informe de cierre"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "informe de cierre"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "informe de cierre"
+      ],
+      "forbidden": [
+        "empeza de nuevo",
+        "olvidate"
+      ],
+      "length": {
+        "min_words": 3,
+        "max_words": 30
+      }
+    },
+    {
+      "id": "long_01",
+      "category": "long",
+      "tags": [
+        "mode:plan",
+        "multi_clause:si"
+      ],
+      "input": "mira necesito preparar el lanzamiento de la version dos del producto entonces arma un plan que incluya la lista de tareas tecnicas la comunicacion a los clientes el material de capacitacion para soporte y una fecha tentativa de salida para la primera semana de diciembre",
+      "reference_prompt": "Arma un plan para el lanzamiento de la version dos del producto que incluya la lista de tareas tecnicas, la comunicacion a los clientes, el material de capacitacion para soporte y una fecha tentativa de salida en la primera semana de diciembre.",
+      "expected": {
+        "intent": "Planificar el lanzamiento de la version dos del producto.",
+        "constraints": [
+          "incluir lista de tareas tecnicas",
+          "incluir comunicacion a los clientes",
+          "incluir material de capacitacion para soporte",
+          "incluir fecha tentativa: primera semana de diciembre"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "version dos del producto"
+          },
+          {
+            "kind": "explicit",
+            "value": "primera semana de diciembre"
+          }
+        ],
+        "unknowns": [],
+        "mode": "plan",
+        "destination": null,
+        "restrictions": [
+          "tentativa"
+        ]
+      },
+      "anchors": [
+        "version dos",
+        "tareas tecnicas",
+        "capacitacion para soporte",
+        "primera semana de diciembre"
+      ],
+      "forbidden": [
+        "primera semana de enero",
+        "version tres"
+      ],
+      "length": {
+        "min_words": 20,
+        "max_words": 90
+      },
+      "notes": "Cuatro componentes obligatorios: la omision de uno es la falla tipica."
+    },
+    {
+      "id": "long_02",
+      "category": "long",
+      "tags": [
+        "mode:resumen",
+        "multi_clause:si"
+      ],
+      "input": "te paso el resumen de lo que dijo el cliente en la ultima llamada dice que el producto les gusta pero que la configuracion inicial les parece complicada que necesitan exportar a excel y que el soporte tarda demasiado arma un prompt para pedirle al equipo de producto que priorice esas tres cosas",
+      "reference_prompt": "A partir de este resumen del cliente, arma un prompt para pedirle al equipo de producto que priorice tres cosas: la configuracion inicial complicada, la exportacion a Excel y la demora del soporte.",
+      "expected": {
+        "intent": "Pedir al equipo de producto que priorice los tres problemas relevados del cliente.",
+        "constraints": [
+          "problema 1: configuracion inicial complicada",
+          "problema 2: necesita exportar a Excel",
+          "problema 3: el soporte tarda demasiado",
+          "destinatario del prompt: equipo de producto"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "configuracion inicial complicada"
+          },
+          {
+            "kind": "explicit",
+            "value": "exportacion a Excel"
+          },
+          {
+            "kind": "explicit",
+            "value": "demora del soporte"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "configuracion inicial",
+        "Excel",
+        "soporte",
+        "equipo de producto"
+      ],
+      "forbidden": [
+        "precio",
+        "facturacion",
+        "cuatro cosas"
+      ],
+      "length": {
+        "min_words": 18,
+        "max_words": 90
+      }
+    },
+    {
+      "id": "long_03",
+      "category": "long",
+      "tags": [
+        "mode:documento",
+        "multi_clause:si"
+      ],
+      "input": "necesito un documento de onboarding para la gente nueva del equipo que explique como se pide acceso a los sistemas como se levanta el entorno local como se hace una revision de codigo y cuales son los canales de comunicacion del equipo y que ademas tenga una seccion de preguntas frecuentes",
+      "reference_prompt": "Escribi un documento de onboarding para la gente nueva del equipo que explique como se pide acceso a los sistemas, como se levanta el entorno local, como se hace una revision de codigo y cuales son los canales de comunicacion del equipo, con una seccion de preguntas frecuentes.",
+      "expected": {
+        "intent": "Redactar el documento de onboarding del equipo.",
+        "constraints": [
+          "como se pide acceso a los sistemas",
+          "como se levanta el entorno local",
+          "como se hace una revision de codigo",
+          "canales de comunicacion del equipo",
+          "seccion de preguntas frecuentes"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "gente nueva del equipo"
+          },
+          {
+            "kind": "explicit",
+            "value": "seccion de preguntas frecuentes"
+          }
+        ],
+        "unknowns": [],
+        "mode": "documento",
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "onboarding",
+        "entorno local",
+        "revision de codigo",
+        "preguntas frecuentes"
+      ],
+      "forbidden": [
+        "canales de venta",
+        "onboarding de clientes"
+      ],
+      "length": {
+        "min_words": 20,
+        "max_words": 100
+      }
+    },
+    {
+      "id": "long_04",
+      "category": "long",
+      "tags": [
+        "mode:documento",
+        "negation:presente"
+      ],
+      "input": "arma el informe del incidente del martes con la cronologia de lo que paso la causa raiz el impacto en los clientes y las acciones para que no vuelva a pasar y aclara que todavia no tenemos la confirmacion del proveedor",
+      "reference_prompt": "Arma el informe del incidente del martes con la cronologia, la causa raiz, el impacto en los clientes y las acciones preventivas, y aclara que todavia no tenemos la confirmacion del proveedor.",
+      "expected": {
+        "intent": "Redactar el informe del incidente del martes con sus secciones y una salvedad.",
+        "constraints": [
+          "cronologia",
+          "causa raiz",
+          "impacto en los clientes",
+          "acciones preventivas",
+          "salvedad: sin confirmacion del proveedor"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "incidente del martes"
+          },
+          {
+            "kind": "explicit",
+            "value": "sin confirmacion del proveedor"
+          }
+        ],
+        "unknowns": [
+          "confirmacion del proveedor"
+        ],
+        "mode": "informe",
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "cronologia",
+        "causa raiz",
+        "impacto",
+        "proveedor"
+      ],
+      "forbidden": [
+        "el proveedor confirmo",
+        "causa confirmada por el proveedor"
+      ],
+      "length": {
+        "min_words": 18,
+        "max_words": 95
+      },
+      "notes": "La salvedad es una negacion explicita: no debe convertirse en afirmacion.",
+      "evaluator": {
+        "policy": [
+          "no afirmar como confirmada la causa del proveedor"
+        ]
+      }
+    },
+    {
+      "id": "long_05",
+      "category": "long",
+      "tags": [
+        "mode:lista",
+        "multi_clause:si"
+      ],
+      "input": "organizame el viaje a cordoba de la semana que viene con la reunion con el cliente el miercoles el vuelo de ida el martes a la tarde el hotel cerca de la oficina y el regreso el jueves despues del mediodia y deja un espacio para la visita a la planta",
+      "reference_prompt": "Organiza el viaje a Cordoba de la semana que viene con la reunion con el cliente el miercoles, el vuelo de ida el martes a la tarde, el hotel cerca de la oficina, el regreso el jueves despues del mediodia y un espacio para la visita a la planta.",
+      "expected": {
+        "intent": "Organizar el itinerario del viaje a Cordoba.",
+        "constraints": [
+          "reunion con el cliente el miercoles",
+          "vuelo de ida el martes a la tarde",
+          "hotel cerca de la oficina",
+          "regreso el jueves despues del mediodia",
+          "espacio para la visita a la planta"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "destino Cordoba"
+          },
+          {
+            "kind": "explicit",
+            "value": "miercoles reunion"
+          },
+          {
+            "kind": "explicit",
+            "value": "jueves regreso"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "Cordoba",
+        "miercoles",
+        "martes",
+        "jueves",
+        "visita a la planta"
+      ],
+      "forbidden": [
+        "Mendoza",
+        "viernes",
+        "lunes"
+      ],
+      "length": {
+        "min_words": 18,
+        "max_words": 95
+      }
+    },
+    {
+      "id": "long_06",
+      "category": "long",
+      "tags": [
+        "mode:libre",
+        "destination:email"
+      ],
+      "input": "escribi un pedido formal al area de compras para que nos envien la cotizacion de veinte notebooks con dieciseis gigas de memoria y quinientos doce de disco y aclara que necesitamos la entrega antes de fin de mes y que el pago se hace a treinta dias",
+      "reference_prompt": "Escribi un pedido formal al area de compras para que envien la cotizacion de veinte notebooks con 16 GB de memoria y 512 GB de disco, aclarando que la entrega es antes de fin de mes y que el pago se hace a 30 dias.",
+      "expected": {
+        "intent": "Pedir la cotizacion de veinte notebooks al area de compras.",
+        "constraints": [
+          "cantidad: veinte notebooks",
+          "memoria: 16 GB",
+          "disco: 512 GB",
+          "entrega antes de fin de mes",
+          "pago a 30 dias"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "veinte notebooks"
+          },
+          {
+            "kind": "explicit",
+            "value": "entrega antes de fin de mes"
+          },
+          {
+            "kind": "explicit",
+            "value": "pago a 30 dias"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "notebooks",
+        "memoria",
+        "disco",
+        "fin de mes"
+      ],
+      "forbidden": [
+        "treinta notebooks",
+        "60 dias",
+        "8 GB"
+      ],
+      "length": {
+        "min_words": 18,
+        "max_words": 95
+      },
+      "notes": "Cifras dichas en palabras: el invariante duro es que no cambien.",
+      "evaluator": {
+        "policy": [
+          "conservar las cantidades dichas (en palabras o su equivalente en digitos)"
+        ]
+      }
+    },
+    {
+      "id": "multi_condition_01",
+      "category": "multi_condition",
+      "tags": [
+        "mode:libre",
+        "restriction:multiple"
+      ],
+      "input": "armame un prompt para pedir un resumen del contrato en dos parrafos sin tecnicismos en tono formal y que no incluya nombres propios",
+      "reference_prompt": "Arma un prompt para pedir un resumen del contrato en dos parrafos, sin tecnicismos, en tono formal y sin nombres propios.",
+      "expected": {
+        "intent": "Redactar un prompt que pida un resumen del contrato cumpliendo cuatro condiciones.",
+        "constraints": [
+          "resumen del contrato",
+          "dos parrafos",
+          "sin tecnicismos",
+          "tono formal",
+          "sin nombres propios"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "contrato"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": [
+          "dos parrafos",
+          "sin tecnicismos",
+          "tono formal",
+          "sin nombres propios"
+        ]
+      },
+      "anchors": [
+        "dos parrafos",
+        "sin tecnicismos",
+        "tono formal",
+        "nombres propios"
+      ],
+      "forbidden": [
+        "tres parrafos",
+        "con nombres propios",
+        "tono informal"
+      ],
+      "length": {
+        "min_words": 10,
+        "max_words": 60
+      },
+      "notes": "Cuatro condiciones; perder una (tipicamente 'sin nombres propios') es la falla esperada."
+    },
+    {
+      "id": "multi_condition_02",
+      "category": "multi_condition",
+      "tags": [
+        "mode:email",
+        "restriction:multiple"
+      ],
+      "input": "escribi un mail para el cliente explicando el retraso breve sin prometer fechas y en tono cordial",
+      "reference_prompt": "Escribi un mail para el cliente explicando el retraso, breve, sin prometer fechas y en tono cordial.",
+      "expected": {
+        "intent": "Redactar un mail al cliente sobre el retraso con tres condiciones.",
+        "constraints": [
+          "explicar el retraso",
+          "breve",
+          "no prometer fechas",
+          "tono cordial"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "retraso"
+          }
+        ],
+        "unknowns": [],
+        "mode": "email",
+        "destination": "email",
+        "restrictions": [
+          "breve",
+          "sin prometer fechas",
+          "tono cordial"
+        ]
+      },
+      "anchors": [
+        "retraso",
+        "breve",
+        "sin prometer fechas",
+        "cordial"
+      ],
+      "forbidden": [
+        "prometemos",
+        "fecha de entrega asegurada",
+        "tono formal"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 50
+      }
+    },
+    {
+      "id": "multi_condition_03",
+      "category": "multi_condition",
+      "tags": [
+        "mode:plan",
+        "restriction:multiple"
+      ],
+      "input": "hace un plan de pruebas para el login con cinco casos priorizando seguridad y que se pueda ejecutar en una hora",
+      "reference_prompt": "Hace un plan de pruebas para el login con cinco casos, priorizando seguridad y ejecutable en una hora.",
+      "expected": {
+        "intent": "Redactar un plan de pruebas para el login con tres condiciones.",
+        "constraints": [
+          "plan de pruebas del login",
+          "cinco casos",
+          "priorizar seguridad",
+          "ejecutable en una hora"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "login"
+          },
+          {
+            "kind": "explicit",
+            "value": "cinco casos"
+          }
+        ],
+        "unknowns": [],
+        "mode": "plan",
+        "destination": null,
+        "restrictions": [
+          "cinco casos",
+          {
+            "any": [
+              "priorizar seguridad",
+              "priorizando seguridad"
+            ]
+          },
+          "una hora"
+        ]
+      },
+      "anchors": [
+        "cinco casos",
+        "seguridad",
+        "una hora"
+      ],
+      "forbidden": [
+        "diez casos",
+        "priorizar rendimiento",
+        "un dia"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 50
+      }
+    },
+    {
+      "id": "multi_condition_04",
+      "category": "multi_condition",
+      "tags": [
+        "mode:resumen",
+        "restriction:multiple"
+      ],
+      "input": "resumi el acta en bullet points maximo diez lineas en presente y sin conclusiones",
+      "reference_prompt": "Resumi el acta en bullet points, con un maximo de diez lineas, en presente y sin conclusiones.",
+      "expected": {
+        "intent": "Resumir el acta con formato y limites definidos.",
+        "constraints": [
+          "formato bullet points",
+          "maximo diez lineas",
+          "tiempo presente",
+          "sin conclusiones"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "acta"
+          }
+        ],
+        "unknowns": [],
+        "mode": "resumen",
+        "destination": null,
+        "restrictions": [
+          "maximo diez lineas",
+          "en presente",
+          "sin conclusiones"
+        ]
+      },
+      "anchors": [
+        "bullet points",
+        "diez lineas",
+        "presente",
+        "sin conclusiones"
+      ],
+      "forbidden": [
+        "veinte lineas",
+        "en pasado",
+        "con conclusiones"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 55
+      }
+    },
+    {
+      "id": "multi_condition_05",
+      "category": "multi_condition",
+      "tags": [
+        "mode:libre",
+        "restriction:multiple"
+      ],
+      "input": "genera un prompt para refactorizar el modulo de pagos que preserve la api publica con tests y sin cambiar dependencias",
+      "reference_prompt": "Genera un prompt para refactorizar el modulo de pagos preservando la API publica, con tests y sin cambiar dependencias.",
+      "expected": {
+        "intent": "Redactar un prompt de refactorizacion con cuatro condiciones.",
+        "constraints": [
+          "modulo de pagos",
+          "preservar la API publica",
+          "incluir tests",
+          "no cambiar dependencias"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "modulo de pagos"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": [
+          {
+            "any": [
+              "preservar la API publica",
+              "preservando la API publica"
+            ]
+          },
+          "con tests",
+          "sin cambiar dependencias"
+        ]
+      },
+      "anchors": [
+        "modulo de pagos",
+        "API publica",
+        "tests",
+        "dependencias"
+      ],
+      "forbidden": [
+        "actualizar dependencias",
+        "cambiar de dependencias",
+        "sin tests",
+        "modulo de facturacion"
+      ],
+      "length": {
+        "min_words": 10,
+        "max_words": 55
+      }
+    },
+    {
+      "id": "multi_condition_06",
+      "category": "multi_condition",
+      "tags": [
+        "mode:mensaje",
+        "restriction:multiple"
+      ],
+      "input": "pedile al equipo que actualice la documentacion para el viernes con ejemplos y en ingles",
+      "reference_prompt": "Pedile al equipo que actualice la documentacion para el viernes, con ejemplos y en ingles.",
+      "expected": {
+        "intent": "Pedir al equipo la actualizacion de la documentacion con tres condiciones.",
+        "constraints": [
+          "destinatario: equipo",
+          "plazo viernes",
+          "con ejemplos",
+          "en ingles"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "documentacion"
+          },
+          {
+            "kind": "explicit",
+            "value": "viernes"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": [
+          "con ejemplos",
+          "en ingles",
+          "para el viernes"
+        ]
+      },
+      "anchors": [
+        "documentacion",
+        "viernes",
+        "ejemplos",
+        "ingles"
+      ],
+      "forbidden": [
+        "en espanol",
+        "sin ejemplos",
+        "lunes"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 50
+      }
+    },
+    {
+      "id": "multi_condition_07",
+      "category": "multi_condition",
+      "tags": [
+        "mode:plan",
+        "restriction:multiple"
+      ],
+      "input": "arma un plan de mitigacion del riesgo de proveedores con tres opciones costos estimados y un plan b si falla la principal",
+      "reference_prompt": "Arma un plan de mitigacion del riesgo de proveedores con tres opciones, costos estimados y un plan B si falla la opcion principal.",
+      "expected": {
+        "intent": "Redactar un plan de mitigacion con opciones, costos y contingencia.",
+        "constraints": [
+          "tres opciones",
+          "costos estimados",
+          "plan B si falla la principal"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "riesgo de proveedores"
+          }
+        ],
+        "unknowns": [],
+        "mode": "plan",
+        "destination": null,
+        "restrictions": [
+          "tres opciones",
+          "plan B"
+        ]
+      },
+      "anchors": [
+        "tres opciones",
+        "costos estimados",
+        "plan B"
+      ],
+      "forbidden": [
+        "cinco opciones",
+        "plan C"
+      ],
+      "length": {
+        "min_words": 10,
+        "max_words": 55
+      }
+    },
+    {
+      "id": "multi_condition_08",
+      "category": "multi_condition",
+      "tags": [
+        "mode:documento",
+        "restriction:multiple"
+      ],
+      "input": "escribi las instrucciones para configurar la vpn paso a paso para alguien sin experiencia y sin usar la terminal",
+      "reference_prompt": "Escribi las instrucciones para configurar la VPN paso a paso, para alguien sin experiencia y sin usar la terminal.",
+      "expected": {
+        "intent": "Redactar instrucciones de configuracion de la VPN con tres condiciones.",
+        "constraints": [
+          "configurar la VPN",
+          "paso a paso",
+          "para alguien sin experiencia",
+          "sin usar la terminal"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "VPN"
+          }
+        ],
+        "unknowns": [],
+        "mode": "instrucciones",
+        "destination": null,
+        "restrictions": [
+          "paso a paso",
+          {
+            "any": [
+              "sin experiencia previa",
+              "sin experiencia"
+            ]
+          },
+          {
+            "any": [
+              "sin usar la terminal",
+              "sin terminal"
+            ]
+          }
+        ]
+      },
+      "anchors": [
+        "VPN",
+        "paso a paso",
+        "sin experiencia",
+        "terminal"
+      ],
+      "forbidden": [
+        "con la terminal",
+        "desde la terminal",
+        "abrir la terminal"
+      ],
+      "length": {
+        "min_words": 10,
+        "max_words": 55
+      }
+    },
+    {
+      "id": "multi_condition_09",
+      "category": "multi_condition",
+      "tags": [
+        "mode:libre",
+        "restriction:multiple"
+      ],
+      "input": "prepara un prompt para revisar el codigo buscando problemas de seguridad foco en autenticacion y sin reescribir estilo",
+      "reference_prompt": "Prepara un prompt para revisar el codigo buscando problemas de seguridad, con foco en autenticacion y sin reescribir el estilo.",
+      "expected": {
+        "intent": "Redactar un prompt de revision de codigo con foco y exclusion.",
+        "constraints": [
+          "revision de codigo",
+          "foco en seguridad",
+          "foco en autenticacion",
+          "no reescribir estilo"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "codigo"
+          },
+          {
+            "kind": "explicit",
+            "value": "autenticacion"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": [
+          "foco en autenticacion",
+          "sin reescribir estilo"
+        ]
+      },
+      "anchors": [
+        "seguridad",
+        "autenticacion",
+        "estilo"
+      ],
+      "forbidden": [
+        "cambiar el estilo",
+        "ajustar el estilo",
+        "rendimiento",
+        "accesibilidad"
+      ],
+      "length": {
+        "min_words": 10,
+        "max_words": 55
+      }
+    },
+    {
+      "id": "explicit_01",
+      "category": "context_available_explicit",
+      "tags": [
+        "provenance:explicit",
+        "datum:path"
+      ],
+      "input": "genera un prompt para crear el archivo informes barra ventas guion 2026 guion 10 punto xlsx con las columnas fecha vendedor y monto",
+      "reference_prompt": "Genera un prompt para crear el archivo informes/ventas-2026-10.xlsx con las columnas fecha, vendedor y monto.",
+      "expected": {
+        "intent": "Pedir la creacion de un archivo con nombre exacto y columnas dadas.",
+        "constraints": [
+          "ruta informes/ventas-2026-10.xlsx",
+          "columnas fecha, vendedor, monto"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "informes/ventas-2026-10.xlsx"
+          },
+          {
+            "kind": "explicit",
+            "value": "columnas fecha, vendedor, monto"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "ventas-2026-10.xlsx",
+        "fecha",
+        "vendedor",
+        "monto"
+      ],
+      "forbidden": [
+        "ventas-2026-11.xlsx",
+        "cliente",
+        "total"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 50
+      },
+      "notes": "Provenance explicit: el dato esta en el propio pedido y debe copiarse literal (ruta, cifras).",
+      "evaluator": {
+        "policy": [
+          "copiar la ruta y las columnas sin alterarlas"
+        ]
+      }
+    },
+    {
+      "id": "explicit_02",
+      "category": "context_available_explicit",
+      "tags": [
+        "provenance:explicit",
+        "datum:name_date"
+      ],
+      "input": "pedile a martina gomez del area de legales que revise el contrato marco 2026 antes del treinta de noviembre",
+      "reference_prompt": "Pedile a Martina Gomez, del area de Legales, que revise el contrato marco 2026 antes del 30 de noviembre.",
+      "expected": {
+        "intent": "Pedir a Martina Gomez la revision del contrato marco 2026 antes del 30 de noviembre.",
+        "constraints": [
+          "destinataria Martina Gomez",
+          "area Legales",
+          "contrato marco 2026",
+          "plazo 30 de noviembre"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "Martina Gomez"
+          },
+          {
+            "kind": "explicit",
+            "value": "contrato marco 2026"
+          },
+          {
+            "kind": "explicit",
+            "value": "30 de noviembre"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "Martina Gomez",
+        "Legales",
+        "contrato marco 2026",
+        "noviembre"
+      ],
+      "forbidden": [
+        "Martina Lopez",
+        "30 de diciembre",
+        "contrato marco 2025"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 45
+      }
+    },
+    {
+      "id": "explicit_03",
+      "category": "context_available_explicit",
+      "tags": [
+        "provenance:explicit",
+        "datum:command"
+      ],
+      "input": "armame un prompt para correr el comando make deploy target staging con dos replicas",
+      "reference_prompt": "Arma un prompt para correr el comando make deploy target staging con dos replicas.",
+      "expected": {
+        "intent": "Pedir la ejecucion de un comando exacto con dos replicas.",
+        "constraints": [
+          "comando make deploy target staging",
+          "dos replicas"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "comando make deploy target staging"
+          },
+          {
+            "kind": "explicit",
+            "value": "dos replicas"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "make deploy",
+        "staging",
+        "dos replicas"
+      ],
+      "forbidden": [
+        "tres replicas",
+        "produccion",
+        "make build"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 45
+      },
+      "evaluator": {
+        "policy": [
+          "copiar el comando literal"
+        ]
+      }
+    },
+    {
+      "id": "explicit_04",
+      "category": "context_available_explicit",
+      "tags": [
+        "provenance:explicit",
+        "disfluency:autoreparacion"
+      ],
+      "input": "escribi un pedido para reservar la sala tres el jueves a las catorce hmm a las catorce treinta",
+      "reference_prompt": "Escribi un pedido para reservar la sala 3 el jueves a las 14:30.",
+      "expected": {
+        "intent": "Pedir la reserva de la sala 3 para el jueves a las 14:30.",
+        "constraints": [
+          "sala 3",
+          "jueves",
+          "14:30"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "sala 3"
+          },
+          {
+            "kind": "explicit",
+            "value": "jueves"
+          },
+          {
+            "kind": "explicit",
+            "value": "14:30"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "sala 3",
+        "jueves",
+        "14:30"
+      ],
+      "forbidden": [
+        "14:00",
+        "sala 4",
+        "miercoles"
+      ],
+      "length": {
+        "min_words": 6,
+        "max_words": 40
+      },
+      "notes": "La autoreparacion de la hora define el dato final: 14:30, no 14:00.",
+      "evaluator": {
+        "policy": [
+          "usar la hora corregida por el hablante (14:30)"
+        ]
+      }
+    },
+    {
+      "id": "explicit_05",
+      "category": "context_available_explicit",
+      "tags": [
+        "provenance:explicit",
+        "negation:restriccion"
+      ],
+      "input": "genera un prompt para que el asistente corrija el archivo config punto json sin tocar la clave api guion bajo key",
+      "reference_prompt": "Genera un prompt para que el asistente corrija el archivo config.json sin tocar la clave api_key.",
+      "expected": {
+        "intent": "Pedir la correccion de config.json con una exclusion explicita.",
+        "constraints": [
+          "archivo config.json",
+          "no modificar la clave api_key"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "config.json"
+          },
+          {
+            "kind": "explicit",
+            "value": "clave api_key"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": [
+          "sin tocar la clave api_key"
+        ]
+      },
+      "anchors": [
+        "config.json",
+        "api_key"
+      ],
+      "forbidden": [
+        "borrar api_key",
+        "tocar api_key",
+        "config.yaml"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 45
+      }
+    },
+    {
+      "id": "explicit_06",
+      "category": "context_available_explicit",
+      "tags": [
+        "provenance:explicit",
+        "datum:period"
+      ],
+      "input": "haceme un prompt para que resuma el informe de siniestralidad del primer trimestre de dos mil veintiseis",
+      "reference_prompt": "Hace un prompt para que resuma el informe de siniestralidad del primer trimestre de 2026.",
+      "expected": {
+        "intent": "Pedir el resumen del informe de siniestralidad del primer trimestre de 2026.",
+        "constraints": [
+          "informe de siniestralidad",
+          "primer trimestre de 2026"
+        ],
+        "context": [
+          {
+            "kind": "explicit",
+            "value": "informe de siniestralidad"
+          },
+          {
+            "kind": "explicit",
+            "value": "primer trimestre de 2026"
+          }
+        ],
+        "unknowns": [],
+        "mode": "resumen",
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "siniestralidad",
+        "primer trimestre"
+      ],
+      "forbidden": [
+        "segundo trimestre",
+        "2025",
+        "informe de ventas"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 45
+      }
+    },
+    {
+      "id": "retrieved_01",
+      "category": "context_available_retrieved",
+      "tags": [
+        "provenance:retrieved",
+        "mode:email"
+      ],
+      "input": "haceme un prompt para responderle al cliente sobre el informe",
+      "reference_prompt": "Hace un prompt para responderle al cliente sobre el informe, entregandolo en PDF y con las cifras en dolares.",
+      "expected": {
+        "intent": "Responder al cliente sobre el informe respetando el formato y la moneda que pidio.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "retrieved",
+            "value": "entrega en PDF"
+          },
+          {
+            "kind": "retrieved",
+            "value": "cifras en dolares"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "provided_context": [
+        {
+          "kind": "retrieved",
+          "label": "correo anterior del cliente",
+          "value": "El cliente pide que el informe se entregue en PDF y con las cifras en dolares."
+        }
+      ],
+      "anchors": [
+        "PDF",
+        "dolares"
+      ],
+      "forbidden": [
+        "Excel",
+        "pesos",
+        "planilla",
+        "correo",
+        "mail",
+        "email"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 50
+      },
+      "notes": "Provenance retrieved: el dato no se dicto, se trae del contexto aportado; debe viajar al prompt.",
+      "evaluator": {
+        "must_use_context": [
+          "entrega en PDF",
+          "cifras en dolares"
+        ],
+        "policy": [
+          "el canal no hace falta para ejecutar: no lo marques como dato faltante ni lo inventes"
+        ]
+      }
+    },
+    {
+      "id": "retrieved_02",
+      "category": "context_available_retrieved",
+      "tags": [
+        "provenance:retrieved",
+        "negation:ventana"
+      ],
+      "input": "arma un prompt para programar el despliegue",
+      "reference_prompt": "Arma un prompt para programar el despliegue dentro de la ventana de mantenimiento de los domingos de 2 a 6.",
+      "expected": {
+        "intent": "Programar el despliegue dentro de la ventana de mantenimiento vigente.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "retrieved",
+            "value": "domingos de 2 a 6"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "provided_context": [
+        {
+          "kind": "retrieved",
+          "label": "politica de cambios",
+          "value": "La ventana de mantenimiento es los domingos de 2 a 6."
+        }
+      ],
+      "anchors": [
+        "ventana de mantenimiento",
+        "domingos"
+      ],
+      "forbidden": [
+        "lunes",
+        "sin ventana",
+        "cualquier momento"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 50
+      },
+      "evaluator": {
+        "must_use_context": [
+          "ventana de mantenimiento: domingos de 2 a 6"
+        ]
+      }
+    },
+    {
+      "id": "retrieved_03",
+      "category": "context_available_retrieved",
+      "tags": [
+        "provenance:retrieved",
+        "datum:repo"
+      ],
+      "input": "haceme un prompt para cortar la release",
+      "reference_prompt": "Hace un prompt para cortar la release a partir de la rama main, con tag v*.",
+      "expected": {
+        "intent": "Cortar la release siguiendo la convencion del repositorio.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "retrieved",
+            "value": "rama main"
+          },
+          {
+            "kind": "retrieved",
+            "value": "tags v*"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "provided_context": [
+        {
+          "kind": "retrieved",
+          "label": "convencion del repositorio",
+          "value": "El repositorio usa la rama main y tags con formato v*."
+        }
+      ],
+      "anchors": [
+        "main",
+        "v*"
+      ],
+      "forbidden": [
+        "develop",
+        "rama master"
+      ],
+      "length": {
+        "min_words": 6,
+        "max_words": 45
+      },
+      "evaluator": {
+        "must_use_context": [
+          "rama main",
+          "tags v*"
+        ]
+      }
+    },
+    {
+      "id": "retrieved_04",
+      "category": "context_available_retrieved",
+      "tags": [
+        "provenance:retrieved",
+        "datum:budget"
+      ],
+      "input": "arma un prompt para pedir la ampliacion de presupuesto",
+      "reference_prompt": "Arma un prompt para pedir la ampliacion del presupuesto aprobado de 12.000 dolares.",
+      "expected": {
+        "intent": "Pedir la ampliacion de un presupuesto cuyo monto ya esta aprobado.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "retrieved",
+            "value": "12.000 dolares"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "provided_context": [
+        {
+          "kind": "retrieved",
+          "label": "acta de aprobacion",
+          "value": "El presupuesto aprobado para el area es de 12.000 dolares."
+        }
+      ],
+      "anchors": [
+        "12.000",
+        "dolares"
+      ],
+      "forbidden": [
+        "20.000",
+        "pesos",
+        "sin monto"
+      ],
+      "length": {
+        "min_words": 6,
+        "max_words": 45
+      },
+      "evaluator": {
+        "must_use_context": [
+          "presupuesto aprobado: 12.000 dolares"
+        ]
+      }
+    },
+    {
+      "id": "retrieved_05",
+      "category": "context_available_retrieved",
+      "tags": [
+        "provenance:retrieved",
+        "datum:naming"
+      ],
+      "input": "haceme un prompt para generar el informe del cuarto trimestre",
+      "reference_prompt": "Hace un prompt para generar el informe del cuarto trimestre, siguiendo el nombre anterior informe-q3.pdf.",
+      "expected": {
+        "intent": "Generar el informe del cuarto trimestre con la convencion de nombre ya usada.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "retrieved",
+            "value": "informe-q3.pdf"
+          }
+        ],
+        "unknowns": [],
+        "mode": "informe",
+        "destination": null,
+        "restrictions": []
+      },
+      "provided_context": [
+        {
+          "kind": "retrieved",
+          "label": "carpeta compartida",
+          "value": "El informe anterior se llamo informe-q3.pdf."
+        }
+      ],
+      "anchors": [
+        "cuarto trimestre",
+        "informe-q3.pdf"
+      ],
+      "forbidden": [
+        "informe-q2.pdf",
+        "primer trimestre"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 50
+      },
+      "evaluator": {
+        "must_use_context": [
+          "convencion de nombre informe-q3.pdf"
+        ]
+      }
+    },
+    {
+      "id": "unknown_01",
+      "category": "context_absent_unknown",
+      "tags": [
+        "provenance:unknown",
+        "must_not_fabricate"
+      ],
+      "input": "haceme un prompt para responderle al cliente sobre el informe",
+      "reference_prompt": "Hace un prompt para responderle al cliente sobre el informe; si falta el formato de entrega o la moneda, dejalos sin definir en vez de inventarlos.",
+      "expected": {
+        "intent": "Responder al cliente sobre el informe sin datos de formato ni moneda.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "unknown",
+            "value": "formato de entrega"
+          },
+          {
+            "kind": "unknown",
+            "value": "moneda de las cifras"
+          }
+        ],
+        "unknowns": [
+          "formato de entrega",
+          "moneda de las cifras"
+        ],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [],
+      "forbidden": [
+        "PDF",
+        "dolares",
+        "Excel",
+        "pesos",
+        "correo",
+        "mail",
+        "email"
+      ],
+      "missing_context_markers": [
+        "sin definir",
+        "sin especificar",
+        "no especificado"
+      ],
+      "length": {
+        "min_words": 6,
+        "max_words": 60
+      },
+      "notes": "Mismo pedido que retrieved_01 pero SIN contexto: el invariante duro es no fabricar.",
+      "evaluator": {
+        "policy": [
+          "no inventar el formato de entrega ni la moneda"
+        ]
+      }
+    },
+    {
+      "id": "unknown_02",
+      "category": "context_absent_unknown",
+      "tags": [
+        "provenance:unknown",
+        "must_not_fabricate"
+      ],
+      "input": "arma un prompt para programar el despliegue",
+      "reference_prompt": "Arma un prompt para programar el despliegue; si no se sabe la ventana de mantenimiento, no la inventes.",
+      "expected": {
+        "intent": "Programar el despliegue sin conocer la ventana habilitada.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "unknown",
+            "value": "ventana de mantenimiento"
+          }
+        ],
+        "unknowns": [
+          "ventana de mantenimiento"
+        ],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [],
+      "forbidden": [
+        "domingo",
+        "2 a 6",
+        "madrugada",
+        "feriado"
+      ],
+      "missing_context_markers": [
+        "sin definir",
+        "sin especificar",
+        "no especificado"
+      ],
+      "length": {
+        "min_words": 5,
+        "max_words": 55
+      },
+      "evaluator": {
+        "policy": [
+          "no inventar la ventana de mantenimiento"
+        ]
+      }
+    },
+    {
+      "id": "unknown_03",
+      "category": "context_absent_unknown",
+      "tags": [
+        "provenance:unknown",
+        "must_not_fabricate"
+      ],
+      "input": "arma un prompt para pedir la ampliacion de presupuesto",
+      "reference_prompt": "Arma un prompt para pedir la ampliacion de presupuesto; el monto no esta definido, no lo inventes.",
+      "expected": {
+        "intent": "Pedir una ampliacion de presupuesto sin monto conocido.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "unknown",
+            "value": "monto del presupuesto"
+          }
+        ],
+        "unknowns": [
+          "monto del presupuesto"
+        ],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [],
+      "forbidden": [
+        "12.000",
+        "20.000",
+        "dolares",
+        "pesos"
+      ],
+      "missing_context_markers": [
+        "sin definir",
+        "sin especificar",
+        "no especificado"
+      ],
+      "length": {
+        "min_words": 5,
+        "max_words": 55
+      },
+      "evaluator": {
+        "policy": [
+          "no inventar el monto del presupuesto"
+        ]
+      }
+    },
+    {
+      "id": "unknown_04",
+      "category": "context_absent_unknown",
+      "tags": [
+        "provenance:unknown",
+        "must_not_fabricate"
+      ],
+      "input": "haceme un prompt para avisar del retraso",
+      "reference_prompt": "Hace un prompt para avisar del retraso; la duracion no esta definida, dejala abierta.",
+      "expected": {
+        "intent": "Avisar de un retraso sin conocer su duracion.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "unknown",
+            "value": "duracion del retraso"
+          }
+        ],
+        "unknowns": [
+          "duracion del retraso"
+        ],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "retraso"
+      ],
+      "forbidden": [
+        "una semana",
+        "48 horas",
+        "dos dias",
+        "un mes"
+      ],
+      "missing_context_markers": [
+        "sin definir",
+        "sin especificar",
+        "no especificado"
+      ],
+      "length": {
+        "min_words": 5,
+        "max_words": 55
+      },
+      "evaluator": {
+        "policy": [
+          "no inventar la duracion del retraso"
+        ]
+      }
+    },
+    {
+      "id": "unknown_05",
+      "category": "context_absent_unknown",
+      "tags": [
+        "provenance:unknown",
+        "must_not_fabricate"
+      ],
+      "input": "haceme un prompt para el acta de la reunion",
+      "reference_prompt": "Hace un prompt para el acta de la reunion; si no hay fecha ni participantes definidos, no los completes.",
+      "expected": {
+        "intent": "Pedir el acta de una reunion sin fecha ni participantes.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "unknown",
+            "value": "fecha de la reunion"
+          },
+          {
+            "kind": "unknown",
+            "value": "participantes"
+          }
+        ],
+        "unknowns": [
+          "fecha de la reunion",
+          "participantes"
+        ],
+        "mode": "acta",
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "acta"
+      ],
+      "forbidden": [
+        "jueves",
+        "sala 3",
+        "Martina",
+        "asistentes"
+      ],
+      "missing_context_markers": [
+        "sin definir",
+        "sin especificar",
+        "no especificado"
+      ],
+      "length": {
+        "min_words": 5,
+        "max_words": 55
+      },
+      "evaluator": {
+        "policy": [
+          "no inventar la fecha ni los participantes de la reunion"
+        ]
+      }
+    },
+    {
+      "id": "unknown_06",
+      "category": "context_absent_unknown",
+      "tags": [
+        "provenance:unknown",
+        "must_not_fabricate"
+      ],
+      "input": "haceme un prompt para pedir acceso al sistema",
+      "reference_prompt": "Hace un prompt para pedir acceso a un sistema que no se nombra; no inventes el sistema ni el tipo de permiso.",
+      "expected": {
+        "intent": "Pedir acceso a un sistema sin especificar cual ni con que permisos.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "unknown",
+            "value": "sistema"
+          },
+          {
+            "kind": "unknown",
+            "value": "tipo de acceso"
+          }
+        ],
+        "unknowns": [
+          "sistema",
+          "tipo de acceso"
+        ],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [],
+      "forbidden": [
+        "administrador",
+        "VPN",
+        "produccion",
+        "base de datos"
+      ],
+      "missing_context_markers": [
+        "sin definir",
+        "sin especificar",
+        "no especificado"
+      ],
+      "length": {
+        "min_words": 5,
+        "max_words": 55
+      },
+      "evaluator": {
+        "policy": [
+          "no inventar el sistema ni el tipo de acceso"
+        ]
+      }
+    },
+    {
+      "id": "unknown_07",
+      "category": "context_absent_unknown",
+      "tags": [
+        "provenance:unknown",
+        "must_not_fabricate"
+      ],
+      "input": "haceme un prompt para el informe de cierre",
+      "reference_prompt": "Hace un prompt para el informe de cierre; el periodo no esta definido, no lo inventes.",
+      "expected": {
+        "intent": "Pedir un informe de cierre sin periodo definido.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "unknown",
+            "value": "periodo del informe"
+          }
+        ],
+        "unknowns": [
+          "periodo del informe"
+        ],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "anchors": [
+        "informe de cierre"
+      ],
+      "forbidden": [
+        "primer trimestre",
+        "2026",
+        "octubre",
+        "anual"
+      ],
+      "missing_context_markers": [
+        "sin definir",
+        "sin especificar",
+        "no especificado"
+      ],
+      "length": {
+        "min_words": 5,
+        "max_words": 55
+      },
+      "evaluator": {
+        "policy": [
+          "no inventar el periodo del informe"
+        ]
+      }
+    },
+    {
+      "id": "history_relevant_01",
+      "category": "history_relevant",
+      "tags": [
+        "provenance:history",
+        "datum:client"
+      ],
+      "input": "haceme un prompt para responderle al cliente sobre el informe",
+      "reference_prompt": "Hace un prompt para responderle a Acme Patagonia sobre el informe.",
+      "expected": {
+        "intent": "Responder al cliente Acme Patagonia sobre el informe.",
+        "constraints": [
+          "nombre del cliente: Acme Patagonia"
+        ],
+        "context": [
+          {
+            "kind": "history",
+            "value": "el cliente es Acme Patagonia"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "history": [
+        {
+          "role": "user",
+          "content": "el cliente es Acme Patagonia"
+        },
+        {
+          "role": "assistant",
+          "content": "Entendido, el cliente es Acme Patagonia."
+        }
+      ],
+      "anchors": [
+        "Acme Patagonia"
+      ],
+      "forbidden": [
+        "Acme Norte",
+        "cliente sin nombre",
+        "correo",
+        "mail",
+        "email"
+      ],
+      "length": {
+        "min_words": 5,
+        "max_words": 50
+      },
+      "notes": "Historia relevante: el dato del turno previo debe conservarse cuando la dimension context=history esta activa.",
+      "evaluator": {
+        "must_use_context": [
+          "el cliente es Acme Patagonia"
+        ],
+        "policy": [
+          "el canal no hace falta para ejecutar: no lo marques como dato faltante ni lo inventes"
+        ]
+      }
+    },
+    {
+      "id": "history_relevant_02",
+      "category": "history_relevant",
+      "tags": [
+        "provenance:history",
+        "datum:deadline"
+      ],
+      "input": "haceme un prompt para pedir el borrador",
+      "reference_prompt": "Hace un prompt para pedir el borrador con vencimiento el viernes 20.",
+      "expected": {
+        "intent": "Pedir el borrador respetando el vencimiento acordado.",
+        "constraints": [
+          "vencimiento viernes 20"
+        ],
+        "context": [
+          {
+            "kind": "history",
+            "value": "vencimiento viernes 20"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "history": [
+        {
+          "role": "user",
+          "content": "el borrador vence el viernes 20"
+        },
+        {
+          "role": "assistant",
+          "content": "Anotado: vence el viernes 20."
+        }
+      ],
+      "anchors": [
+        "viernes 20"
+      ],
+      "forbidden": [
+        "sin fecha",
+        "lunes 23"
+      ],
+      "length": {
+        "min_words": 5,
+        "max_words": 50
+      },
+      "evaluator": {
+        "must_use_context": [
+          "el borrador vence el viernes 20"
+        ]
+      }
+    },
+    {
+      "id": "history_relevant_03",
+      "category": "history_relevant",
+      "tags": [
+        "provenance:history",
+        "datum:environment"
+      ],
+      "input": "haceme un prompt para desplegar",
+      "reference_prompt": "Hace un prompt para desplegar en el entorno de pruebas preprod.",
+      "expected": {
+        "intent": "Desplegar en el entorno de pruebas ya definido.",
+        "constraints": [
+          "entorno preprod"
+        ],
+        "context": [
+          {
+            "kind": "history",
+            "value": "el entorno de pruebas es preprod"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "history": [
+        {
+          "role": "user",
+          "content": "el entorno de pruebas es preprod"
+        },
+        {
+          "role": "assistant",
+          "content": "Entendido: vamos a usar preprod."
+        }
+      ],
+      "anchors": [
+        "preprod"
+      ],
+      "forbidden": [
+        "produccion",
+        "local",
+        "staging"
+      ],
+      "length": {
+        "min_words": 4,
+        "max_words": 45
+      },
+      "evaluator": {
+        "must_use_context": [
+          "el entorno de pruebas es preprod"
+        ]
+      }
+    },
+    {
+      "id": "history_relevant_04",
+      "category": "history_relevant",
+      "tags": [
+        "provenance:history",
+        "datum:metric"
+      ],
+      "input": "haceme un prompt para armar el tablero",
+      "reference_prompt": "Hace un prompt para armar el tablero con metricas de latencia p95.",
+      "expected": {
+        "intent": "Armar el tablero con la metrica acordada.",
+        "constraints": [
+          "metrica de latencia p95"
+        ],
+        "context": [
+          {
+            "kind": "history",
+            "value": "usamos metricas de latencia p95"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "history": [
+        {
+          "role": "user",
+          "content": "usamos metricas de latencia p95"
+        },
+        {
+          "role": "assistant",
+          "content": "Ok, latencia p95 como metrica principal."
+        }
+      ],
+      "anchors": [
+        "p95"
+      ],
+      "forbidden": [
+        "p50",
+        "promedio",
+        "disponibilidad"
+      ],
+      "length": {
+        "min_words": 4,
+        "max_words": 45
+      },
+      "evaluator": {
+        "must_use_context": [
+          "usamos metricas de latencia p95"
+        ]
+      }
+    },
+    {
+      "id": "history_relevant_05",
+      "category": "history_relevant",
+      "tags": [
+        "provenance:history",
+        "datum:repository"
+      ],
+      "input": "haceme un prompt para los cambios del pipeline",
+      "reference_prompt": "Hace un prompt para los cambios del pipeline del repositorio instant2-core.",
+      "expected": {
+        "intent": "Preparar el pedido de cambios del pipeline del repositorio ya nombrado.",
+        "constraints": [
+          "repositorio instant2-core"
+        ],
+        "context": [
+          {
+            "kind": "history",
+            "value": "el repositorio es instant2-core"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "history": [
+        {
+          "role": "user",
+          "content": "el repositorio es instant2-core"
+        },
+        {
+          "role": "assistant",
+          "content": "Perfecto: instant2-core."
+        }
+      ],
+      "anchors": [
+        "instant2-core"
+      ],
+      "forbidden": [
+        "instant2-web",
+        "otro repositorio"
+      ],
+      "length": {
+        "min_words": 5,
+        "max_words": 50
+      },
+      "evaluator": {
+        "must_use_context": [
+          "el repositorio es instant2-core"
+        ]
+      }
+    },
+    {
+      "id": "history_irrelevant_01",
+      "category": "history_irrelevant",
+      "tags": [
+        "provenance:history_irrelevant",
+        "must_not_leak"
+      ],
+      "input": "haceme un prompt para el informe de ventas",
+      "reference_prompt": "Hace un prompt para el informe de ventas.",
+      "expected": {
+        "intent": "Pedir el informe de ventas sin usar el turno previo.",
+        "constraints": [],
+        "context": [],
+        "unknowns": [],
+        "mode": "informe",
+        "destination": null,
+        "restrictions": []
+      },
+      "history": [
+        {
+          "role": "user",
+          "content": "el sabado es el cumple de ana"
+        },
+        {
+          "role": "assistant",
+          "content": "Feliz cumple para Ana el sabado."
+        }
+      ],
+      "anchors": [
+        "informe de ventas"
+      ],
+      "forbidden": [
+        "cumple",
+        "Ana",
+        "sabado"
+      ],
+      "length": {
+        "min_words": 4,
+        "max_words": 45
+      },
+      "evaluator": {
+        "policy": [
+          "no traer al prompt el turno no relacionado"
+        ]
+      }
+    },
+    {
+      "id": "history_irrelevant_02",
+      "category": "history_irrelevant",
+      "tags": [
+        "provenance:history_irrelevant",
+        "must_not_leak"
+      ],
+      "input": "haceme un prompt para revisar el contrato",
+      "reference_prompt": "Hace un prompt para revisar el contrato.",
+      "expected": {
+        "intent": "Pedir la revision del contrato sin usar el turno previo.",
+        "constraints": [],
+        "context": [],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "history": [
+        {
+          "role": "user",
+          "content": "viste el partido de Boca anoche"
+        },
+        {
+          "role": "assistant",
+          "content": "Si, buen partido de Boca."
+        }
+      ],
+      "anchors": [
+        "contrato"
+      ],
+      "forbidden": [
+        "partido",
+        "Boca",
+        "anoche"
+      ],
+      "length": {
+        "min_words": 4,
+        "max_words": 45
+      },
+      "evaluator": {
+        "policy": [
+          "no traer al prompt el turno no relacionado"
+        ]
+      }
+    },
+    {
+      "id": "history_irrelevant_03",
+      "category": "history_irrelevant",
+      "tags": [
+        "provenance:history_irrelevant",
+        "must_not_leak"
+      ],
+      "input": "haceme un prompt para el plan de pruebas",
+      "reference_prompt": "Hace un prompt para el plan de pruebas.",
+      "expected": {
+        "intent": "Pedir el plan de pruebas sin usar el turno previo.",
+        "constraints": [],
+        "context": [],
+        "unknowns": [],
+        "mode": "plan",
+        "destination": null,
+        "restrictions": []
+      },
+      "history": [
+        {
+          "role": "user",
+          "content": "tengo que comprar leche y pan"
+        },
+        {
+          "role": "assistant",
+          "content": "Anote leche y pan."
+        }
+      ],
+      "anchors": [
+        "plan de pruebas"
+      ],
+      "forbidden": [
+        "leche",
+        "pan",
+        "supermercado"
+      ],
+      "length": {
+        "min_words": 4,
+        "max_words": 45
+      },
+      "evaluator": {
+        "policy": [
+          "no traer al prompt el turno no relacionado"
+        ]
+      }
+    },
+    {
+      "id": "history_irrelevant_04",
+      "category": "history_irrelevant",
+      "tags": [
+        "provenance:history_irrelevant",
+        "must_not_leak"
+      ],
+      "input": "haceme un prompt para desplegar el servicio de reportes",
+      "reference_prompt": "Hace un prompt para desplegar el servicio de reportes.",
+      "expected": {
+        "intent": "Pedir el despliegue del servicio de reportes, no del servicio mencionado antes.",
+        "constraints": [
+          "servicio de reportes"
+        ],
+        "context": [],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "history": [
+        {
+          "role": "user",
+          "content": "ayer desplegamos el servicio de facturacion"
+        },
+        {
+          "role": "assistant",
+          "content": "Si, quedó desplegado el servicio de facturacion."
+        }
+      ],
+      "anchors": [
+        "servicio de reportes"
+      ],
+      "forbidden": [
+        "facturacion",
+        "ayer"
+      ],
+      "length": {
+        "min_words": 5,
+        "max_words": 50
+      },
+      "notes": "Riesgo real: arrastrar el servicio del turno previo al pedido nuevo.",
+      "evaluator": {
+        "policy": [
+          "no mezclar el servicio del turno previo"
+        ]
+      }
+    },
+    {
+      "id": "history_irrelevant_05",
+      "category": "history_irrelevant",
+      "tags": [
+        "provenance:history_irrelevant",
+        "must_not_leak"
+      ],
+      "input": "haceme un prompt para coordinar la visita tecnica",
+      "reference_prompt": "Hace un prompt para coordinar la visita tecnica.",
+      "expected": {
+        "intent": "Pedir la coordinacion de la visita tecnica sin usar el turno previo.",
+        "constraints": [],
+        "context": [],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "history": [
+        {
+          "role": "user",
+          "content": "ayer llovio todo el dia"
+        },
+        {
+          "role": "assistant",
+          "content": "Si, llovio todo el dia ayer."
+        }
+      ],
+      "anchors": [
+        "visita tecnica"
+      ],
+      "forbidden": [
+        "lluvia",
+        "llovio",
+        "ayer"
+      ],
+      "length": {
+        "min_words": 4,
+        "max_words": 45
+      },
+      "evaluator": {
+        "policy": [
+          "no traer al prompt el turno no relacionado"
+        ]
+      }
+    },
+    {
+      "id": "selection_authorized_01",
+      "category": "selection_authorized",
+      "tags": [
+        "provenance:selection",
+        "authorized:true"
+      ],
+      "input": "usa el texto seleccionado como base y haceme un prompt para pedir que confirmen la ventana de mantenimiento",
+      "reference_prompt": "A partir del texto seleccionado, hace un prompt para pedir que confirmen la ventana de mantenimiento del sabado.",
+      "expected": {
+        "intent": "Pedir confirmacion de la ventana de mantenimiento usando el texto seleccionado.",
+        "constraints": [
+          "base: texto seleccionado",
+          "objeto: confirmar la ventana de mantenimiento del sabado"
+        ],
+        "context": [
+          {
+            "kind": "selection",
+            "value": "aviso de mantenimiento el sabado"
+          },
+          {
+            "kind": "explicit",
+            "value": "confirmar la ventana de mantenimiento"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "selection": {
+        "authorized": true,
+        "text": "Buenos dias, les escribo para informarles que el servicio estara en mantenimiento el sabado."
+      },
+      "anchors": [
+        "ventana de mantenimiento",
+        "sabado"
+      ],
+      "forbidden": [],
+      "length": {
+        "min_words": 8,
+        "max_words": 55
+      },
+      "notes": "Seleccion autorizada: su contenido esta permitido como base del prompt."
+    },
+    {
+      "id": "selection_authorized_02",
+      "category": "selection_authorized",
+      "tags": [
+        "provenance:selection",
+        "authorized:true"
+      ],
+      "input": "arma un prompt para documentar esta funcion",
+      "reference_prompt": "Arma un prompt para documentar la funcion saludo del texto seleccionado.",
+      "expected": {
+        "intent": "Pedir la documentacion de la funcion seleccionada.",
+        "constraints": [
+          "funcion saludo"
+        ],
+        "context": [
+          {
+            "kind": "selection",
+            "value": "funcion saludo"
+          }
+        ],
+        "unknowns": [],
+        "mode": "documentacion",
+        "destination": null,
+        "restrictions": []
+      },
+      "selection": {
+        "authorized": true,
+        "text": "def saludo(nombre): return 'hola ' + nombre"
+      },
+      "anchors": [
+        "saludo"
+      ],
+      "forbidden": [
+        "despedida",
+        "main"
+      ],
+      "length": {
+        "min_words": 5,
+        "max_words": 50
+      }
+    },
+    {
+      "id": "selection_authorized_03",
+      "category": "selection_authorized",
+      "tags": [
+        "provenance:selection",
+        "authorized:true"
+      ],
+      "input": "haceme un prompt para validar esta tabla",
+      "reference_prompt": "Hace un prompt para validar la tabla con las columnas fecha, vendedor y monto.",
+      "expected": {
+        "intent": "Pedir la validacion de la tabla seleccionada.",
+        "constraints": [
+          "columnas fecha, vendedor, monto"
+        ],
+        "context": [
+          {
+            "kind": "selection",
+            "value": "columnas fecha, vendedor, monto"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "selection": {
+        "authorized": true,
+        "text": "fecha | vendedor | monto"
+      },
+      "anchors": [
+        "fecha",
+        "vendedor",
+        "monto"
+      ],
+      "forbidden": [
+        "cliente",
+        "producto"
+      ],
+      "length": {
+        "min_words": 5,
+        "max_words": 50
+      }
+    },
+    {
+      "id": "selection_authorized_04",
+      "category": "selection_authorized",
+      "tags": [
+        "provenance:selection",
+        "authorized:true",
+        "mode:plan"
+      ],
+      "input": "genera un prompt para implementar estos requisitos",
+      "reference_prompt": "Genera un prompt para implementar la autenticacion de dos factores y el registro de auditoria del texto seleccionado.",
+      "expected": {
+        "intent": "Pedir la implementacion de los requisitos seleccionados.",
+        "constraints": [
+          "autenticacion de dos factores",
+          "registro de auditoria"
+        ],
+        "context": [
+          {
+            "kind": "selection",
+            "value": "autenticacion de dos factores"
+          },
+          {
+            "kind": "selection",
+            "value": "registro de auditoria"
+          }
+        ],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "selection": {
+        "authorized": true,
+        "text": "Los requisitos son: autenticacion de dos factores y registro de auditoria."
+      },
+      "anchors": [
+        "autenticacion de dos factores",
+        "registro de auditoria"
+      ],
+      "forbidden": [
+        "encriptacion en reposo",
+        "alta disponibilidad"
+      ],
+      "length": {
+        "min_words": 8,
+        "max_words": 60
+      }
+    },
+    {
+      "id": "selection_absent_01",
+      "category": "selection_absent",
+      "tags": [
+        "provenance:selection",
+        "authorized:false",
+        "must_not_leak"
+      ],
+      "input": "haceme un prompt para responderle al cliente",
+      "reference_prompt": "Hace un prompt para responderle al cliente.",
+      "expected": {
+        "intent": "Pedir un prompt de respuesta al cliente sin usar la seleccion.",
+        "constraints": [],
+        "context": [],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "selection": {
+        "authorized": false,
+        "text": "El presupuesto aprobado es de 12.000 dolares y el contacto es Martina Gomez."
+      },
+      "anchors": [
+        "cliente"
+      ],
+      "forbidden": [
+        "12.000",
+        "dolares",
+        "Martina Gomez",
+        "presupuesto aprobado",
+        "correo",
+        "mail",
+        "email"
+      ],
+      "length": {
+        "min_words": 4,
+        "max_words": 45
+      },
+      "notes": "Fuga esperada: la seleccion no autorizada no puede aparecer en el prompt.",
+      "evaluator": {
+        "policy": [
+          "no usar la seleccion no autorizada",
+          "el canal no hace falta para ejecutar: no lo marques como dato faltante ni lo inventes"
+        ]
+      }
+    },
+    {
+      "id": "selection_absent_02",
+      "category": "selection_absent",
+      "tags": [
+        "provenance:selection",
+        "authorized:false",
+        "must_not_leak"
+      ],
+      "input": "resumi lo seleccionado",
+      "reference_prompt": "Resumi el texto que te voy a seleccionar (todavia no lo seleccione).",
+      "expected": {
+        "intent": "Pedir el resumen de un texto seleccionado que no esta disponible.",
+        "constraints": [],
+        "context": [
+          {
+            "kind": "unknown",
+            "value": "texto seleccionado"
+          }
+        ],
+        "unknowns": [
+          "texto seleccionado"
+        ],
+        "mode": "resumen",
+        "destination": null,
+        "restrictions": []
+      },
+      "selection": {
+        "authorized": false,
+        "text": "El informe de siniestralidad del primer trimestre muestra una baja del 12 por ciento."
+      },
+      "anchors": [],
+      "forbidden": [
+        "siniestralidad",
+        "12 por ciento",
+        "primer trimestre"
+      ],
+      "missing_context_markers": [
+        "todavia no lo seleccione",
+        "sin seleccion",
+        "no hay seleccion",
+        "seleccionar"
+      ],
+      "length": {
+        "min_words": 4,
+        "max_words": 50
+      },
+      "evaluator": {
+        "policy": [
+          "no usar la seleccion no autorizada",
+          "no inventar el contenido seleccionado"
+        ]
+      }
+    },
+    {
+      "id": "selection_absent_03",
+      "category": "selection_absent",
+      "tags": [
+        "provenance:selection",
+        "authorized:false",
+        "must_not_leak"
+      ],
+      "input": "haceme un prompt para revisar los numeros del tablero",
+      "reference_prompt": "Hace un prompt para revisar los numeros del tablero.",
+      "expected": {
+        "intent": "Pedir la revision de los numeros del tablero sin usar la seleccion no autorizada.",
+        "constraints": [],
+        "context": [],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "selection": {
+        "authorized": false,
+        "text": "Latencia p95 de 480 milisegundos y 3 errores en 10.000 pedidos."
+      },
+      "anchors": [
+        "tablero"
+      ],
+      "forbidden": [
+        "480",
+        "3 errores",
+        "10.000",
+        "p95"
+      ],
+      "length": {
+        "min_words": 4,
+        "max_words": 45
+      },
+      "evaluator": {
+        "policy": [
+          "no usar la seleccion no autorizada"
+        ]
+      }
+    },
+    {
+      "id": "selection_absent_04",
+      "category": "selection_absent",
+      "tags": [
+        "provenance:selection",
+        "authorized:false",
+        "must_not_leak"
+      ],
+      "input": "haceme un prompt para avisarle al equipo",
+      "reference_prompt": "Hace un prompt para avisarle al equipo.",
+      "expected": {
+        "intent": "Pedir un aviso al equipo sin usar la seleccion no autorizada.",
+        "constraints": [],
+        "context": [],
+        "unknowns": [],
+        "mode": null,
+        "destination": null,
+        "restrictions": []
+      },
+      "selection": {
+        "authorized": false,
+        "text": "El despliegue en produccion se hace el domingo a las 3 y lo aprueba Sofia."
+      },
+      "anchors": [
+        "equipo"
+      ],
+      "forbidden": [
+        "domingo",
+        "Sofia",
+        "produccion",
+        "a las 3"
+      ],
+      "length": {
+        "min_words": 4,
+        "max_words": 45
+      },
+      "evaluator": {
+        "policy": [
+          "no usar la seleccion no autorizada"
+        ]
+      }
+    }
+  ]
+}

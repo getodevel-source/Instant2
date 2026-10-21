@@ -68,6 +68,7 @@ class PosixPidIsInstantTests(unittest.TestCase):
 class WindowsDaemonRecognitionTests(unittest.TestCase):
     def test_frozen_mvp_daemon_is_detected_by_its_actual_exe_name(self):
         tasklist = SimpleNamespace(
+            returncode=0,
             stdout='"Instant2-MVP.exe","4952","Console","1","40,000 K"\n')
         with patch("instant2_app.gui.os.name", "nt"), \
                 patch("instant2_app.gui._pid_value", return_value=4952), \
@@ -77,15 +78,18 @@ class WindowsDaemonRecognitionTests(unittest.TestCase):
                 patch("instant2_app.gui.subprocess.run", return_value=tasklist), \
                 patch("instant2_app.gui._pid_is_instant", return_value=True) as is_run:
             self.assertTrue(gui.daemon_is_running())
-        is_run.assert_called_once_with(4952)
+        self.assertEqual(is_run.call_count, 1)
+        self.assertEqual(is_run.call_args.args[0], 4952)
 
     def test_windows_pid_must_be_a_run_subprocess(self):
         with patch("instant2_app.gui.os.name", "nt"), \
                 patch("instant2_app.gui.subprocess.run", return_value=SimpleNamespace(
+                    returncode=0,
                     stdout='"C:\\Instant2-MVP.exe" setup')):
             self.assertFalse(gui._pid_is_instant(21820))
         with patch("instant2_app.gui.os.name", "nt"), \
                 patch("instant2_app.gui.subprocess.run", return_value=SimpleNamespace(
+                    returncode=0,
                     stdout='C:\\Instant2-MVP.exe run')):
             self.assertTrue(gui._pid_is_instant(4952))
 
@@ -242,7 +246,8 @@ class DaemonIsRunningTests(unittest.TestCase):
                 handle.write("424242")
             with patch("instant2_app.daemon.pid_path", return_value=pidfile), \
                     patch.object(gui_module, "_pid_value", return_value=424242), \
-                    patch.object(gui_module, "daemon_is_running", return_value=False):
+                    patch.object(gui_module, "_probe_daemon_process",
+                                 return_value=(gui_module.DAEMON_STOPPED, None)):
                 self.assertFalse(gui_module.stop_daemon())
             self.assertFalse(os.path.exists(pidfile))
 
@@ -257,7 +262,8 @@ class DaemonIsRunningTests(unittest.TestCase):
             reads = iter([424242, 777777])
             with patch("instant2_app.daemon.pid_path", return_value=pidfile), \
                     patch.object(gui_module, "_pid_value", side_effect=lambda: next(reads)), \
-                    patch.object(gui_module, "daemon_is_running", return_value=False):
+                    patch.object(gui_module, "_probe_daemon_process",
+                                 return_value=(gui_module.DAEMON_STOPPED, None)):
                 self.assertFalse(gui_module.stop_daemon())
             with open(pidfile, encoding="utf-8") as handle:
                 self.assertEqual(handle.read().strip(), "424242")
