@@ -10,6 +10,27 @@ Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z
 
 ## [Sin publicar]
 
+### Instalador de Windows
+- El instalador de Windows es chico: instala la app y el runtime de llama.cpp
+  y ya no lleva los pesos de los modelos (3,78 GB menos por instalación y por
+  actualización). Los modelos llegan a la máquina por la app, que los descarga
+  con su barra de progreso, se pueden cancelar, reanudar y verificar por
+  hash.
+- La primera vez que se abre el panel sin los modelos de reconocimiento, la
+  app los baja sola (unos 670 MB). Es una sola vez por instalación: si se
+  cancela o falla, el botón «Reintentar descarga» queda disponible y la app no
+  vuelve a insistir sola.
+- El modelo de lenguaje local (3 GB) se descarga a pedido, desde **Ajustes →
+  Revisión del dictado y privacidad → Archivos del servicio local**, con su
+  progreso y su botón de cancelar. No baja solo: son demasiados gigabytes
+  para bajarlos sin permiso.
+- Los modelos que dejó la versión anterior se reutilizan en vez de volver a
+  bajarse: la app mueve los del directorio de Instant
+  (`%LOCALAPPDATA%\instant\models`) al de Instant2
+  (`%LOCALAPPDATA%\instant2\models`), sin copiar un byte y sin dejar
+  duplicados. Si los dos directorios existen, se fusionan. Con
+  `INSTANT2_DATA` configurado a mano, ese override gana y no se toca nada.
+
 ### Correcciones
 - El repositorio fija sus finales de línea (`.gitattributes`): el texto sale
   con LF en las tres plataformas y el helper de actualización y el script de
@@ -19,6 +40,12 @@ Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z
 - Las rutas internas del repositorio ya no se reportan como rutas del perfil
   del usuario en los artefactos del benchmark: una ruta dentro del checkout es
   el checkout, no una fuga.
+- El botón «Reintentar descarga» del reconocimiento ahora aparece después de
+  una descarga fallida: el mensaje de error y el texto que mira el botón no
+  coincidían.
+- El servicio local de lenguaje usa el modelo descargado desde Ajustes cuando
+  la persona no eligió ningún GGUF a mano, y el mensaje de error dice que se
+  lo descargue desde Ajustes en vez de pedir un archivo que ya no existe.
 
 ## [0.1.6] - 2026-10-20
 

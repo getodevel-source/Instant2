@@ -12,14 +12,31 @@ En **Ajustes > Más opciones > Voz y rendimiento > Uso de memoria** elegí:
 | Equilibrado (predeterminado) | Libera los modelos de voz y duerme el servicio de lenguaje tras 5 minutos sin actividad. | Uso general. |
 | Ahorrar memoria | Libera los modelos tras 90 segundos. | Equipos con poca memoria o muchas aplicaciones abiertas. |
 
-El próximo inicio del proceso de dictado aplica los cambios del perfil. El instalador de Windows incluye el runtime de llama.cpp; el modelo GGUF y los demás componentes de voz los descarga la app en el primer uso. El portable y los entornos de desarrollo pueden configurarlos por separado.
+El próximo inicio del proceso de dictado aplica los cambios del perfil. El instalador de Windows incluye el runtime de llama.cpp; el modelo GGUF y los demás componentes de voz los descarga la app. El portable y los entornos de desarrollo pueden configurarlos por separado.
+
+## Quién descarga cada modelo
+
+El instalador ya no lleva pesos: cada componente llega a la máquina por su
+propio camino, y solo el reconocimiento arranca solo.
+
+| Componente | Peso | Quién lo baja | Cuándo |
+|---|---|---|---|
+| Parakeet int8 + detección de voz | ~670 MB | El panel, con `models.download_models` | La primera vez que se abre el panel sin los modelos. Una vez por instalación: si se cancela o falla, el botón «Reintentar descarga» es del usuario. |
+| Voz de lectura (Kokoro + Dora) | ~326 MB | El panel, con `tts.ensure_model` | La primera lectura. |
+| Modelo de lenguaje local (GGUF) | 3 GB | El panel, con `llm_model.ensure_model` | Solo cuando el usuario lo pide en Ajustes: son demasiados gigabytes para bajarlos sin permiso. |
+| Modelos de la versión anterior | — | `paths.migrate_legacy_models` | Una vez, al resolver el directorio de datos: mueve lo que hay del directorio anterior (`%LOCALAPPDATA%/instant/models`) al de Instant2, sin copiar un byte y sin dejar duplicados. |
+
+Las tres descargas reutilizan el mismo descargador: son reanudables (`.part`
+con `Range`), verifican el SHA-256 antes de publicar el archivo, reintentan y
+chequean el espacio en disco antes de empezar. Un `INSTANT2_DATA` explícito
+desactiva la migración del directorio anterior: el override del usuario gana.
 
 ## Quién administra cada modelo
 
 | Componente | Proceso que lo usa | Carga y descarga |
 |---|---|---|
 | Parakeet y detección de voz | Proceso de dictado | Se preparan al iniciar y se liberan según el perfil cuando el atajo de dictado queda inactivo. |
-| Servicio local incluido | Proceso de dictado | Se inicia en segundo plano con los archivos configurados. Si admite `--sleep-idle-seconds`, libera el modelo en reposo; la siguiente solicitud lo despierta. |
+| Servicio local incluido | Proceso de dictado | Se inicia en segundo plano con los archivos configurados. Si admite `--sleep-idle-seconds`, libera el modelo en reposo; la siguiente solicitud lo despierta. Si no hay ningún GGUF elegido, se usa el que se descargó desde Ajustes. |
 | Servicio externo local o remoto | Proveedor configurado | Instant2 envía solo texto. No intenta iniciar ni detener el servicio externo. Ajustes muestra si el destino está en este equipo o es remoto. |
 | Voz de lectura desde el atajo | Proceso de dictado | Se carga al primer uso y se libera según el perfil. |
 | Voz de lectura desde el panel | Proceso del panel | Se carga al iniciar una lectura y se libera según el mismo perfil. |

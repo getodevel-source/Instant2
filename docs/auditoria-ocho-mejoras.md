@@ -151,7 +151,8 @@ evaluación perceptual por oyentes de prosodia y empalmes.
 
 Se repararon acentos dañados en avisos de dictado y configuración. Los mensajes
 de terminal y registros nombran Parakeet. El panel explica los modelos y el
-runtime incluidos, y la descarga de Kokoro según el modo de recursos.
+runtime incluidos, la descarga de Kokoro según el modo de recursos y el estado
+del modelo de lenguaje local (no descargado, descargando o listo).
 El ajuste de hilos describe reconocimiento y lectura.
 
 ## 7. Estructura, diseño y revisión
@@ -194,7 +195,12 @@ El estado actual es otro: el instalador de Windows ya no lleva pesos de
 modelo. El script que prepara los recursos del instalador se llama ahora
 `scripts/prepare_windows_assets.py` y solo deja el runtime de llama.cpp (más
 los avisos de terceros y las licencias); los componentes de voz los descarga
-la app en el primer uso.
+la app. El reconocimiento (~670 MB) se baja solo la primera vez que se abre
+el panel sin los modelos, una vez por instalación, y el modelo de lenguaje
+local (3 GB) es una descarga explícita desde Ajustes. Los modelos que dejó el
+producto anterior se reutilizan: la app los mueve de `%LOCALAPPDATA%\instant\models`
+a `%LOCALAPPDATA%\instant2\models` (un rename, sin copiar un byte) en vez de
+volver a bajarlos.
 
 Se compila `installer/instant2.iss` de producción sin cambios. El ciclo Inno
 aprobado usa un fixture con AppId/nombre distintos, modelos junto al destino de

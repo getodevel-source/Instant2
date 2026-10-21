@@ -14,7 +14,7 @@ anglicismos se transcriben por fonética. Un perfil de vocabulario permite
 corregir variantes reconocidas explícitamente; el pulido LLM por sí solo
 ayuda con tildes y puntuación, pero no reemplaza el reconocimiento de audio.
 
-En Windows, la vía recomendada es el instalador de la [última release](https://github.com/getodevel-source/Instant2/releases/latest) (`Instant2-Setup.exe`): por usuario, sin admin, con desinstalador y actualización in-place. El instalador lleva la app y el runtime de llama.cpp; Parakeet, Kokoro con Dora y el modelo Qwen 4B los descarga la app en el primer uso, igual que el portable y los binarios de Linux/macOS. En una instalación nueva, deja activadas por defecto la apertura al terminar y el inicio con Windows; puedes desactivar ambas casillas. Como el instalador ya no lleva los pesos, `Instant2-Setup.exe` se baja solo: no hay partes `.bin` que mantener juntas.
+En Windows, la vía recomendada es el instalador de la [última release](https://github.com/getodevel-source/Instant2/releases/latest) (`Instant2-Setup.exe`): por usuario, sin admin, con desinstalador y actualización in-place. El instalador lleva la app y el runtime de llama.cpp; Parakeet y Kokoro con Dora los descarga la app en el primer uso, igual que el portable y los binarios de Linux/macOS, y el modelo Qwen 4B (3 GB) se descarga a pedido desde Ajustes. En una instalación nueva, deja activadas por defecto la apertura al terminar y el inicio con Windows; puedes desactivar ambas casillas. Como el instalador ya no lleva los pesos, `Instant2-Setup.exe` se baja solo: no hay partes `.bin` que mantener juntas.
 
 > Los binarios están **sin firmar** por ahora: Windows SmartScreen muestra «Windows protegió su PC» la primera vez (elegí «Más información» → «Ejecutar de todas formas» solo si el instalador salió del enlace oficial); Gatekeeper en macOS puede pedirte que confirmes la apertura en Ajustes → Privacidad y seguridad. Esto no es un error de Instant2.
 
@@ -159,9 +159,9 @@ independiente. La ventana puede cerrarse sin detener el daemon; en Windows queda
 el icono de bandeja, y en Linux/macOS el daemon sigue vivo hasta `scripts/instant2-stop.sh`.
 
 **Leer texto** usa Kokoro local para sintetizar y reproducir texto en español
-por CPU. La instalación completa de Windows trae el modelo y solo la voz Dora;
-el portable y los paquetes de otros sistemas descargan unos 326 MB la primera
-vez. La descarga verifica los archivos, se puede cancelar y reanudar. El texto
+por CPU. El instalador no lleva los pesos: la primera lectura descarga unos
+326 MB (el modelo y solo la voz Dora). La descarga verifica los archivos, se
+puede cancelar y reanudar. El texto
 permanece en el campo de la pantalla y en memoria durante la lectura; no se
 guarda ni se envía por red. Podés ajustar la velocidad y detener la
 reproducción. El modelo Kokoro-82M usa Apache-2.0 y la implementación
@@ -195,7 +195,7 @@ inyección de la paleta. La ventana del overlay se centra con
 El asistente de terminal (`instant2 setup --tui`, o con cualquier flag de CLI)
 hace, en orden:
 
-1. **Modelos**: verifica Parakeet TDT v3 int8 (~670 MB) y VAD (~1 MB). Si faltan, la app los descarga con verificación por hash: pasa en todas las plataformas, también con el instalador de Windows.
+1. **Modelos**: verifica Parakeet TDT v3 int8 (~670 MB) y VAD (~1 MB). Si faltan, la app los descarga con verificación por hash: pasa en todas las plataformas, también con el instalador de Windows. El panel hace lo mismo solo la primera vez que se abre sin los modelos.
 2. **Micrófono**: muestra nombre, backend y canales; permite medir nivel. Guarda nombre e índice como fallback si cambia el orden de dispositivos.
 3. **Idioma**: español fijo.
 4. **Tecla**: captura una tecla individual (Enter conserva la actual).
@@ -272,6 +272,22 @@ Precedencia efectiva:
 Instant2 no busca modelos en el directorio actual ni junto a otra instalación;
 así no reutiliza por accidente los datos de Instant. Los instaladores de
 desarrollo del repositorio fijan `INSTANT2_DATA` a su propia carpeta `models`.
+
+### Modelos de la versión anterior
+
+Cuando `INSTANT2_DATA` no está definido, la app revisa una sola vez el
+directorio del producto anterior (`%LOCALAPPDATA%/instant/models` en Windows) y
+reutiliza lo que haya ahí:
+
+- si el directorio de Instant2 todavía no existe, mueve el anterior entero
+  (un rename: no se copia ni un byte) y no queda una copia huérfana;
+- si los dos existen, mueve lo que falta y borra la copia duplicada, para que
+  el directorio anterior no quede como un duplicado viejo.
+
+Es idempotente y nunca falla el arranque: si algo no se puede mover, se
+registra en el log y la app sigue. Con `INSTANT2_DATA` puesto, el override
+explícito gana y no se toca nada: por ejemplo, `INSTANT2_DATA` apuntando a una
+carpeta vacía no recibe los modelos de Instant.
 
 Sin modelos o sin mic, `setup` avisa y sigue (no crashea); `run` sin
 modelos pide correr `setup` con red primero.
@@ -409,13 +425,16 @@ reconocimiento es baja, y nunca toca texto seguro ni palabras corrientes.
 
 ## Revisión LLM en Dictado mejorado
 
-El instalador de Windows incluye llama.cpp; el modelo Qwen 4B lo descarga la app
-en el primer uso. Si usás el portable, Linux/macOS o querés otro servicio,
-podés conectar Ollama, `llama-server` u otro endpoint compatible con Chat
-Completions de OpenAI desde Ajustes. Indicá el nombre exacto del modelo que
-espera el servidor y dejá activa la casilla «Pedir al LLM que revise cada
-dictado mejorado». Si el servicio no está configurado o falla, el dictado
-conserva el resultado local.
+El instalador de Windows incluye llama.cpp; el modelo Qwen 4B (3 GB) ya no
+viene con el instalador y se descarga a pedido desde **Ajustes → Revisión del
+dictado y privacidad → Archivos del servicio local**, con el botón «Descargar
+modelo (3 GB)», su progreso y su cancelación. La descarga verifica el SHA-256
+antes de publicar el archivo y se puede reanudar. Si usás el portable,
+Linux/macOS o querés otro servicio, podés conectar Ollama, `llama-server` u
+otro endpoint compatible con Chat Completions de OpenAI desde Ajustes. Indicá
+el nombre exacto del modelo que espera el servidor y dejá activa la casilla
+«Pedir al LLM que revise cada dictado mejorado». Si el servicio no está
+configurado o falla, el dictado conserva el resultado local.
 
 En cada dictado mejorado con revisión activa, el LLM recibe la transcripción
 y el vocabulario activo, nunca el audio. Instant2 usa su respuesta para corregir
@@ -440,8 +459,9 @@ ausencia).
 
 ## Mantener un LLM local disponible
 
-El instalador de Windows incluye llama.cpp; el modelo Qwen 4B Q4_K_M lo
-descarga la app en el primer uso. Instant2 inicia el servidor local cuando
+El instalador de Windows incluye llama.cpp; el modelo Qwen 4B Q4_K_M (3 GB) lo
+descargás vos desde **Ajustes → Revisión del dictado y privacidad → Archivos
+del servicio local**. Instant2 inicia el servidor local cuando
 corresponde, usa automáticamente un dispositivo que el runtime detecte y
 prueba CPU si no hay aceleración compatible. En **Ajustes → Voz, rendimiento
 y privacidad avanzada** podés cambiar el modelo o el runtime. El portable y

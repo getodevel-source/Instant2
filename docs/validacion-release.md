@@ -18,7 +18,7 @@ instalar la aplicación en un escritorio real.
 
 | Plataforma | Artefacto | Cobertura automatizada actual | Validación de escritorio pendiente |
 |---|---|---|---|
-| Windows | `Instant2-Setup.exe` y `Instant2.exe` | Suite Windows; smoke del portable congelado. El instalador se construye en CI y no lleva los pesos: la app los descarga en el primer uso. | Instalación limpia, actualización, rollback, firma si está activa y desinstalación. |
+| Windows | `Instant2-Setup.exe` y `Instant2.exe` | Suite Windows; smoke del portable congelado. El instalador se construye en CI y no lleva los pesos: la app baja el reconocimiento sola en el primer uso y el modelo de lenguaje local (3 GB) a pedido desde Ajustes. | Instalación limpia, actualización, rollback, firma si está activa y desinstalación. |
 | macOS | `instant2-macos`; `Instant2-macos.dmg` si la firma está activa | Suite macOS; smoke del binario congelado. | Permiso de micrófono, Accesibilidad, Gatekeeper/notarización si está activa, actualización y desinstalación. |
 | Linux X11 | `instant2-linux` | Suite Ubuntu; smoke del panel congelado en runner. | Instalación limpia, dependencias, X11, autostart, actualización y desinstalación. |
 | Arch/Omarchy Wayland | `instant2-linux` | Pruebas unitarias de selección de backend, dependencias y pegado. | Portal de atajos de Hyprland, aplicaciones nativas Wayland, XWayland y pegado real. |
@@ -33,11 +33,28 @@ instalar la aplicación en un escritorio real.
   correspondan.
 - [ ] Confirmar que el diagnóstico detecta dependencias faltantes y propone
   comandos adecuados para el sistema.
+- [ ] Con un directorio de datos vacío, abrir el panel y comprobar que la
+  descarga del reconocimiento arranca sola, con progreso, y que se puede
+  cancelar; tras cancelar, comprobar que el botón «Reintentar descarga» sigue
+  funcionando y que la app no vuelve a insistir sola.
 - [ ] Iniciar una descarga del modelo; verificar espacio libre/requerido,
   progreso, cancelación y reanudación tras cancelar o cortar la red.
+- [ ] En Ajustes → Revisión del dictado y privacidad → Archivos del servicio
+  local, confirmar que el modelo de lenguaje (3 GB) aparece como «no
+  descargado» y que **no** se baja solo; descargarlo a pedido, viendo el
+  progreso y comprobando que se puede cancelar.
 - [ ] Completar un dictado en una aplicación de texto y confirmar el resultado.
 - [ ] Cerrar y volver a abrir: comprobar que configuración, modelos y
   preferencia de inicio se conservaron.
+
+## Modelos de la versión anterior
+
+- [ ] Con modelos en `%LOCALAPPDATA%\instant\models` (el directorio del
+  producto anterior) y sin `%LOCALAPPDATA%\instant2\models`, abrir la app y
+  comprobar que los modelos se reutilizan, que no se vuelven a descargar y que
+  el directorio anterior queda vacío o desaparece.
+- [ ] Repetir el caso con los dos directorios existentes: lo que falta se
+  mueve y la copia duplicada del directorio anterior desaparece.
 
 ## Actualización y recuperación
 

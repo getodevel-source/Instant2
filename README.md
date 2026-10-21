@@ -13,7 +13,7 @@
 | | |
 |---|---|
 | 🔒 **Privacidad** | El audio se reconoce en tu equipo. Si conectás un servicio remoto para revisar el texto, solo recibe el texto reconocido. |
-| ⚡ **Listo para usar** | El instalador de Windows trae la app y el runtime de llama.cpp; la app descarga los componentes de voz en el primer uso. |
+| ⚡ **Listo para usar** | El instalador de Windows trae la app y el runtime de llama.cpp; la app descarga los componentes de voz en el primer uso, sola. |
 | 🎯 **Dictado flexible** | Correcciones de términos, teclas configurables y revisión opcional del texto. |
 | 🔊 **Lectura en voz alta** | Escribí o seleccioná texto para escucharlo en español. |
 
@@ -25,6 +25,12 @@
 4. Para escuchar texto, abrí **Leer texto** o seleccioná texto y presioná la tecla de lectura configurada en **Ajustes**.
 
 En todas las plataformas, Instant2 descarga los componentes de voz durante el primer uso. Necesitás internet y cerca de 1 GB libre. El instalador de Windows no lleva los pesos: instala la app y el runtime de llama.cpp, así que pesa mucho menos y una actualización ya no descarga 3,78 GB. La descarga de los modelos la hace la app, con su barra de progreso y su verificación por hash.
+
+La primera vez, el panel arranca solo esa descarga (unos 670 MB) cuando detecta que faltan los modelos. Si la cancelás o se corta la red, el botón «Reintentar descarga» queda disponible; la app no vuelve a insistirte sola.
+
+El modelo de lenguaje local (3 GB) es una descarga aparte y explícita: son demasiados gigabytes para bajarlos sin que los pidas. En **Ajustes → Revisión del dictado y privacidad → Archivos del servicio local** tenés «Descargar modelo (3 GB)», con su progreso y su botón de cancelar.
+
+Si venís de Instant (el producto anterior), no se vuelve a descargar nada: Instant2 reutiliza los modelos que ya tenías y los mueve del directorio anterior al suyo.
 
 En una instalación nueva, el instalador deja seleccionados **Iniciar Instant2 con Windows** y **Abrir Instant2 y activar el dictado en segundo plano**. Puedes desmarcar cualquiera de esas opciones. Al abrirse, Instant2 inicia el servicio si detecta un micrófono disponible; cerrar el panel deja el servicio en la bandeja.
 

@@ -407,3 +407,53 @@ Queda pendiente de una propuesta aparte (cambia el producto y el release):
 el bundle offline lleva 3,3 GB de pesos del LLM opcional que la app ya
 gestiona por su cuenta, y por eso instalar una actualizacion de Windows
 sigue siendo descargar varios gigabytes.
+
+### Los modelos ahora los baja la app (2026-10-20)
+
+El instalador de Windows dejo de llevar los pesos (commit `10ad7c9`): pesa
+2 MB en vez de 3,74 GiB. Eso deja sin dueno la migracion de los modelos del
+directorio anterior, que hacia el propio instalador (`ReuseLegacyModels`), y
+obliga a la app a bajar sus propios modelos, como ya hacia en Linux y macOS.
+Lo que quedaba pendiente en el cierre de la 0.1.6 ("el bundle offline lleva
+3,3 GB de pesos del LLM opcional que la app ya gestiona por su cuenta") queda
+resuelto de ese lado: el instalador ya no lleva ni el LLM ni la voz.
+
+Que se decidio:
+
+- **La migracion de los modelos del directorio legacy pasa a la app.**
+  `paths.migrate_legacy_models()` reproduce la semantica del instalador: si
+  el directorio actual no existe se mueve el anterior entero (un rename, cero
+  bytes copiados) y si ambos existen se mueve lo que falta y se borra la copia
+  duplicada, para que el directorio viejo no quede como un duplicado huerfano.
+  Se llama desde `resolve_data_dir()`, el unico punto por el que pasan
+  `setup`, el panel, el daemon y el motor. Con `INSTANT2_DATA` puesto no se
+  toca nada: el override explicito del usuario gana. Es idempotente y nunca
+  propaga un error, porque toda la app depende de esa ruta.
+- **El reconocimiento se baja solo la primera vez.** El panel arranca la
+  descarga cuando detecta que faltan los modelos, reusando el camino de
+  descarga y la UI de progreso y cancelacion que ya existian (no hay una
+  segunda via de descarga). Una vez por instalacion: la marca queda en el
+  directorio de datos, asi que si la persona cancela o la descarga falla, el
+  boton "Reintentar descarga" es suyo y esta via no compite con el. No
+  arranca con el panel cerrandose ni en el modo de diagnostico, y con el
+  pedido de arranque pendiente el dictado arranca solo cuando terminan de
+  bajar los modelos.
+- **El modelo de lenguaje local (3 GB) es una descarga a pedido.** El runtime
+  de llama.cpp sigue en el instalador, pero los pesos no: el GGUF se baja
+  desde Ajustes, con su progreso y su cancelacion, porque 3 GB no se bajan
+  sin permiso. El modulo nuevo `llm_model.py` reutiliza el descargador de
+  `models` (reanudable con `Range`, SHA-256 antes de publicar el archivo,
+  reintentos y control de espacio en disco). El runtime local usa ese GGUF
+  cuando la persona no eligio ninguno a mano.
+- **La marca de la config no se renombra.** `llm_bundle_initialized` conserva
+  su nombre para que las configs de los usuarios sigan sirviendo; lo que
+  cambia es su significado: "el LLM local quedo configurado solo".
+
+Commits:
+
+- `01396bb` `feat(paths): reutilizar los modelos del directorio anterior en lugar de volver a bajarlos`
+- `6f459e8` `feat(gui): el panel baja solo el reconocimiento la primera vez`
+- `c8c2ee4` `feat(llm): descargar el modelo de lenguaje local a pedido desde Ajustes`
+
+Lo que queda para la persona: los 3 GB del LLM local no se bajan solos, a
+proposito; el reconocimiento si, y son 670 MB.

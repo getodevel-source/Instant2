@@ -5,7 +5,7 @@
 
 ## Resumen
 
-Instant2 usa Parakeet TDT v3 int8 para reconocer voz y puede usar un LLM de texto configurado para revisar la transcripción. El LLM no recibe audio y no reemplaza al ASR. El audio permanece en el equipo; Ajustes identifica si el servicio de lenguaje configurado es local o remoto. El instalador de Windows incluye llama.cpp Vulkan con respaldo a CPU; Qwen 4B Q4_K_M lo descarga la app en el primer uso, como los paquetes portable, Linux y macOS.
+Instant2 usa Parakeet TDT v3 int8 para reconocer voz y puede usar un LLM de texto configurado para revisar la transcripción. El LLM no recibe audio y no reemplaza al ASR. El audio permanece en el equipo; Ajustes identifica si el servicio de lenguaje configurado es local o remoto. El instalador de Windows incluye llama.cpp Vulkan con respaldo a CPU; el modelo Qwen 4B Q4_K_M (3 GB) lo descarga la app a pedido desde Ajustes, con verificación por hash, como los paquetes portable, Linux y macOS.
 
 En el conjunto sint?tico medido, Qwen3.5 4B Q4_K_M dio el mejor equilibrio entre correcci?n y tiempo de respuesta de las variantes comparadas. Es un resultado de esta computadora, no una recomendaci?n universal. El modelo local puede permanecer en RAM o VRAM a cargo del runtime durante el uso de Instant2; el comportamiento depende de la configuraci?n del servidor y del hardware.
 
@@ -38,7 +38,7 @@ El cambio de WER/CER y el tiempo deben revisarse junto a los errores concretos. 
 1. Conservar Parakeet como reconocedor de voz local. Los errores ac?sticos deben evaluarse en el ASR; el LLM solo puede revisar el texto que recibe.
 2. Mantener la ruta de correcci?n mejorada: correcciones locales, `maybe_polish()` con el servicio configurado y comprobaci?n conservadora de cambios. Ante fallo se conserva el texto local.
 3. Reutilizar el endpoint compatible con OpenAI configurado en Ajustes. El runtime local administra el servidor que ya instal? la persona y puede mantener el modelo residente.
-4. Dejar runtime y modelos fuera del instalador. Detectar recursos ayuda a elegir CPU o acelerador compatible, pero cada servidor decide su reparto real de RAM y VRAM.
+4. Dejar runtime y modelos fuera del instalador. Detectar recursos ayuda a elegir CPU o acelerador compatible, pero cada servidor decide su reparto real de RAM y VRAM. El runtime sigue en el instalador; los pesos llegan a la máquina por la app: el reconocimiento (~670 MB) se baja solo la primera vez que se abre el panel, y el modelo de lenguaje (3 GB) solo cuando la persona lo pide en Ajustes.
 5. No recomendar una cuantizaci?n como universal hasta medir latencia, memoria y fidelidad en m?s equipos.
 
 ## Fuentes t?cnicas
