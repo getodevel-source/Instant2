@@ -367,3 +367,43 @@ Limites de esta tanda:
 - **El `.bat` y el `.iss` no se tocaron**: solo cambia como se materializan
   (CRLF en el arbol de trabajo, que es como estaban antes).
 
+
+### Cierre (la version 0.1.6 esta publicada)
+
+- Los tres PRs del stack quedaron mergeados y con el CI verde en Windows,
+  Linux y macOS:
+  - #1 `fix(update): make the in-app update observable, honest and quiet`
+  - #2 `fix(installer): make the Windows installer compile, reuse the models and reopen the app`
+  - #3 `chore(repo): land the pending benchmark work and clean the working tree`
+- La release `instant2-v0.1.6` salio del workflow de release con los nueve
+  jobs en verde, incluido el build de Windows: **el script de Inno Setup
+  compila en el runner de verdad**, que era la prueba que faltaba.
+  Assets: `Instant2-Setup.exe` + tres volumenes `.bin` (el instalador de
+  Windows), `Instant2.exe` (portable) y los binarios de Linux y macOS, cada
+  uno con su sidecar SHA256.
+
+Lo que el CI атrapó y no se habia visto en local (todo en Linux y macOS):
+
+- **El manifiesto congelado no coincidia fuera de Windows.** Los hashes se
+  calcularon contra el arbol de trabajo de Windows, con CRLF; en Linux y
+  macOS el mismo archivo tiene LF. Se agrego `.gitattributes` para que el
+  arbol de trabajo sea LF en las tres plataformas (con `*.bat`, `*.cmd`,
+  `*.ps1` y `*.iss` en CRLF, que es lo que necesitan) y se regeneraron los
+  hashes con el propio `--freeze` del harness.
+- **Un daemon que ya no estaba se reportaba como error.** En POSIX, frenar
+  un PID inexistente lanza `ProcessLookupError` y eso se mostraba como "No
+  se pudo detener Instant2" con un detalle de "sin conexion al servidor": un
+  toast de error sobre algo que no habia pasado, con la app funcionando
+  igual. En Windows el mismo caso es `taskkill` fallando en silencio, asi que
+  la app se comportaba distinto en cada sistema.
+- **La ruta del repositorio ganaba o perdia contra el perfil del usuario**
+  segun donde estuviera el checkout, y el CI hace checkout dentro de
+  `/home/runner/work`. Ahora la ruta del repo gana cuando el archivo esta
+  dentro del repo, y el enmascarado del perfil se mantiene para lo que es
+  de verdad externo.
+- **Un test de callbacks de Windows corria en POSIX** sin guarda.
+
+Queda pendiente de una propuesta aparte (cambia el producto y el release):
+el bundle offline lleva 3,3 GB de pesos del LLM opcional que la app ya
+gestiona por su cuenta, y por eso instalar una actualizacion de Windows
+sigue siendo descargar varios gigabytes.
