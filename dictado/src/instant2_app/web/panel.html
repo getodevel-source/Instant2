@@ -104,6 +104,9 @@ h3 { margin: 0; font-size: 12px; font-weight: 650; }
 #llmHomeStatus[data-state="ready"], #llmRuntimeStatus[data-state="ready"] { color: var(--green); }
 #llmHomeStatus[data-state="starting"], #llmHomeStatus[data-state="recovering"], #llmRuntimeStatus[data-state="starting"], #llmRuntimeStatus[data-state="recovering"] { color: var(--amber); }
 #llmHomeStatus[data-state="error"], #llmRuntimeStatus[data-state="error"] { color: var(--red); }
+#llmModelStatus[data-state="ready"] { color: var(--green); }
+#llmModelStatus[data-state="downloading"] { color: var(--amber); }
+#llmModelStatus[data-state="error"] { color: var(--red); }
 .runtime-status-field { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .runtime-status-field .field-title { width: 100%; }
 .runtime-status-field small { flex: 1 1 280px; }
@@ -546,6 +549,19 @@ table.vocab th:nth-child(2) { width: 47%; }
                           <div class="field"><label for="llmAccelerationSelect">Aceleraci&oacute;n</label><select id="llmAccelerationSelect"><option value="auto">Autom&aacute;tica (preferir GPU)</option><option value="cpu">Solo CPU</option></select><small>Si no puede usar la GPU, Instant2 intenta usar el procesador.</small></div>
                         </div>
                         <div class="field runtime-status-field">
+                          <span class="field-title">Modelo de lenguaje local</span>
+                          <small id="llmModelStatus" data-state="missing" role="status" aria-live="polite">No descargado.</small>
+                          <div class="model-progress" id="llmModelProgWrap" hidden>
+                            <div class="meter" role="progressbar" aria-label="Descarga del modelo de lenguaje" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="llmModelProgFill"></div></div>
+                            <span class="small" id="llmModelProgText"></span>
+                          </div>
+                          <div class="row model-actions">
+                            <button class="btn" id="llmModelDownloadBtn" type="button">Descargar modelo (3 GB)</button>
+                            <button class="btn" id="llmModelCancelBtn" type="button" hidden>Cancelar descarga</button>
+                          </div>
+                          <small class="field-note">Son 3 GB, as&iacute; que la descarga es a pedido. Si la cancel&aacute;s o se corta la red, pod&eacute;s reintentarla sin perder el avance parcial.</small>
+                        </div>
+                        <div class="field runtime-status-field">
                           <span class="field-title">Estado del servicio local</span>
                           <small id="llmRuntimeStatus" data-state="starting" role="status" aria-live="polite">Comprobando el servicio local&hellip;</small>
                           <button class="btn" id="llmRuntimeRetry" type="button">Iniciar o reintentar</button>
@@ -705,6 +721,8 @@ const llmServerPathInput = $("llmServerPathInput");
 const llmModelPathInput = $("llmModelPathInput"), llmModelPathClear = $("llmModelPathClear"), llmAccelerationSelect = $("llmAccelerationSelect");
 const llmRuntimeStatus = $("llmRuntimeStatus"), llmRuntimeRetry = $("llmRuntimeRetry");
 const llmResources = $("llmResources");
+const llmModelStatus = $("llmModelStatus"), llmModelDownloadBtn = $("llmModelDownloadBtn"), llmModelCancelBtn = $("llmModelCancelBtn");
+const llmModelProgWrap = $("llmModelProgWrap"), llmModelProgFill = $("llmModelProgFill"), llmModelProgText = $("llmModelProgText");
 const resourceModeSelect = $("resourceModeSelect");
 const uiScaleSelect = $("uiScaleSelect"), uiScaleStatus = $("uiScaleStatus");
 const threadsSelect = $("threadsSelect"), maxSegmentInput = $("maxSegmentInput");
@@ -1139,6 +1157,26 @@ function onState(raw) {
       : externalLocal ? "Servicio externo"
       : s.llm_runtime.status === "needs_setup" ? "Completá la configuración"
       : "Iniciar o reintentar";
+  }
+  if (s.llm_model) {
+    const m = s.llm_model;
+    const downloading = !!m.downloading;
+    llmModelStatus.textContent = m.message || "No descargado.";
+    llmModelStatus.dataset.state = m.status || "missing";
+    llmModelDownloadBtn.hidden = !!m.ready && !downloading;
+    llmModelDownloadBtn.disabled = downloading;
+    llmModelDownloadBtn.textContent = downloading
+      ? "Descargando…" : "Descargar modelo (3 GB)";
+    llmModelCancelBtn.hidden = !downloading;
+    llmModelCancelBtn.disabled = !!m.canceling;
+    llmModelCancelBtn.textContent = m.canceling ? "Cancelando…" : "Cancelar descarga";
+    llmModelProgWrap.hidden = !downloading;
+    const percent = Math.max(0, Math.min(100, Number(m.percent) || 0));
+    llmModelProgFill.style.setProperty("--progress", String(percent / 100));
+    const llmModelBar = llmModelProgWrap.querySelector("[role='progressbar']");
+    if (llmModelBar) llmModelBar.setAttribute("aria-valuenow", String(percent));
+    llmModelProgText.textContent = downloading
+      ? (m.message || "Descargando el modelo de lenguaje local…") : "";
   }
   if (s.diagnostics && s.diagnostics.open && diagModal.hidden) {
     diagText.textContent = s.diagnostics.text || "Ejecutando comprobaciones…";
@@ -1621,6 +1659,8 @@ $("vocabAdd").addEventListener("click", () => send({op:"vocab_add"}));
 saveBtn.addEventListener("click", () => send({op:"save_config"}));
 modelBtn.addEventListener("click", () => send({op:"download_models"}));
 modelCancelBtn.addEventListener("click", () => send({op:"cancel_model_download"}));
+llmModelDownloadBtn.addEventListener("click", () => send({op:"download_llm_model"}));
+llmModelCancelBtn.addEventListener("click", () => send({op:"cancel_llm_model"}));
 readText.addEventListener("input", () => {
   readCharCount.textContent = String(readText.value.length);
   readPlay.disabled = !readText.value.trim() || readPlay.textContent !== "Leer en voz alta";

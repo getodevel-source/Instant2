@@ -92,6 +92,15 @@ class PanelPageContractTests(unittest.TestCase):
         self.assertIn("Completá la configuración", source)
         self.assertIn("Servicio remoto", source)
 
+    def test_the_local_model_download_is_an_explicit_action(self):
+        source = self._source()
+        for expected in ('id="llmModelStatus"', 'id="llmModelDownloadBtn"',
+                         'id="llmModelCancelBtn"', 'id="llmModelProgWrap"',
+                         'id="llmModelProgFill"', 'op:"download_llm_model"',
+                         'op:"cancel_llm_model"', "Descargar modelo (3 GB)",
+                         "la descarga es a pedido"):
+            self.assertIn(expected, source)
+
     def test_redesign_uses_single_section_views_and_keeps_advanced_settings(self):
         source = self._source()
         for expected in ("class=\"side-nav\"", "aria-current=\"page\"",

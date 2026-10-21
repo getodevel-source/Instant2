@@ -1112,6 +1112,21 @@ class PanelLogic(PanelReadingActions):
         # Los modelos ya no vienen con el instalador: si faltan, el panel
         # arranca la descarga solo (una vez por instalación).
         self.schedule(AUTO_DOWNLOAD_DELAY_MS, self._auto_download_models)
+        # El modelo de lenguaje local son 3 GB: se baja solo si el usuario lo
+        # pide desde Ajustes.
+        from instant2_app import llm_model
+        llm_model_ready = llm_model.model_ready(self.data_dir)
+        self._llm_model_cancel_event = None
+        self._llm_model_state = {
+            "status": "ready" if llm_model_ready else "missing",
+            "ready": llm_model_ready,
+            "downloading": False,
+            "canceling": False,
+            "percent": 100 if llm_model_ready else 0,
+            "message": ("El modelo de lenguaje local está listo en este equipo."
+                        if llm_model_ready else
+                        "No descargado: son 3 GB, así que la descarga es a pedido."),
+        }
 
     # ------------------------------------------------------------------ estado
 
@@ -1183,6 +1198,7 @@ class PanelLogic(PanelReadingActions):
                 "key_label": self.key_value,
                 },
             "llm_runtime": dict(self._llm_runtime_state),
+            "llm_model": dict(self._llm_model_state),
             "tts": dict(self._tts_state),
             "checklist": self._checklist(),
             "mic": {
@@ -2524,6 +2540,123 @@ class PanelLogic(PanelReadingActions):
         self._model_cancel_event.set()
         self.push_state()
 
+    # ------------------------------------------------- modelo de lenguaje local
+
+    def _op_download_llm_model(self, _message):
+        self.download_llm_model()
+
+    def _op_cancel_llm_model(self, _message):
+        self.cancel_llm_model()
+
+    def download_llm_model(self):
+        """Descarga el modelo de lenguaje local (3 GB) a pedido del usuario.
+
+        No arranca sola: con el instalador chico son 3 GB y bajarlos sin que
+        lo pidan sería una sorpresa. La interfaz de progreso y el botón de
+        cancelar son los mismos del bloque de Ajustes.
+        """
+        from instant2_app import llm_model
+
+        if self._llm_model_state.get("downloading"):
+            return
+        cancel_event = threading.Event()
+        self._llm_model_cancel_event = cancel_event
+        self._llm_model_state.update({
+            "status": "downloading", "downloading": True, "canceling": False,
+            "percent": 0,
+            "message": "Descargando el modelo de lenguaje local (3 GB)…",
+        })
+        self.push_state()
+
+        def work(emit):
+            def report(done, total):
+                emit((done, total))
+            return llm_model.ensure_model(self.data_dir, progress=report,
+                                          cancel_event=cancel_event)
+
+        def progress(event):
+            if not event:
+                return
+            done, total = event
+            if not total:
+                return
+            self._llm_model_state["percent"] = max(
+                0, min(100, int(100 * done / total)))
+            self._llm_model_state["message"] = (
+                "Descargando el modelo de lenguaje local: "
+                f"{done / 1e9:.1f} de {total / 1e9:.1f} GB")
+            self.push_state()
+
+        def done(_value):
+            self._llm_model_cancel_event = None
+            if self._closed:
+                return
+            ready = llm_model.model_ready(self.data_dir)
+            self._llm_model_state.update({
+                "status": "ready" if ready else "error",
+                "ready": ready,
+                "downloading": False,
+                "canceling": False,
+                "percent": 100 if ready else 0,
+                "message": ("El modelo de lenguaje local está listo en este equipo."
+                            if ready else
+                            "La descarga terminó pero el archivo no está: "
+                            "reintentá la descarga."),
+            })
+            if ready:
+                self._use_downloaded_llm_model()
+            self.push_state()
+
+        def failed(error):
+            self._llm_model_cancel_event = None
+            if self._closed:
+                return
+            if isinstance(error, models.DownloadCancelled):
+                message = ("Descarga cancelada. El avance parcial se conserva; "
+                           "podés reintentarla.")
+                status = "missing"
+            else:
+                message = ("No se pudo descargar el modelo de lenguaje local. "
+                           "Revisá la conexión y el espacio en disco.")
+                status = "error"
+            self._llm_model_state.update({
+                "status": status, "downloading": False, "canceling": False,
+                "message": message,
+            })
+            self.push_state()
+            if status == "error":
+                _toast_error(self, "Descarga fallida", error)
+
+        self.tasks.submit(work, done, failed, progress)
+
+    def cancel_llm_model(self):
+        if not self._llm_model_state.get("downloading"):
+            return
+        if self._llm_model_cancel_event is None:
+            return
+        self._llm_model_state.update({"canceling": True,
+                                      "message": "Cancelando la descarga…"})
+        self._llm_model_cancel_event.set()
+        self.push_state()
+
+    def _use_downloaded_llm_model(self):
+        """Apunta la config al modelo descargado si el usuario no eligió otro."""
+        from instant2_app import llm_model
+
+        path = llm_model.model_path(self.data_dir)
+        configured = str(self.cfg.get("llm_model_path") or "").strip()
+        if configured and os.path.isfile(configured):
+            return
+        self.cfg["llm_model_path"] = path
+        try:
+            stored = config.load()
+            stored["llm_model_path"] = path
+            config.save(stored)
+        except OSError:
+            log.warning("no pude guardar la ruta del modelo de lenguaje",
+                        exc_info=True)
+        self.sync_llm_runtime()
+
     # ----------------------------------------------------------- diagnóstico
 
     def show_diagnostics(self):
@@ -3126,6 +3259,8 @@ class PanelLogic(PanelReadingActions):
         # stop dictation or the model that serves it.
         if self._model_cancel_event is not None:
             self._model_cancel_event.set()
+        if self._llm_model_cancel_event is not None:
+            self._llm_model_cancel_event.set()
         self.tasks.close()
         self.emit("close", {})
 

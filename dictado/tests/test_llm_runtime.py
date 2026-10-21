@@ -232,6 +232,41 @@ class LocalLLMRuntimeTests(unittest.TestCase):
         self.assertIn("Elegí", state["detail"])
         self.assertIsNone(runtime.process)
 
+    def test_the_downloaded_model_is_used_when_the_user_chosen_none(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = os.path.join(directory, "llama-server.exe")
+            with open(executable, "wb") as handle:
+                handle.write(b"fixture")
+            data_dir = os.path.join(directory, "models")
+            downloaded = os.path.join(
+                data_dir, "llm", "Qwen_Qwen3.5-4B-Q4_K_M.gguf")
+            os.makedirs(os.path.dirname(downloaded))
+            with open(downloaded, "wb") as handle:
+                handle.write(b"gguf")
+            with patch.dict(os.environ, {"INSTANT2_DATA": data_dir}):
+                _exe, model, host, port = LocalLLMRuntime._validate({
+                    "llm_url": "http://127.0.0.1:8080/v1",
+                    "llm_server_path": executable,
+                    "llm_model_path": "",
+                })
+            self.assertEqual(model, downloaded)
+            self.assertEqual((host, port), ("127.0.0.1", 8080))
+
+    def test_without_any_model_the_message_says_to_download_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = os.path.join(directory, "llama-server.exe")
+            with open(executable, "wb") as handle:
+                handle.write(b"fixture")
+            with patch.dict(os.environ,
+                            {"INSTANT2_DATA": os.path.join(directory, "models")}):
+                with self.assertRaises(RuntimeConfigError) as caught:
+                    LocalLLMRuntime._validate({
+                        "llm_url": "http://127.0.0.1:8080/v1",
+                        "llm_server_path": executable,
+                        "llm_model_path": "",
+                    })
+            self.assertIn("descargalo desde Ajustes", str(caught.exception))
+
     def test_saved_model_change_restarts_only_the_owned_server(self):
         with tempfile.TemporaryDirectory() as directory:
             executable = os.path.join(directory, "llama-server")

@@ -1,8 +1,10 @@
 """Lifecycle manager for a user-configured local llama.cpp server.
 
-Instant2 never downloads a runtime or model. The persistent dictation daemon
-starts the selected files on loopback, optionally sleeps the model between
-requests, and stops only the child process it owns.
+The runtime always comes from the installation. The model is not shipped
+either: the panel can download it on demand from Settings, and this module
+uses that copy when the user did not pick a GGUF by hand. The persistent
+dictation daemon starts the selected files on loopback, optionally sleeps the
+model between requests, and stops only the child process it owns.
 """
 import os
 import re
@@ -115,6 +117,14 @@ def is_remote_endpoint(url):
         return False
     return bool(parsed.scheme and parsed.hostname) and not (
         parsed.scheme == "http" and _loopback(parsed.hostname))
+
+
+def downloaded_model_path(data_dir=None):
+    """Ruta del modelo de lenguaje local que se baja desde Ajustes."""
+    from instant2_app import llm_model
+    from instant2_app.paths import resolve_data_dir
+
+    return llm_model.model_path(data_dir or resolve_data_dir())
 
 
 def _loopback(host):
@@ -269,7 +279,13 @@ class LocalLLMRuntime:
         if not executable or not os.path.isfile(executable):
             raise RuntimeConfigError("Elegí el ejecutable llama-server que ya instalaste.")
         if not model or not os.path.isfile(model):
-            raise RuntimeConfigError("Elegí el archivo GGUF del modelo que ya descargaste.")
+            # El usuario no eligió un GGUF a mano: si está el que se puede
+            # descargar desde Ajustes, se usa ese.
+            model = downloaded_model_path()
+            if not model or not os.path.isfile(model):
+                raise RuntimeConfigError(
+                    "No hay un modelo de lenguaje local: descargalo desde "
+                    "Ajustes o elegí el archivo GGUF que ya tenés.")
         host, port = local_runtime_target(config.get("llm_url", ""))
         return executable, model, host, port
 

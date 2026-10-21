@@ -27,7 +27,9 @@ DEFAULTS = {
     "llm_managed_enabled": True,
     "llm_server_path": "",
     "llm_model_path": "",
-    # Set once when the Windows offline bundle supplies the default local LLM.
+    # El nombre de la clave es histórico: venía del bundle offline del
+    # instalador. Ahora significa "el LLM local quedó configurado solo". No
+    # se renombra para que las configs de los usuarios sigan sirviendo.
     "llm_bundle_initialized": False,
     "llm_acceleration": "auto",
     "llm_normal_enabled": True,
@@ -225,7 +227,7 @@ def load():
         cfg["blank_penalty"] = max(0.0, min(1.0, float(cfg.get("blank_penalty", 0.0))))
     except (TypeError, ValueError):
         cfg["blank_penalty"] = 0.0
-    if _initialize_bundled_llm(cfg):
+    if _initialize_local_llm(cfg):
         save(cfg)
     cfg["llm_bundle_initialized"] = cfg.get("llm_bundle_initialized") is True
     return cfg
@@ -298,12 +300,16 @@ def _normalize_hotkeys(cfg):
     cfg["read_key"] = reading
 
 
-def _initialize_bundled_llm(cfg):
-    """Fill local LLM defaults once when an offline Windows bundle is present.
+def _initialize_local_llm(cfg):
+    """Configure the default local LLM once, when runtime and model are here.
 
     User-selected endpoints and file paths always win. The marker lets a user
-    deliberately clear or replace the bundled defaults without having them
+    deliberately clear or replace the local defaults without having them
     silently reappear at the next launch.
+
+    The model is not shipped with the installer anymore: it is downloaded on
+    demand from Settings, so this only takes effect once the download is
+    done.
     """
     if cfg.get("llm_bundle_initialized") is True:
         return False
