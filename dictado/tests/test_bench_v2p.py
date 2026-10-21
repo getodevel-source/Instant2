@@ -6,6 +6,7 @@ Focused on the pieces that a scored run depends on:
 - runtime metadata that must not carry a private profile path,
 - the frozen corpus/rubric wiring the harness refuses to run without.
 """
+import hashlib
 import json
 import os
 import re
@@ -17,6 +18,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "bench"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import bench_v2p
+
+
+def _canonical_bytes(path):
+    """Los bytes canonicos del repositorio: el mismo texto con LF."""
+    with open(path, "rb") as handle:
+        return handle.read().replace(b"\r\n", b"\n")
 
 
 def _runner_source():
@@ -659,6 +666,29 @@ class FrozenWiringTests(unittest.TestCase):
 
     def test_frozen_manifest_matches_the_corpus_and_rubric(self):
         self.assertEqual(bench_v2p.verify_manifest(), [])
+
+    def test_the_frozen_manifest_matches_the_canonical_bytes(self):
+        """El manifiesto se compara contra los bytes canonicos, no los del disco.
+
+        Los hashes del manifiesto se calcularon con el corpus y el rubric en
+        LF (los finales de linea del repositorio los fija `.gitattributes`).
+        Si el arbol de trabajo los trajera con CRLF, el hash del disco no
+        seria el del manifiesto: la comparacion tiene que hacerse sobre los
+        bytes canonicos para no depender del accidente del checkout.
+        """
+        frozen = bench_v2p.read_manifest()
+        self.assertIsNotNone(frozen)
+        self.assertEqual(frozen["corpus_file_sha256"],
+                         hashlib.sha256(_canonical_bytes(bench_v2p.CORPUS_PATH)
+                                        ).hexdigest())
+        self.assertEqual(frozen["rubric_sha256"],
+                         hashlib.sha256(_canonical_bytes(bench_v2p.RUBRIC_PATH)
+                                        ).hexdigest())
+        self.assertEqual(frozen["references_sha256"],
+                         bench_v2p.corpus_digests()["references_sha256"])
+        self.assertEqual(frozen["prescoring_sha256"],
+                         bench_v2p.prescoring_digest())
+        self.assertEqual(frozen["case_count"], "72")
 
     def test_reference_prompts_satisfy_their_own_invariants(self):
         cases = bench_v2p.load_corpus()["cases"]
