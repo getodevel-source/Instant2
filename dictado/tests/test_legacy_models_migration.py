@@ -2,8 +2,13 @@
 
 El instalador de Windows ya no lleva los pesos: la app los reutiliza desde el
 directorio del slug viejo. Estos tests fijan la misma semántica que tenía
-`ReuseLegacyModels` en el Inno Setup: renombrar, fusionar, no dejar
-duplicados, no tocar el override del usuario y no propagar fallos.
+`ReuseLegacyModels` en el Inno Setup, con dos diferencias que importan:
+
+- la migración es un paso explícito del arranque (`migrate_legacy_models_once`),
+  no un efecto secundario de "donde están mis datos";
+- una entrada con el mismo nombre en el destino NO es un duplicado verificado
+  (el destino puede ser una descarga parcial): la copia anterior se conserva
+  con otro nombre en vez de borrarse.
 """
 import os
 import shutil
@@ -28,6 +33,15 @@ def _make_tree(root, *relative):
             handle.write(b"pesos")
     else:
         os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _write(root, content, *relative):
+    """Crea un archivo con contenido explícito y devuelve su ruta."""
+    path = os.path.join(root, *relative)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as handle:
+        handle.write(content)
     return path
 
 
@@ -104,15 +118,45 @@ class LegacyMigrationTests(unittest.TestCase):
             os.path.join(self.legacy, "parakeet-v3-int8", "encoder.int8.onnx")))
         self.assertFalse(os.path.exists(self.current))
 
-    def test_resolve_data_dir_migrates_the_legacy_directory(self):
-        _make_tree(self.legacy, "parakeet-v3-int8", "encoder.int8.onnx")
-        with patch.object(paths, "user_data_dir", return_value=self.current), \
-                patch.object(paths, "legacy_user_data_dir", return_value=self.legacy):
-            got = paths.resolve_data_dir()
-        self.assertEqual(os.path.realpath(got), os.path.realpath(self.current))
-        self.assertFalse(os.path.exists(self.legacy))
+    def test_a_partial_download_does_not_destroy_the_legacy_copy(self):
+        """El destino con una descarga parcial no habilita el borrado."""
+        # El destino tiene el `llm/` a medio descargar...
+        _write(self.current, b"parcial", "llm",
+               "Qwen_Qwen3.5-4B-Q4_K_M.gguf.part")
+        # ...y el anterior tiene el GGUF que la persona eligió a mano.
+        _write(self.legacy, b"completo", "llm", "mi-modelo.gguf")
+        result = paths.migrate_legacy_models(self.current, self.legacy)
+        self.assertEqual(result["kept_aside"], 1)
+        self.assertEqual(result["removed_duplicates"], 0)
+        # La copia anterior se conserva (con otro nombre) y el destino intacto.
+        kept = os.path.join(self.legacy, "llm" + paths.LEGACY_SUFFIX,
+                            "mi-modelo.gguf")
+        self.assertTrue(os.path.isfile(kept))
         self.assertTrue(os.path.isfile(
-            os.path.join(self.current, "parakeet-v3-int8", "encoder.int8.onnx")))
+            os.path.join(self.current, "llm", "Qwen_Qwen3.5-4B-Q4_K_M.gguf.part")))
+
+    def test_a_partial_recognition_does_not_destroy_the_legacy_set(self):
+        """Un `parakeet-v3-int8` a medias no habilita el borrado del anterior."""
+        _write(self.current, b"parcial", "parakeet-v3-int8", "encoder.int8.onnx")
+        _make_tree(self.legacy, "parakeet-v3-int8", "encoder.int8.onnx")
+        _make_tree(self.legacy, "parakeet-v3-int8", "decoder.int8.onnx")
+        result = paths.migrate_legacy_models(self.current, self.legacy)
+        self.assertEqual(result["kept_aside"], 1)
+        self.assertEqual(result["removed_duplicates"], 0)
+        kept = os.path.join(self.legacy, "parakeet-v3-int8" + paths.LEGACY_SUFFIX)
+        self.assertTrue(os.path.isfile(
+            os.path.join(kept, "encoder.int8.onnx")))
+        self.assertTrue(os.path.isfile(
+            os.path.join(kept, "decoder.int8.onnx")))
+
+    def test_a_verified_duplicate_is_still_removed(self):
+        """Si el destino está verificado, la copia anterior sí sobra."""
+        _make_tree(self.current, "parakeet-v3-int8", "encoder.int8.onnx")
+        _make_tree(self.legacy, "parakeet-v3-int8", "encoder.int8.onnx")
+        result = paths.migrate_legacy_models(self.current, self.legacy)
+        self.assertEqual(result["removed_duplicates"], 1)
+        self.assertEqual(result["kept_aside"], 0)
+        self.assertFalse(os.path.exists(self.legacy))
 
     def test_a_failure_does_not_propagate(self):
         _make_tree(self.legacy, "parakeet-v3-int8", "encoder.int8.onnx")
