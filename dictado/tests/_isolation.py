@@ -23,6 +23,12 @@ HOME_ENV = "INSTANT2_TEST_HOME"
 # Variables que apuntan al estado del usuario en cada sistema operativo.
 USER_ENV = ("APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_DATA_HOME")
 
+# Las variables reales ANTES de redirigirlas. Hay herramientas instaladas en el
+# perfil del usuario (Inno Setup, entre otras) que se buscan con la ruta real:
+# si el test las busca con %LOCALAPPDATA% ya redirigido, no las encuentra y se
+# saltea sin avisar, dejando la cobertura del instalador sin ejercitar.
+ORIGINAL_ENV = dict(os.environ)
+
 
 def isolate_user_state():
     """Redirige el estado del usuario a un directorio temporal (idempotente)."""

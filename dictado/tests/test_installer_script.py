@@ -33,8 +33,12 @@ ICON = os.path.join(ROOT, "dictado", "build", "instant2.ico")
 ISCC_CANDIDATES = (
     r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
     r"C:\Program Files\Inno Setup 6\ISCC.exe",
-    os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs",
-                 "Inno Setup 6", "ISCC.exe"),
+    # Con el %LOCALAPPDATA% REAL: el aislamiento de los tests redirige esa
+    # variable a un temporal, y con la redireccion ISCC no se encuentra y esta
+    # prueba se salta en silencio, dejando el instalador sin compilar en la
+    # suite. Inno Setup instalado por usuario vive en el perfil real.
+    os.path.join(_isolation.ORIGINAL_ENV.get("LOCALAPPDATA", ""),
+                 "Programs", "Inno Setup 6", "ISCC.exe"),
 )
 
 
