@@ -410,8 +410,11 @@ sigue siendo descargar varios gigabytes.
 
 ### Los modelos ahora los baja la app (2026-10-20)
 
-El instalador de Windows dejo de llevar los pesos (commit `10ad7c9`): pesa
-2 MB en vez de 3,74 GiB. Eso deja sin dueno la migracion de los modelos del
+El instalador de Windows dejo de llevar los pesos (commit `10ad7c9`): el
+payload cae de 3,74 GiB al tamano de la app mas el runtime de llama.cpp.
+La cifra de «2 MB» que se midio con ISCC 6.7.3 venia de una compilacion
+con el directorio de la app vacio (un stub de onedir): no describe el
+instalador real, que ademas lleva la app de PyInstaller y el runtime. Eso deja sin dueno la migracion de los modelos del
 directorio anterior, que hacia el propio instalador (`ReuseLegacyModels`), y
 obliga a la app a bajar sus propios modelos, como ya hacia en Linux y macOS.
 Lo que quedaba pendiente en el cierre de la 0.1.6 ("el bundle offline lleva

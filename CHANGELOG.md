@@ -15,23 +15,61 @@ Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z
   y ya no lleva los pesos de los modelos (3,78 GB menos por instalación y por
   actualización). Los modelos llegan a la máquina por la app, que los descarga
   con su barra de progreso, se pueden cancelar, reanudar y verificar por
-  hash.
+  hash. El tamaño exacto del instalador hay que medirlo sobre el artefacto
+  real (app + runtime): la cifra de «2 MB» del commit `10ad7c9` salía de una
+  compilación con el directorio de la app vacío y no describe lo que se baja.
 - La primera vez que se abre el panel sin los modelos de reconocimiento, la
   app los baja sola (unos 670 MB). Es una sola vez por instalación: si se
   cancela o falla, el botón «Reintentar descarga» queda disponible y la app no
-  vuelve a insistir sola.
+  vuelve a insistir sola. El asistente de primer arranque (`setup`) y el
+  diagnóstico no descargan nada solo, y `INSTANT2_NO_AUTO_DOWNLOAD=1` apaga
+  la descarga automática por completo.
 - El modelo de lenguaje local (3 GB) se descarga a pedido, desde **Ajustes →
   Revisión del dictado y privacidad → Archivos del servicio local**, con su
   progreso y su botón de cancelar. No baja solo: son demasiados gigabytes
-  para bajarlos sin permiso.
+  para bajarlos sin permiso. Cuando la descarga termina, la app deja el
+  servicio local configurado (runtime, dirección y alias): el proceso de
+  dictado puede iniciarlo sin que haya que hacer nada más.
 - Los modelos que dejó la versión anterior se reutilizan en vez de volver a
   bajarse: la app mueve los del directorio de Instant
   (`%LOCALAPPDATA%\instant\models`) al de Instant2
   (`%LOCALAPPDATA%\instant2\models`), sin copiar un byte y sin dejar
   duplicados. Si los dos directorios existen, se fusionan. Con
   `INSTANT2_DATA` configurado a mano, ese override gana y no se toca nada.
+  Una entrada con el mismo nombre solo se borra del directorio anterior si el
+  destino está verificado (los mismos archivos, con el mismo contenido): si el
+  destino es una descarga a medias, la copia anterior se conserva con otro
+  nombre (`<nombre>.legacy`) y se avisa en el log. Perder un GGUF que no se
+  puede volver a bajar no tiene arreglo.
 
 ### Correcciones
+- La descarga del modelo de lenguaje local ya no era un final de camino: el
+  panel guardaba solo la ruta del archivo y el daemon se quedaba con «No hay
+  un servicio de lenguaje configurado» después de 3 GB descargados. Ahora la
+  descarga deja la config completa (runtime, `http://127.0.0.1:8080/v1`, alias
+  y ruta del modelo) y el proceso de dictado puede usar el modelo.
+- La marca «el LLM local ya quedó configurado» ya no se pone cuando no se
+  configuró nada: con el modelo todavía sin descargar, el siguiente arranque
+  vuelve a intentarlo. Y la reparación del runtime acepta el layout real
+  (`llm-runtime\llama-server.exe`) además del viejo.
+- Completar la descarga del modelo de lenguaje ya no guarda toda la config
+  del panel: se guardan solo las claves que cambian, así que no se persisten
+  ediciones sin confirmar ni se re-aplica el arranque con el sistema.
+- Un GGUF que la persona eligió a mano no se reemplaza nunca, aunque el disco
+  donde estaba no esté conectado. Y el archivo descargado se verifica por
+  hash: uno de 3 GB con el tamaño justo pero corrupto no se reporta como
+  «listo» y el botón de descarga vuelve a aparecer.
+- La migración de los modelos del producto anterior ya no es un efecto
+  secundario de «dónde están mis datos»: es un paso explícito del arranque
+  (panel, daemon y asistente de setup), una sola vez por máquina, con marca y
+  con lock para que dos procesos a la vez no se pisen.
+- La suite de tests no toca más la máquina de quien la corre: cada módulo
+  aísla `APPDATA`, `LOCALAPPDATA`, la configuración y los datos a un
+  directorio temporal, y hay `scripts/run-tests.bat` y `scripts/run-tests.sh`
+  para correrla con ese aislamiento. `INSTANT2_CONFIG_DIR` mueve el
+  directorio de configuración (lo respeta la app, no solo los tests).
+- Si seguís usando Instant (el producto anterior), avisá: sus modelos pasan
+  al directorio de Instant2 y la app anterior deja de encontrarlos.
 - El repositorio fija sus finales de línea (`.gitattributes`): el texto sale
   con LF en las tres plataformas y el helper de actualización y el script de
   Inno Setup siguen con CRLF, que es lo que necesitan. Antes, los hashes

@@ -30,7 +30,7 @@ La primera vez, el panel arranca solo esa descarga (unos 670 MB) cuando detecta 
 
 El modelo de lenguaje local (3 GB) es una descarga aparte y explícita: son demasiados gigabytes para bajarlos sin que los pidas. En **Ajustes → Revisión del dictado y privacidad → Archivos del servicio local** tenés «Descargar modelo (3 GB)», con su progreso y su botón de cancelar.
 
-Si venís de Instant (el producto anterior), no se vuelve a descargar nada: Instant2 reutiliza los modelos que ya tenías y los mueve del directorio anterior al suyo.
+Si venís de Instant (el producto anterior), no se vuelve a descargar nada: Instant2 reutiliza los modelos que ya tenías y los mueve del directorio anterior al suyo. Ojo con esto: si seguís usando Instant, sus modelos quedan en el directorio de Instant2 y la app anterior deja de encontrarlos. Copiá los que te interesen antes de abrir Instant2 por primera vez.
 
 En una instalación nueva, el instalador deja seleccionados **Iniciar Instant2 con Windows** y **Abrir Instant2 y activar el dictado en segundo plano**. Puedes desmarcar cualquiera de esas opciones. Al abrirse, Instant2 inicia el servicio si detecta un micrófono disponible; cerrar el panel deja el servicio en la bandeja.
 

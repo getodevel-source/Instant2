@@ -300,19 +300,29 @@ desarrollo del repositorio fijan `INSTANT2_DATA` a su propia carpeta `models`.
 
 ### Modelos de la versión anterior
 
-Cuando `INSTANT2_DATA` no está definido, la app revisa una sola vez el
-directorio del producto anterior (`%LOCALAPPDATA%/instant/models` en Windows) y
-reutiliza lo que haya ahí:
+Cuando `INSTANT2_DATA` no está definido, la app revisa **una sola vez** (al
+arrancar) el directorio del producto anterior (`%LOCALAPPDATA%/instant/models`
+en Windows) y reutiliza lo que haya ahí:
 
 - si el directorio de Instant2 todavía no existe, mueve el anterior entero
   (un rename: no se copia ni un byte) y no queda una copia huérfana;
-- si los dos existen, mueve lo que falta y borra la copia duplicada, para que
-  el directorio anterior no quede como un duplicado viejo.
+- si los dos existen, mueve lo que falta;
+- si el destino ya tiene una entrada con el mismo nombre, **solo se borra la
+  copia anterior si el destino está verificado** (los mismos archivos, con el
+  mismo contenido). Si no —el destino puede ser una descarga a medias— la copia
+  anterior se conserva con otro nombre (`<nombre>.legacy`) y se avisa en el log:
+  perder un GGUF que no se puede volver a bajar no tiene arreglo.
 
-Es idempotente y nunca falla el arranque: si algo no se puede mover, se
-registra en el log y la app sigue. Con `INSTANT2_DATA` puesto, el override
-explícito gana y no se toca nada: por ejemplo, `INSTANT2_DATA` apuntando a una
-carpeta vacía no recibe los modelos de Instant.
+Es idempotente, no se repite en cada arranque (deja una marca) y nunca falla el
+arranque: si algo no se puede mover, se registra en el log y la app sigue. Con
+`INSTANT2_DATA` puesto, el override explícito gana y no se toca nada: por
+ejemplo, `INSTANT2_DATA` apuntando a una carpeta vacía no recibe los modelos
+de Instant.
+
+> **Si seguís usando Instant (el producto anterior):** la app mueve tus modelos
+> al directorio de Instant2, así que Instant deja de encontrarlos y no puede
+> dictar hasta que los vuelvas a bajar ahí. Copiá los que te interesen antes de
+> abrir Instant2 por primera vez.
 
 Sin modelos o sin mic, `setup` avisa y sigue (no crashea); `run` sin
 modelos pide correr `setup` con red primero.
@@ -488,12 +498,22 @@ ausencia).
 
 El instalador de Windows incluye llama.cpp; el modelo Qwen 4B Q4_K_M (3 GB) lo
 descargás vos desde **Ajustes → Revisión del dictado y privacidad → Archivos
-del servicio local**. Instant2 inicia el servidor local cuando
+del servicio local**. Cuando la descarga termina, Instant2 deja el servicio
+local **configurado**: apunta al runtime que trae la instalación, usa
+`http://127.0.0.1:8080/v1` y el alias `qwen3.5:4b-q4_K_M`, así que el proceso
+de dictado puede iniciar el modelo sin que tengas que hacer nada más. Instant2
+inicia el servidor local cuando
 corresponde, usa automáticamente un dispositivo que el runtime detecte y
 prueba CPU si no hay aceleración compatible. En **Ajustes → Voz, rendimiento
 y privacidad avanzada** podés cambiar el modelo o el runtime. El portable y
 los paquetes de otros sistemas requieren configurar los archivos locales o un
 servicio compatible.
+
+Un GGUF que elegís a mano nunca se reemplaza: si apuntás a un archivo tuyo
+(incluso si está en un disco que ahora no está conectado), Instant2 lo deja
+como está. Y el archivo descargado se verifica por hash: uno de 3 GB con el
+tamaño justo pero corrupto no se reporta como "listo", la interfaz avisa y el
+botón de descarga vuelve a aparecer.
 
 Dejá **Automático** para que Instant2 elija un dispositivo que llama-server confirme disponible y pruebe CPU si falla el arranque acelerado. También podés elegir **Solo CPU**. El servidor administrado escucha en 127.0.0.1. Cerrar el panel no detiene el daemon ni su servidor; al detener el dictado, Instant2 cierra solo el proceso hijo que inició.
 
