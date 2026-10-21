@@ -58,7 +58,18 @@ PALETTE = {
     "panel_brand_hover_end": "#0a7a70",
     "panel_hero_start": "#162126",
     "panel_hero_end": "#10191d",
+    # Icono de la aplicación: petróleo profundo con una pizca de verde.
+    "icon_bg_start": "#17333c",
+    "icon_bg_end": "#0f2228",
+    "icon_bg": "#132a32",
 }
+
+# Geometría de la marca: tres barras ("señal") dentro de una caja de 100 x 100.
+# La barra central es la voz; las laterales, lo que entra y lo que sale.
+# `MARK_BARS` guarda (x, alto); todas se centran verticalmente en la caja.
+MARK_BOX = 100.0
+MARK_BAR_WIDTH = 16.0
+MARK_BARS = ((19.0, 42.0), (42.0, 62.0), (65.0, 50.0))
 
 
 def rgba(color, alpha, channel=None):
@@ -104,34 +115,44 @@ def blend(start, end, ratio):
 
 
 def create_icon_image(size=64):
-    """Renderiza una marca de micrófono limpia en cualquier tamaño."""
+    """Dibuja el icono de la app (petróleo + señal) en cualquier tamaño.
+
+    Reproduce la geometría de `brand/logo/instant2-app-icon.svg`: squircle al
+    3,1 % del borde, radio del 21,9 % y las tres barras de `MARK_BARS`. El
+    degradado del SVG se sustituye por su tono medio, que es lo único que se
+    distingue por debajo de 32 px.
+    """
     from importlib import import_module
 
     Image = import_module("PIL.Image")
     ImageDraw = import_module("PIL.ImageDraw")
 
     render_size = size * 4
-    scale = render_size / 256
+    unit = render_size / 1024
     image = Image.new("RGBA", (render_size, render_size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
+    inset = round(32 * unit)
+    draw.rounded_rectangle(
+        (inset, inset, render_size - inset, render_size - inset),
+        radius=round(224 * unit), fill=PALETTE["icon_bg"])
 
-    def box(values):
-        return tuple(round(value * scale) for value in values)
+    # El símbolo ocupa 460 de los 1024 px del icono (ver app-icon.svg).
+    mark_size = 460 * unit
+    mark_left = min(x for x, _ in MARK_BARS)
+    mark_top = min((MARK_BOX - height) / 2 for _, height in MARK_BARS)
+    mark_right = max(x + MARK_BAR_WIDTH for x, _ in MARK_BARS)
+    mark_scale = mark_size / (mark_right - mark_left)
+    origin_x = (render_size - mark_size) / 2
+    origin_y = (render_size - mark_size) / 2
+    for x, height in MARK_BARS:
+        left = round(origin_x + (x - mark_left) * mark_scale)
+        top = round(origin_y + ((MARK_BOX - height) / 2 - mark_top) * mark_scale)
+        right = round(origin_x + (x - mark_left + MARK_BAR_WIDTH) * mark_scale)
+        bottom = round(origin_y + ((MARK_BOX + height) / 2 - mark_top) * mark_scale)
+        draw.rounded_rectangle(
+            (left, top, right, bottom),
+            radius=round(MARK_BAR_WIDTH * mark_scale / 2),
+            fill=PALETTE["panel_accent"])
 
-    background = "#173b49"
-    mic = PALETTE["accent_soft"]
-    light = "#f1f6f6"
-    draw.rounded_rectangle(
-        box((10, 10, 246, 246)), radius=round(54 * scale), fill=background)
-    draw.rounded_rectangle(
-        box((96, 42, 160, 150)), radius=round(32 * scale), fill=mic)
-    stroke = max(1, round(14 * scale))
-    draw.line(box((68, 104, 68, 142)), fill=light, width=stroke)
-    draw.line(box((188, 104, 188, 142)), fill=light, width=stroke)
-    draw.arc(box((68, 82, 188, 202)), start=0, end=180, fill=light, width=stroke)
-    draw.rounded_rectangle(
-        box((121, 196, 135, 225)), radius=round(7 * scale), fill=light)
-    draw.rounded_rectangle(
-        box((91, 220, 165, 234)), radius=round(7 * scale), fill=light)
     resampling = getattr(Image, "Resampling", Image)
     return image.resize((size, size), resampling.LANCZOS)

@@ -26,8 +26,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 188px minmax(0,1fr); }
 .sidebar { position: sticky; top: 0; align-self: start; display: flex; height: 100vh; flex-direction: column; gap: 28px; padding: 28px 14px 18px; background: var(--bg-alt); }
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px; color: var(--text); font-size: 19px; font-weight: 700; letter-spacing: -.055em; text-decoration: none; }
-.brand-mark { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 10px; background: var(--accent); color: var(--bg-alt); }
-.brand-mark i { width: 3px; height: 14px; border-radius: 2px; background: currentColor; box-shadow: -5px 3px 0 -0.3px currentColor, 5px -3px 0 -0.3px currentColor; }
+.brand-mark { display: flex; align-items: center; justify-content: center; gap: 1.8px; width: 29px; height: 29px; border-radius: 10px; background: var(--accent); color: var(--bg-alt); }
+.brand-mark i { display: block; width: 4.1px; border-radius: 3px; background: currentColor; }
+.brand-mark i:nth-child(1) { height: 10.8px; }
+.brand-mark i:nth-child(2) { height: 16px; }
+.brand-mark i:nth-child(3) { height: 12.9px; }
 .workspace-label { margin: -18px 0 0; padding-left: 49px; color: var(--faint); font-size: 10px; }
 .side-nav { display: grid; gap: 5px; }
 .nav-link { position: relative; display: flex; align-items: center; gap: 11px; min-height: 44px; width: 100%; padding: 10px 13px; border: 0; border-radius: 10px; background: transparent; color: var(--faint); text-align: left; font-weight: 550; cursor: pointer; transition: color 150ms var(--curve), background 150ms var(--curve); }
@@ -339,7 +342,7 @@ table.vocab th:nth-child(2) { width: 47%; }
 <div class="app-shell">
 <aside class="sidebar" aria-label="Navegaci&oacute;n de Instant2">
   <a class="brand" href="#sec-home" data-page="home" aria-controls="sec-home" aria-label="Instant2, inicio">
-    <span class="brand-mark" aria-hidden="true"><i></i></span><span>Instant2</span>
+    <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>Instant2</span>
   </a>
   <p class="workspace-label">Voz, en tu equipo.</p>
   <nav class="side-nav" aria-label="Secciones">

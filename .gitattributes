@@ -24,5 +24,6 @@
 
 # Los binarios no se tocan: no hay conversion de fin de linea.
 *.png binary
+*.ico binary
 *.ttf binary
 *.gguf binary

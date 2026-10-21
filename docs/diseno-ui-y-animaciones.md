@@ -9,6 +9,9 @@ iconos de trazo fino y una escala coherente de espaciado, controles y radios.
 No necesita descargar fuentes ni bibliotecas de animación al abrirse.
 Los compositores inyectan los colores del panel y del indicador desde
 `branding.PALETTE`; las páginas no mantienen copias manuales de la paleta.
+El símbolo de la app es la señal de tres barras del chip del panel; el sistema
+completo (logotipo, iconos, área libre y usos) está en
+[`design.md`](../design.md).
 
 Las cinco vistas conservan sus controles y operaciones por QWebChannel:
 
