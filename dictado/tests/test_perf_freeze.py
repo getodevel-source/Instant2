@@ -12,6 +12,8 @@ from unittest.mock import Mock, patch
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _isolation  # noqa: F401  (aisla el estado real del usuario)
 
 from instant2_app import daemon as daemon_module
 from instant2_app import __main__ as main_mod

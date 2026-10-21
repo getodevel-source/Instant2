@@ -15,6 +15,8 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "bench"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _isolation  # noqa: F401  (aisla el estado real del usuario)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import bench_v2p

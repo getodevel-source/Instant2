@@ -18,8 +18,11 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _isolation  # noqa: F401  (aisla el estado real del usuario)
 
 
 ROOT = os.path.normpath(os.path.join(

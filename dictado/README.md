@@ -34,6 +34,31 @@ C:\Users\juans\AppData\Local\Temp\opencode\instant2-venv\Scripts\python.exe -m u
 C:\Users\juans\AppData\Local\Temp\opencode\instant2-venv\Scripts\python.exe -m pyflakes ..\dictado\src\instant2_app\*.py
 ```
 
+### Correr la suite sin tocar tu máquina
+
+La app escribe en dos lugares del disco del usuario: la configuración
+(`%APPDATA%\instant2\config.json`) y los modelos (`%LOCALAPPDATA%\instant2\models`
+y el directorio del producto anterior). Un test que escriba ahí deja la
+máquina rota, así que **la suite se aísla sola**: cada módulo de test importa
+`tests/_isolation.py`, que redirige `APPDATA`, `LOCALAPPDATA`, la configuración
+y los datos a un directorio temporal (`%TEMP%\instant2-tests-...`).
+
+Para correr la suite como corresponde, usá los scripts del repositorio, que
+además dejan el sitio de usuario de Python a mano:
+
+```powershell
+# Windows
+scripts\run-tests.bat
+# Linux/macOS
+scripts/run-tests.sh
+```
+
+Equivale a correr `python -m unittest discover -s tests` con `APPDATA`,
+`LOCALAPPDATA`, `INSTANT2_DATA` e `INSTANT2_CONFIG_DIR` apuntando a un
+directorio temporal. Los dos overrides (`INSTANT2_DATA` para los datos e
+`INSTANT2_CONFIG_DIR` para la configuración) los respeta la app también
+fuera de los tests.
+
 El venv del `%TEMP%` es una comodidad: si se borra, se rehace con el 3.12 de arriba (`python -m venv <ruta>` + `pip install -e .` + `pip install PySide6 pyflakes`).
 
 Instant2 **también funciona con 3.14** (`requires-python` no tiene techo): el panel, el daemon y la suite andan en 3.12 y en 3.14. Para desarrollar, usá 3.12: es el que prueba CI en los tres sistemas.
@@ -294,7 +319,9 @@ modelos pide correr `setup` con red primero.
 
 En **Ajustes** puedes elegir una tecla para Dictado mejorado y otra para leer la selección. Deben ser distintas; la captura acepta una tecla individual disponible en el sistema.
 Config en `%APPDATA%/instant2` (win), `~/.config/instant2` (linux),
-`~/Library/Application Support/instant2` (mac). Env `INSTANT2_*` pisa config
+`~/Library/Application Support/instant2` (mac). `INSTANT2_CONFIG_DIR` mueve
+ese directorio a otro lado (lo usan los tests y la suite aislada).
+Env `INSTANT2_*` pisa config
 (`INSTANT2_MIC`, `INSTANT2_KEY`, `INSTANT2_READ_KEY`, `INSTANT2_THREADS`, `INSTANT2_SOUND`,
 `INSTANT2_MAX_SEG`, `INSTANT2_VAD=silero|ten`, `INSTANT2_BLANK=0..1`,
 `INSTANT2_LLM_URL`, `INSTANT2_LLM_TOKEN`,

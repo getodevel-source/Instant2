@@ -1,4 +1,5 @@
 """F10 keeps its start/stop contract and publishes real audio to the overlay."""
+import os
 import sys
 import threading
 import unittest
@@ -6,6 +7,8 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _isolation  # noqa: F401  (aisla el estado real del usuario)
 from instant2_app.daemon import Daemon
 from instant2_app import selection
 

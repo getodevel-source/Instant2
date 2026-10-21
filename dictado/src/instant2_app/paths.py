@@ -38,9 +38,19 @@ PARAKEET_SUBDIR = "parakeet-v3-int8"
 VAD_SUBDIR = "silero-vad"
 # Slug del producto anterior: sus modelos quedaban en un directorio aparte.
 LEGACY_APP_SLUG = "instant"
+# Override del directorio de configuracion (tests y suite aislada).
+CONFIG_DIR_ENV = "INSTANT2_CONFIG_DIR"
 
 
 def config_dir():
+    """Directorio de la configuracion del usuario.
+
+    `INSTANT2_CONFIG_DIR` lo sobreescribe: lo usan los tests (y los scripts
+    que corren la suite) para no tocar el `%APPDATA%` real de la maquina.
+    """
+    override = os.environ.get(CONFIG_DIR_ENV)
+    if override and override.strip():
+        return os.path.expanduser(os.path.expandvars(override.strip()))
     if sys.platform == "win32":
         base = os.environ.get("APPDATA", os.path.expanduser("~"))
         return os.path.join(base, APP_SLUG)

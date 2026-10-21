@@ -7,6 +7,8 @@ from unittest.mock import patch
 from urllib.error import URLError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _isolation  # noqa: F401  (aisla el estado real del usuario)
 
 from instant2_app.llm_runtime import (  # noqa: E402
     LocalLLMRuntime, RuntimeConfigError, cpu_memory_error,
