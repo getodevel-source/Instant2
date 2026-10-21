@@ -460,3 +460,41 @@ Commits:
 
 Lo que queda para la persona: los 3 GB del LLM local no se bajan solos, a
 proposito; el reconocimiento si, y son 670 MB.
+
+### Septima tanda (instalador chico: la app trae sus propios modelos)
+
+Decision de producto: el instalador de Windows deja de llevar los 4 GB de pesos.
+Pasa de 3,78 GB a 204 MB (la app + el runtime de llama.cpp), y la app descarga
+sus componentes de voz: el reconocimiento solo la primera vez (670 MB) y el
+modelo de lenguaje local a pedido desde Ajustes (3 GB, no baja solo).
+
+- **El bundle offline desaparece del pipeline**: `scripts/prepare_offline_bundle.py`
+  pasa a `scripts/prepare_windows_assets.py` y solo arma lo que va en `{app}` (el
+  runtime de llama.cpp, los avisos, el script de parada y las licencias).
+  `installer/instant2.iss` pierde la entrada de modelos y el `[Code]` que
+  movia los del directorio anterior.
+- **La app reutiliza los modelos que ya tiene**: la migracion de
+  `%LOCALAPPDATA%\instant\models` a `%LOCALAPPDATA%\instant2\models` pasa a ser
+  un paso explicito del arranque (`paths.migrate_legacy_models_once`), con
+  marcador, y con el override `INSTANT2_DATA` ganando siempre. Una entrada con
+  el mismo nombre solo se borra del directorio anterior si el destino esta
+  verificado; si no, se conserva con otro nombre (`.legacy`) y se avisa.
+- **La descarga del LLM local deja de ser un final de camino**: la revision
+  adversarial mostro que la descarga de 3 GB no configuraba nada
+  (`llm_bundle_initialized` se quemaba sin configurar y el daemon rechazaba
+  arrancar el runtime). Ahora la descarga deja el servicio local completo y el
+  proceso de dictado puede usarlo.
+- **La suite ya no puede romper la maquina**: `dictado/tests/_isolation.py`
+  redirige `APPDATA`, `LOCALAPPDATA`, el HOME de POSIX y los overrides de la
+  app a un temporal, y preserva el user-site de Python. Antes, correr la suite
+  habia reseteado el `config.json` real del usuario y movido sus modelos.
+
+La release `instant2-v0.1.7` salio publicada con los nueve jobs en verde, y
+quedo **instalada y verificada en la maquina**: 0.1.7, daemon vivo, los 671 MB
+de modelos intactos y sin una sola descarga, y el log de Inno confirmando que
+la app se relanzo sola tras la instalacion silenciosa.
+
+Pendiente de verificar en el proximo release real: el flujo completo del
+actualizador in-app (descargar, instalar y verificar la version) con el
+instalador chico, porque hasta ahora no hay una release mas nueva que la
+instalada.
