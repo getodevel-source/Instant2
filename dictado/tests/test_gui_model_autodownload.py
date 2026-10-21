@@ -146,6 +146,29 @@ class AutoDownloadTests(unittest.TestCase):
         self.assertFalse(scheduled[0]())
         self.assertEqual(logic.tasks.submitted, [])
 
+    def test_it_does_not_start_in_the_setup_page(self):
+        """El setup abre el panel en el release: no puede bajar 670 MB."""
+        logic, _emitted, scheduled = make_logic(self.data_dir, page="setup")
+        self.assertFalse(scheduled[0]())
+        self.assertEqual(logic.tasks.submitted, [])
+
+    def test_it_does_not_start_when_the_environment_turns_it_off(self):
+        """El smoke del release apaga la descarga automática."""
+        with patch.dict(os.environ, {gui.AUTO_DOWNLOAD_ENV: "1"}):
+            logic, _emitted, scheduled = make_logic(self.data_dir)
+            self.assertFalse(scheduled[0]())
+            self.assertEqual(logic.tasks.submitted, [])
+
+    def test_it_does_not_start_again_when_the_marker_cannot_be_written(self):
+        """Sin marca no se reintenta: 670 MB en cada apertura no."""
+        logic, _emitted, scheduled = make_logic(self.data_dir)
+        with patch("instant2_app.gui.ensure_private_dir",
+                   side_effect=OSError("sin permisos")):
+            logic._mark_download_attempted()
+        self.assertFalse(logic._auto_download_allowed())
+        # La descarga no se programó en ningún momento.
+        self.assertEqual(logic.tasks.submitted, [])
+
     def test_it_does_not_start_when_the_models_are_already_there(self):
         logic, _emitted, scheduled = make_logic(self.data_dir, models_ready=True)
         self.assertFalse(scheduled[0]())

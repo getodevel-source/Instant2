@@ -53,8 +53,13 @@ _THREADS_DEFAULT = 4
 AUTO_DOWNLOAD_MARKER = ".model-download-attempted"
 AUTO_DOWNLOAD_DELAY_MS = 1500
 # El diagnóstico es un informe puntual del equipo: bajar 670 MB mientras se
-# mide no tiene sentido, así que ese modo no descarga nada solo.
-AUTO_DOWNLOAD_SKIP_PAGES = ("diagnostics",)
+# mide no tiene sentido, así que ese modo no descarga nada solo. El setup
+# tampoco: es el asistente de primer arranque y el smoke del release lo abre
+# sin red.
+AUTO_DOWNLOAD_SKIP_PAGES = ("diagnostics", "setup")
+# La descarga automática se puede apagar por completo (lo usa el smoke del
+# release, que no puede depender de la red).
+AUTO_DOWNLOAD_ENV = "INSTANT2_NO_AUTO_DOWNLOAD"
 
 
 def _sanitize_overlay_style(value):
@@ -1087,6 +1092,7 @@ class PanelLogic(PanelReadingActions):
         self._model_download_pending = False
         self._model_canceling = False
         self._model_cancel_event = None
+        self._download_mark_failed = False
         from instant2_app import tts
         self._tts_reader = None
         self._tts_idle_timer = None
@@ -2411,19 +2417,32 @@ class PanelLogic(PanelReadingActions):
 
     def _mark_download_attempted(self):
         """Deja la marca: la descarga automática no vuelve a arrancar sola."""
+        path = self._download_marker()
         try:
             ensure_private_dir(self.data_dir)
-            with open(self._download_marker(), "w", encoding="utf-8") as handle:
+            temp = f"{path}.tmp-{os.getpid()}"
+            with open(temp, "w", encoding="utf-8") as handle:
                 handle.write("1\n")
+            os.replace(temp, path)
+            return True
         except OSError:
             log.warning("no pude dejar la marca de la descarga del reconocimiento",
                         exc_info=True)
+            # Sin marca no se puede saber que ya se intentó: en esta sesión no
+            # se reintenta (serían 670 MB en cada apertura del panel).
+            self._download_mark_failed = True
+            return False
 
     def _auto_download_allowed(self):
         """¿Tiene sentido bajar el reconocimiento ahora mismo?"""
         if self._closed or self.model_ready or self._model_download_pending:
             return False
         if self.page in AUTO_DOWNLOAD_SKIP_PAGES:
+            return False
+        if self._download_mark_failed:
+            return False
+        if (os.environ.get(AUTO_DOWNLOAD_ENV) or "").strip().lower() in (
+                "1", "true", "yes", "y", "on", "si", "s"):
             return False
         return not self._download_attempted()
 

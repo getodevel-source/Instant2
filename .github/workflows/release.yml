@@ -271,6 +271,9 @@ jobs:
           $env:APPDATA = $appData
           $env:LOCALAPPDATA = $localData
           $env:INSTANT2_DATA = $modelData
+          # El smoke no puede depender de la red: el panel no baja los modelos
+          # solo (INSTANT2_NO_AUTO_DOWNLOAD apaga la descarga automática).
+          $env:INSTANT2_NO_AUTO_DOWNLOAD = "1"
           $env:QT_QPA_PLATFORM = "offscreen"
           $env:QTWEBENGINE_CHROMIUM_FLAGS = "--disable-gpu"
           $exe = [System.IO.Path]::GetFullPath("dist/Instant2.exe")
@@ -312,6 +315,9 @@ jobs:
           export XDG_CONFIG_HOME="$HOME/.config"
           export XDG_DATA_HOME="$HOME/.local/share"
           export INSTANT2_DATA="$HOME/models"
+          # El smoke no puede depender de la red: el panel no baja los modelos
+          # solo (INSTANT2_NO_AUTO_DOWNLOAD apaga la descarga automática).
+          export INSTANT2_NO_AUTO_DOWNLOAD=1
           export QT_QPA_PLATFORM=offscreen
           # run_gui exige un entorno gráfico declarado; la plataforma offscreen
           # hace el trabajo, pero el gate mira DISPLAY.
