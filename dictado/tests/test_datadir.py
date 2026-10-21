@@ -113,7 +113,12 @@ class DataDirPrecedenceTests(unittest.TestCase):
         os.environ["FOO_TEST_DATA"] = "models-dir"
         os.environ["INSTANT2_DATA"] = "~/$FOO_TEST_DATA" if os.name != "nt" else "~/%FOO_TEST_DATA%"
         expanded = paths.resolve_data_dir()
-        self.assertNotIn("~", expanded)
+        # Se compara con el home expandido en vez de buscar "~" en el texto: en
+        # Windows el nombre corto 8.3 del usuario ("RUNNER~1") lleva "~" sin
+        # que la expansion haya fallado.
+        expected = os.path.join(os.path.expanduser("~"), "models-dir")
+        self.assertTrue(_same_path(expanded, expected),
+                        "se esperaba %r y se obtuvo %r" % (expected, expanded))
         self.assertNotIn("%", expanded)
         self.assertNotIn("$", expanded)
         os.environ.pop("FOO_TEST_DATA", None)

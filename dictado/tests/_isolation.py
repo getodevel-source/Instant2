@@ -27,7 +27,9 @@ USER_ENV = ("APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_DATA_HOME")
 # El HOME tambien es estado del usuario: en macOS el directorio de datos por
 # defecto es "~/Library/Application Support" y en Linux "~/.local/share". Sin
 # redirigirlo, un test que escriba ahi toca la maquina real.
-HOME_DIRS = ("HOME", "USERPROFILE")
+# En Windows la app no usa el HOME para los datos (usa %APPDATA% y
+# %LOCALAPPDATA%), y tocarlo rompe la expansion del perfil.
+HOME_DIRS = ("HOME",) if os.name != "nt" else ()
 
 # Las variables reales ANTES de redirigirlas. Hay herramientas instaladas en el
 # perfil del usuario (Inno Setup, entre otras) que se buscan con la ruta real:
