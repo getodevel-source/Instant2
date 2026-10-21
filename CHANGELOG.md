@@ -8,6 +8,109 @@ Las dos primeras entradas documentan versiones de Instant2. El historial que
 sigue corresponde al Instant heredado y sus versiones no son releases de
 Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z`.
 
+## [Sin publicar]
+
+### Correcciones
+- El repositorio fija sus finales de línea (`.gitattributes`): el texto sale
+  con LF en las tres plataformas y el helper de actualización y el script de
+  Inno Setup siguen con CRLF, que es lo que necesitan. Antes, los hashes
+  congelados del benchmark dependían de la máquina que hacía el checkout y el
+  CI fallaba en Linux y macOS.
+- Las rutas internas del repositorio ya no se reportan como rutas del perfil
+  del usuario en los artefactos del benchmark: una ruta dentro del checkout es
+  el checkout, no una fuga.
+
+## [0.1.6] - 2026-10-20
+
+### Actualizaciones
+- La actualización desde la app ya no abre una ventana de consola: el helper
+  portable corre sin ventana y su paso a paso queda en
+  `%APPDATA%\instant2\update.log`.
+- El helper de actualización deja de mentir: si el binario nuevo no levanta,
+  restaura el anterior, sale con código de error y dice qué pasó, en vez de
+  imprimir "Listo: Instant2 actualizado".
+- El actualizador verifica el resultado: lee el código de salida del
+  instalador, adjunta el log de Inno Setup y confirma en el arranque
+  siguiente que la versión que corre es la que se pidió. Si no coincide,
+  avisa con el log.
+- Un resultado de actualización viejo se descarta a las 24 horas: antes podía
+  reportar un fallo de una actualización de días atrás en cada arranque.
+- Todo toast de error queda registrado en `instant2.log` con su título y su
+  detalle. Antes, el error que veía el usuario no dejaba rastro.
+- El helper reabre el panel aunque la actualización falle, para que el
+  resultado se vea sin tener que abrir la app a mano.
+- La app ya no promete un reinicio del dictado que no ocurrió: el mensaje
+  dice lo que pasó de verdad.
+
+### Instalador de Windows
+- El script de Inno Setup **no compilaba**, así que el instalador estaba roto
+  de una forma que ninguna prueba del repositorio podía ver. Tres fallos: la
+  firma del `Check` usaba un tipo que no existe en Inno Setup 6, los
+  comentarios de la sección de código usaban `;` (que en Pascal no es un
+  comentario) y el `Check` tenía la semántica invertida, con lo que el
+  instalador saltaba los modelos que faltaban y volvía a copiar los que ya
+  estaban.
+- El instalador reutiliza los modelos que el usuario ya tiene en vez de
+  volver a copiar gigabytes: mueve los del directorio anterior al nuevo y
+  solo copia lo que falta.
+- La instalación silenciosa vuelve a abrir la app, para que el resultado de la
+  actualización se vea en el momento.
+- El panel arranca con Python 3.14 (antes la interfaz gráfica no abría).
+
+### Herramientas de benchmark
+- El agregador V2P acepta cobertura parcial explícita para informes exploratorios
+  y bloquea veredictos de ganador/viabilidad de corpus completo en esas muestras.
+- Nuevo benchmark Voice-to-Prompt (`dictado/bench/bench_v2p.py`): compara cinco
+  estrategias (la ruta de producción tal cual, un control negativo de
+  instrucción, directa, estructurada y en dos pasos) sobre un corpus sintético
+  congelado, con modelo, estrategia y contexto elegibles de forma
+  independiente. Es una medición aislada: no cambia el runtime de la app.
+- Nuevo empaquetado ciego (`dictado/bench/prepare_blind_v2p.py`): arma el paquete
+  de revisión cualitativa (filas ciegas, manifiesto de procedencia e
+  instrucciones de evaluación) y la clave privada que permite volver a unir cada
+  variante con su configuración una vez terminada la puntuación.
+- Nuevo análisis emparejado (`dictado/bench/analyze_correction_runs.py`): compara
+  dos corridas del benchmark de corrección caso por caso, con intervalos de
+  confianza por bootstrap pareado (10.000 remuestreos, semilla fija), y rechaza
+  los informes que no son comparables (corpus, perfil de sampling, prompts o
+  casos distintos).
+- El runtime del benchmark de modelos queda con dos candidatos comparables
+  (`qwen3.5-4b-q4` y `bonsai2-9b-q2`); los cinco candidatos anteriores no se
+  pueden volver a comparar en la misma corrida.
+- El runtime acepta perfiles de sampling por nombre, una etiqueta de corrida y un
+  subconjunto de casos, y anota en cada informe el hash del servidor, el hash del
+  modelo, la build del servidor y la memoria del proceso.
+- La salida generada del benchmark (informes, logs y las claves ciegas de la
+  revisión) queda fuera del control de versiones: publicarla destruiría la
+  revisión ciega.
+
+### Validación
+- Corpus congelado de 72 casos de Voice-to-Prompt
+  (`dictado/bench/v2p_cases.json`), su rúbrica congelada
+  (`dictado/bench/v2p_rubric.json`) y el manifiesto de hashes
+  (`dictado/bench/v2p_references.sha256`): las referencias no se editan después
+  de correr el modelo.
+- Corpus de corrección expandido a 48 casos sintéticos
+  (`dictado/bench/llm_cases_expanded_2026-10-16.json`) con su hash, y
+  pre-registro de la evaluación
+  (`dictado/bench/correction-eval-prereg-2026-10-16.json`): corpus, reglas de
+  aceptación, orden de inferencia y límites quedan escritos antes de las
+  corridas.
+- El scorer de corrección (`dictado/bench/bench_llm.py`) reporta, además del CER,
+  el WER normalizado sobre tokens sin tildes ni puntuación, el conteo de
+  invariantes críticos violados y el de ediciones léxicas dañinas, y separa los
+  casos con error de contenido de los que solo cambian puntuación o mayúsculas.
+
+### Corregido
+- El pulido del LLM acepta `min_p` y `repetition_penalty` en el passthrough de
+  sampling que usa el benchmark: antes se ignoraban en silencio y las corridas
+  no eran comparables con los flags del servidor. La producción sigue mandando
+  solo el cuerpo determinista (temperatura 0).
+
+### Documentación
+- `AUDITORIA-LLM.md`, `BENCHMARK-MODELOS.md` y `VOICE-TO-PROMPT.md` pasan a
+  `docs/`, donde ya vive el resto de los documentos largos del repositorio.
+
 ## [0.1.5] - 2026-10-15
 
 ### Mejorado

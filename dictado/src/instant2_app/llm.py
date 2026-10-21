@@ -195,7 +195,8 @@ def polish_candidate(text, url, timeout=8.0, system=None, context_terms="",
     # Optional sampling overrides are used by the local quality benchmark.
     # Production calls omit them and keep the deterministic temperature=0 path.
     if sampling_params:
-        for name in ("temperature", "top_p", "top_k", "presence_penalty"):
+        for name in ("temperature", "top_p", "top_k", "min_p",
+                     "presence_penalty", "repetition_penalty"):
             if name in sampling_params:
                 body[name] = sampling_params[name]
     headers = {"Content-Type": "application/json"}

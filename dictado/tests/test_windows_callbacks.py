@@ -7,7 +7,9 @@ nombre no existe (ni en 3.12 ni en 3.14). Vive en `ctypes`.
 
 Estas pruebas comprueban dos cosas:
 - que el tipo de callback se resuelve en este interprete (la llamada exacta
-  que reventaba al abrir el panel);
+  que reventaba al abrir el panel); en Linux y macOS esa asercion no tiene
+  sentido (`ctypes.WINFUNCTYPE` no existe ahi) y se salta, pero la guarda
+  que no se use `ctypes.wintypes` se corre en los tres sistemas.
 - que ningun modulo de la app vuelve a tomarlo de `ctypes.wintypes`.
 """
 import ast
@@ -51,6 +53,7 @@ def _uses_wintypes_winfunctype(source):
 class WindowsCallbackTests(unittest.TestCase):
     """El tipo de callback de Windows se resuelve desde `ctypes`."""
 
+    @unittest.skipUnless(os.name == "nt", "ctypes.WINFUNCTYPE es de Windows")
     def test_the_callback_type_comes_from_ctypes(self):
         import ctypes
 

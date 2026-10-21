@@ -1,0 +1,33 @@
+{
+  "schema": "instant2-correction-eval-prereg/1",
+  "registered_before_inference": true,
+  "corpus": "llm_cases_expanded_2026-10-16.json",
+  "corpus_sha256": "6533d23077eb9ae18f3548660fc95502bfc04c368cde14af67f3e46ea9ebfc69",
+  "scope": {
+    "models": ["Qwen 3.5 4B Q4_K_M", "Ternary-Bonsai-2-9B-Q2_0"],
+    "same_local_llama_cpp_server_build": true,
+    "same_binary_flags_prompts_verifier_corpus_checker": true,
+    "server_port": 8081,
+    "existing_product_server_8080": "do not contact, stop, or reconfigure",
+    "primary": "matched-deterministic: temp=0, top_p=1, top_k=0, min_p=0, presence_penalty=0, repetition_penalty=1",
+    "sensitivity": "official Bonsai non-thinking profile, same request and server values for both models: temp=0.7, top_p=0.80, top_k=20, min_p=0, presence_penalty=1.5, repetition_penalty=1, enable_thinking=false",
+    "sensitivity_repeats": "3 independent sequential runs per model on the same full frozen 48 cases; every run has a unique report/log label",
+    "determinism_check": "one additional 12-case re-run per model at matched-deterministic settings; full primary run remains 48 cases",
+    "inference_order": "one model process at a time: primary Qwen then Bonsai; deterministic 12-case repeat Qwen then Bonsai; official sensitivity rep1 Qwen then Bonsai, rep2 Qwen then Bonsai, rep3 Qwen then Bonsai",
+    "repeat_case_ids": ["ar_voice_message", "homophone_tubo", "negation_dosage", "restriction_except", "lexical_hasta", "name_rare", "technical_api", "technical_sql", "technical_gpu", "ambiguity_no_invent", "lexical_hizo", "nochange_correct_technical"]
+  },
+  "scoring": {
+    "judge": "none",
+    "primary_outputs": ["accepted text after existing local corrections and same-model meaning verifier", "paired per-case CER and character exact match", "paired WER and exact match over normalized content tokens", "content-error-only WER and token-exact scores on cases whose baseline has token errors", "critical must_keep invariant checks", "no-change lexical edits", "harmful lexical edits", "verifier rejections", "latencies"],
+    "synthetic_lexical_corrections": "Corpus includes at least 16 contextually specified ASR-like lexical substitutions; actual baseline content-error subset is automatically determined by normalized-token WER > 0 and is reported from scorer output.",
+    "content_tokens": "llm._words normalized tokens (casefolded, diacritics and punctuation ignored); WER is Levenshtein word edits divided by reference token count. Content-error subset is fixed per case by baseline WER > 0.",
+    "numeric_gate_note": "Production preserves spelled numbers as well as their values (e.g. cien -> 100 is rejected); do not treat numeric-format conversion as an eligible gold correction. Numeric and technical references retain the input's spoken number forms where applicable. Report candidate/proposal behavior separately from accepted output; verifier-gated outcomes are the operative comparison.",
+    "verifier_parameters": "Candidate requests send all selected profile values. The same-model verifier request explicitly sends temperature=0, enable_thinking=false, max_tokens=8; it does not send top_p/top_k/min_p/presence_penalty/repetition_penalty, so those are inherited from the identical per-profile server launch flags. Reports must distinguish verifier from candidate sampling."
+  },
+  "acceptance_rule": {
+    "winner": "Declare no winner if either model has any critical-invariant violation or any no-change lexical edit. For the same model to win, paired 95% case-bootstrap confidence intervals (10,000 resamples, fixed seed 211) must exclude zero in the favorable direction for all of: mean CER difference, character exact-match-rate difference, normalized-token WER difference, and normalized-token exact-match-rate difference, both over all cases and over the fixed baseline-content-error subset. Content benefit is mandatory; punctuation/capitalization/formatting gains alone cannot win. Harmful lexical-edit count must not be worse. The full 48-case matched-deterministic result and all three official-sampler full-corpus repeats must support the same winner direction; if the directions cross, any required interval includes a tie, or a repeat is inconsistent, declare inconclusive. Never infer real-world Parakeet efficacy from synthetic cases.",
+    "uncertainty": "Use paired case bootstrap for each per-case difference; report all paired rows, three full-corpus official-sampler repeats and between-repeat variation. If the content-error subset is too small for a stable interval, explicitly call inconclusive."
+  },
+  "model_card_source": "https://huggingface.co/prism-ml/Ternary-Bonsai-2-9B-gguf#best-practices",
+  "limitations": ["All cases are synthetic and authored; no audio or user data is used.", "This does not measure ASR output quality or real-world Parakeet correction efficacy.", "The same-model meaning verifier can reject genuine number-format changes; that protection remains in the operational path and is not bypassed for scoring."]
+}
