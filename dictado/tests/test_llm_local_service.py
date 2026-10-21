@@ -234,5 +234,33 @@ class LocalLLMWiringTests(unittest.TestCase):
         self.assertEqual(disk["llm_url"], "http://127.0.0.1:8080/v1")
 
 
+class LocalLLMVerificationTests(unittest.TestCase):
+    """Un GGUF de 3 GB con el tamaño justo puede estar corrupto."""
+
+    def setUp(self):
+        self.expected = (len(BODY), hashlib.sha256(BODY).hexdigest())
+        for item in (patch.object(llm_model, "LLM_MODEL_EXPECTED", self.expected),):
+            item.start()
+            self.addCleanup(item.stop)
+        self.data_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.data_dir, ignore_errors=True)
+        self.model = llm_model.model_path(self.data_dir)
+        os.makedirs(os.path.dirname(self.model), exist_ok=True)
+
+    def test_a_file_with_the_right_size_but_broken_content_is_not_verified(self):
+        with open(self.model, "wb") as handle:
+            handle.write(b"x" * len(BODY))
+        self.assertTrue(llm_model.model_ready(self.data_dir))
+        self.assertTrue(llm_model.needs_verification(self.data_dir))
+        self.assertFalse(llm_model.model_ready(self.data_dir, verify=True))
+        self.assertTrue(llm_model.needs_verification(self.data_dir))
+
+    def test_a_verified_file_does_not_need_the_hash_again(self):
+        with open(self.model, "wb") as handle:
+            handle.write(BODY)
+        self.assertTrue(llm_model.model_ready(self.data_dir, verify=True))
+        self.assertFalse(llm_model.needs_verification(self.data_dir))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -344,5 +344,19 @@ class PanelLLMModelStateTests(unittest.TestCase):
         # El archivo de la config tampoco se toco.
         self.assertFalse(os.path.exists(config_path))
 
+    def test_a_hand_picked_model_on_a_missing_drive_is_not_replaced(self):
+        logic, _emitted, config_path = make_logic(self, self.data_dir)
+        chosen = os.path.join("Z:", "modelos", "mi-modelo.gguf")
+        logic.cfg["llm_model_path"] = chosen
+        model = os.path.join(self.data_dir, "llm",
+                             "Qwen_Qwen3.5-4B-Q4_K_M.gguf")
+        os.makedirs(os.path.dirname(model), exist_ok=True)
+        with open(model, "wb") as handle:
+            handle.write(b"gguf")
+        logic._use_downloaded_llm_model()
+        self.assertEqual(logic.cfg["llm_model_path"], chosen)
+        self.assertFalse(os.path.exists(config_path))
+
+
 if __name__ == "__main__":
     unittest.main()

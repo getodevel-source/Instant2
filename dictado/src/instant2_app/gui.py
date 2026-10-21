@@ -1133,6 +1133,11 @@ class PanelLogic(PanelReadingActions):
                         if llm_model_ready else
                         "No descargado: son 3 GB, así que la descarga es a pedido."),
         }
+        # El tamaño justo no dice que el GGUF esté sano: la verificación por
+        # hash va en segundo plano (3 GB no se pueden hashear en el hilo de la
+        # interfaz).
+        if llm_model_ready and llm_model.needs_verification(self.data_dir):
+            self.schedule(AUTO_DOWNLOAD_DELAY_MS, self._verify_llm_model)
 
     # ------------------------------------------------------------------ estado
 
@@ -2657,6 +2662,42 @@ class PanelLogic(PanelReadingActions):
                                       "message": "Cancelando la descarga…"})
         self._llm_model_cancel_event.set()
         self.push_state()
+
+    def _verify_llm_model(self):
+        """Verifica por hash el GGUF ya descargado (en segundo plano).
+
+        Con solo el tamaño, un archivo de 3 GB corrupto se reportaría como
+        "listo" y el botón de descarga desaparecería. Si la verificación falla,
+        el estado vuelve a "no listo" para que se pueda descargar de nuevo.
+        """
+        from instant2_app import llm_model
+
+        if self._closed:
+            return False
+
+        def work(_emit):
+            return llm_model.model_ready(self.data_dir, verify=True)
+
+        def done(ok):
+            if self._closed:
+                return
+            if ok:
+                self._llm_model_state.update({"status": "ready", "ready": True})
+                self.push_state()
+                return
+            self._llm_model_state.update({
+                "status": "error", "ready": False, "percent": 0,
+                "message": ("El archivo del modelo de lenguaje local está "
+                            "dañado: descargalo de nuevo."),
+            })
+            self.push_state()
+
+        def failed(error):
+            log.warning("no pude verificar el modelo de lenguaje local (%s)",
+                        type(error).__name__)
+
+        self.tasks.submit(work, done, failed)
+        return True
 
     def _use_downloaded_llm_model(self):
         """Conecta el modelo descargado con el servicio local.

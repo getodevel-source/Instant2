@@ -28,10 +28,51 @@ LLM_MODEL_URL = (
 
 log = logging.getLogger("instant2")
 
+# Marca al lado del archivo: deja constancia de que el GGUF pasó la
+# verificación por hash y de que no cambió desde entonces (con solo el tamaño
+# no se sabe si el archivo está corrupto).
+VERIFIED_SUFFIX = ".verified"
+
 
 def model_path(data_dir):
     """Ruta del GGUF dentro del directorio de datos."""
     return os.path.join(data_dir, LLM_SUBDIR, LLM_MODEL_NAME)
+
+
+def verification_marker(data_dir):
+    """Ruta de la marca de verificación del GGUF."""
+    return model_path(data_dir) + VERIFIED_SUFFIX
+
+
+def mark_verified(data_dir):
+    """Deja constancia de que el archivo se verificó por hash."""
+    path = model_path(data_dir)
+    try:
+        stat = os.stat(path)
+        marker = verification_marker(data_dir)
+        temp = f"{marker}.tmp-{os.getpid()}"
+        with open(temp, "w", encoding="utf-8") as handle:
+            handle.write(f"{stat.st_size} {stat.st_mtime_ns}\n")
+        os.replace(temp, marker)
+        return True
+    except OSError:
+        log.warning("no pude dejar la marca de verificación del modelo",
+                    exc_info=True)
+        return False
+
+
+def is_verified(data_dir):
+    """True si el archivo ya fue verificado por hash y no cambió desde entonces."""
+    path = model_path(data_dir)
+    try:
+        with open(verification_marker(data_dir), encoding="utf-8") as handle:
+            recorded = handle.read().split()
+        stat = os.stat(path)
+    except (OSError, ValueError):
+        return False
+    return (len(recorded) == 2
+            and recorded[0] == str(stat.st_size)
+            and recorded[1] == str(stat.st_mtime_ns))
 
 
 def model_ready(data_dir, verify=False):
@@ -39,18 +80,40 @@ def model_ready(data_dir, verify=False):
 
     Por defecto alcanza con que el archivo exista y tenga el tamaño esperado
     (verificar el SHA-256 de 3 GB en cada refresco de la interfaz sería
-    lento); con `verify=True` se comprueba el hash.
+    lento); con `verify=True` se comprueba el hash (y se deja la marca para no
+    tener que volver a hacerlo).
     """
     path = model_path(data_dir)
     if not os.path.isfile(path):
         return False
-    if verify:
-        ok, _reason = models.verify_file(path, LLM_MODEL_EXPECTED)
-        return ok
     try:
-        return os.path.getsize(path) == LLM_MODEL_EXPECTED[0]
+        if os.path.getsize(path) != LLM_MODEL_EXPECTED[0]:
+            return False
     except OSError:
         return False
+    if verify:
+        ok, _reason = models.verify_file(path, LLM_MODEL_EXPECTED)
+        if ok:
+            mark_verified(data_dir)
+        return ok
+    return True
+
+
+def needs_verification(data_dir):
+    """El archivo tiene el tamaño esperado pero no está verificado por hash.
+
+    Un GGUF de 3 GB con el tamaño justo puede estar corrupto: sin verificarlo
+    no se puede decir que esté "listo".
+    """
+    path = model_path(data_dir)
+    if not os.path.isfile(path):
+        return False
+    try:
+        if os.path.getsize(path) != LLM_MODEL_EXPECTED[0]:
+            return False
+    except OSError:
+        return False
+    return not is_verified(data_dir)
 
 
 def ensure_model(data_dir, progress=None, cancel_event=None):
@@ -92,4 +155,7 @@ def ensure_model(data_dir, progress=None, cancel_event=None):
 
     models._fetch(LLM_MODEL_URL, target, LLM_MODEL_EXPECTED, report,
                   cancel_event=cancel_event)
+    # El archivo recién publicado tiene el hash verificado: se deja la marca
+    # para no tener que volver a calcularlo.
+    mark_verified(data_dir)
     return target
