@@ -31,7 +31,7 @@ import time
 from instant2_app import audio, autostart, config, context, hotkey, models
 from instant2_app.launch import app_command, app_environment
 from instant2_app.identity import APP_NAME
-from instant2_app.paths import config_dir, resolve_data_dir
+from instant2_app.paths import config_dir, ensure_private_dir, resolve_data_dir
 
 log = logging.getLogger("instant2")
 
@@ -46,6 +46,15 @@ _OVERLAY_STYLES = ("orbital", "classic")
 _THREAD_OPTIONS = (1, 2, 4, 6, 8)
 _OVERLAY_STYLE_DEFAULT = "orbital"
 _THREADS_DEFAULT = 4
+
+# El instalador ya no lleva los pesos: el panel baja el reconocimiento solo
+# la primera vez. La marca queda en el directorio de datos para que la
+# descarga automática no vuelva a arrancar (ni competir con el usuario).
+AUTO_DOWNLOAD_MARKER = ".model-download-attempted"
+AUTO_DOWNLOAD_DELAY_MS = 1500
+# El diagnóstico es un informe puntual del equipo: bajar 670 MB mientras se
+# mide no tiene sentido, así que ese modo no descarga nada solo.
+AUTO_DOWNLOAD_SKIP_PAGES = ("diagnostics",)
 
 
 def _sanitize_overlay_style(value):
@@ -1100,6 +1109,9 @@ class PanelLogic(PanelReadingActions):
         self._autostart_enabled = False
         self._init_settings(autostart_override)
         self._update_model_status()
+        # Los modelos ya no vienen con el instalador: si faltan, el panel
+        # arranca la descarga solo (una vez por instalación).
+        self.schedule(AUTO_DOWNLOAD_DELAY_MS, self._auto_download_models)
 
     # ------------------------------------------------------------------ estado
 
@@ -2136,6 +2148,10 @@ class PanelLogic(PanelReadingActions):
                 or not self._daemon_state_ready or self._daemon_check_pending
                 or not self._microphones_loaded):
             return
+        if not self.model_ready:
+            # Falta el reconocimiento (se está bajando): el pedido queda en
+            # pie y el dictado arranca solo cuando los modelos estén listos.
+            return
         self._start_daemon_on_open = False
         if not self._last_daemon_running:
             self._start_daemon(save_settings=False)
@@ -2147,9 +2163,15 @@ class PanelLogic(PanelReadingActions):
                 or self._last_daemon_running):
             return False
         if not self.model_ready:
-            self.toast("Voz pendiente",
-                       "Prepará los componentes de voz antes de iniciar Instant2.",
-                       level="warn")
+            if self._model_download_pending:
+                self.toast("Voz en preparación",
+                           "El reconocimiento se está descargando; el dictado "
+                           "arranca solo cuando termine.",
+                           level="warn")
+            else:
+                self.toast("Voz pendiente",
+                           "Prepará los componentes de voz antes de iniciar Instant2.",
+                           level="warn")
             return False
         if save_settings:
             self.save_config(False)
@@ -2364,6 +2386,49 @@ class PanelLogic(PanelReadingActions):
 
     # ---------------------------------------------------------------- modelos
 
+    def _download_marker(self):
+        """Ruta de la marca que deja constancia de una descarga ya iniciada."""
+        return os.path.join(self.data_dir, AUTO_DOWNLOAD_MARKER)
+
+    def _download_attempted(self):
+        return os.path.isfile(self._download_marker())
+
+    def _mark_download_attempted(self):
+        """Deja la marca: la descarga automática no vuelve a arrancar sola."""
+        try:
+            ensure_private_dir(self.data_dir)
+            with open(self._download_marker(), "w", encoding="utf-8") as handle:
+                handle.write("1\n")
+        except OSError:
+            log.warning("no pude dejar la marca de la descarga del reconocimiento",
+                        exc_info=True)
+
+    def _auto_download_allowed(self):
+        """¿Tiene sentido bajar el reconocimiento ahora mismo?"""
+        if self._closed or self.model_ready or self._model_download_pending:
+            return False
+        if self.page in AUTO_DOWNLOAD_SKIP_PAGES:
+            return False
+        return not self._download_attempted()
+
+    def _auto_download_models(self):
+        """Arranca sola la descarga del reconocimiento (una vez por instalación).
+
+        El instalador ya no trae los pesos: sin esto el usuario ve el botón
+        "Preparar reconocimiento" y tiene que acordarse de apretarlo. Si la
+        descarga falla o el usuario la cancela, el botón "Reintentar descarga"
+        queda disponible y esta vía no vuelve a competir con él.
+        """
+        if not self._auto_download_allowed():
+            return False
+        log.info("falta el reconocimiento: arranco la descarga automática.")
+        self.toast("Preparando el reconocimiento",
+                   "La primera vez se descargan los modelos de voz (unos 670 MB). "
+                   "Podés cancelarlo desde Inicio.",
+                   ms=8000)
+        self.download_models()
+        return True
+
     def _update_model_status(self):
         self.model_ready = all(models.check(self.data_dir).values())
         if self.model_ready:
@@ -2376,6 +2441,9 @@ class PanelLogic(PanelReadingActions):
     def download_models(self):
         if self.model_ready or self._model_download_pending:
             return
+        # A partir de acá hay una descarga en marcha (la arrancó el panel o el
+        # usuario): la vía automática no vuelve a sugerirla.
+        self._mark_download_attempted()
         cancel_event = threading.Event()
         self._model_cancel_event = cancel_event
         self._model_download_pending = True
@@ -2425,6 +2493,9 @@ class PanelLogic(PanelReadingActions):
                 return
             self._update_model_status()
             self.push_state()
+            # Si el usuario pidió arrancar el dictado al abrir el panel, ahora
+            # que los modelos están listos se arranca solo.
+            self._maybe_start_daemon_on_open()
 
         def failed(error):
             self._model_download_pending = False
@@ -2439,7 +2510,7 @@ class PanelLogic(PanelReadingActions):
                     "puedes reanudarla al reintentar.")
                 self.push_state()
                 return
-            self.model_status = "No se pudieron preparar los componentes de voz."
+            self.model_status = "No se pudo preparar los componentes de voz."
             self.push_state()
             _toast_error(self, "Descarga fallida", error)
 
