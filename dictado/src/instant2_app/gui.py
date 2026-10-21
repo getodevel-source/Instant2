@@ -90,7 +90,8 @@ def _threads_is_valid(value):
 
 
 _UPDATE_MODES = ("notify", "auto", "off")
-# Tope de espera del instalador: copia los 4 GB de modelos, puede tardar.
+# Tope de espera del instalador: una instalación nueva copia los ~951 MB de
+# modelos de voz, así que puede tardar; una actualización solo baja 204 MB.
 _INSTALL_TIMEOUT = 3600
 # Tope de cada probe del SO: tasklist y PowerShell no pueden colgarse.
 _PROBE_TASKLIST_TIMEOUT = 5.0
@@ -3129,8 +3130,8 @@ class PanelLogic(PanelReadingActions):
         """Verifica, frena el daemon y espera al instalador. (hilo worker)
 
         Devuelve (codigo de salida, log de Inno, instalador). La espera
-        puede tardar minutos (copia los 4 GB de modelos): por eso esto
-        corre fuera del hilo de UI.
+        puede tardar minutos (una instalación nueva copia ~951 MB de modelos;
+        una actualización, no): por eso esto corre fuera del hilo de UI.
         """
         log_path = _installer_log_path()
         _verify_install_file(installer_path, expected)

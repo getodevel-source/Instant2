@@ -132,6 +132,77 @@ class InstallModeTests(unittest.TestCase):
                 info = update_module.check()
         self.assertEqual(info["asset_url"], "https://x/Instant2-Setup.exe")
 
+    def test_check_prefers_the_app_only_installer_when_installed(self):
+        # Los modelos de voz ya están en el directorio de datos: actualizar no
+        # tiene por qué volver a bajar 1,1 GB. La instalación nueva usa el
+        # Setup completo; el actualizador in-app baja Instant2-Update.exe.
+        payload = {"tag_name": "v9.9.9", "body": "", "assets": [
+            {"name": "Instant2-Setup.exe",
+             "browser_download_url": "https://x/Instant2-Setup.exe",
+             "size": 1_100_000_000},
+            {"name": "Instant2-Update.exe",
+             "browser_download_url": "https://x/Instant2-Update.exe",
+             "size": 204_000_000},
+        ]}
+        with tempfile.TemporaryDirectory() as directory:
+            exe = os.path.join(directory, "Instant2.exe")
+            open(exe, "wb").close()
+            open(os.path.join(directory, update_module.UNINSTALLER),
+                 "wb").close()
+            with patch.object(update_module.sys, "frozen", True, create=True), \
+                    patch.object(update_module.sys, "executable", exe), \
+                    patch.object(update_module.sys, "platform", "win32"), \
+                    patch.object(update_module, "fetch_json", return_value=payload), \
+                    patch.object(update_module, "current_version",
+                                 return_value="0.1.0"):
+                info = update_module.check()
+        self.assertEqual(info["asset"], "Instant2-Update.exe")
+        self.assertEqual(info["asset_url"], "https://x/Instant2-Update.exe")
+        self.assertEqual([item["name"] for item in info["asset_files"]],
+                         ["Instant2-Update.exe"])
+
+    def test_check_falls_back_to_the_full_installer_without_the_update_asset(self):
+        payload = {"tag_name": "v9.9.9", "body": "", "assets": [
+            {"name": "Instant2-Setup.exe",
+             "browser_download_url": "https://x/Instant2-Setup.exe",
+             "size": 1_100_000_000},
+        ]}
+        with tempfile.TemporaryDirectory() as directory:
+            exe = os.path.join(directory, "Instant2.exe")
+            open(exe, "wb").close()
+            open(os.path.join(directory, update_module.UNINSTALLER),
+                 "wb").close()
+            with patch.object(update_module.sys, "frozen", True, create=True), \
+                    patch.object(update_module.sys, "executable", exe), \
+                    patch.object(update_module.sys, "platform", "win32"), \
+                    patch.object(update_module, "fetch_json", return_value=payload), \
+                    patch.object(update_module, "current_version",
+                                 return_value="0.1.0"):
+                info = update_module.check()
+        self.assertEqual(info["asset"], "Instant2-Setup.exe")
+        self.assertEqual([item["name"] for item in info["asset_files"]],
+                         ["Instant2-Setup.exe"])
+
+    def test_check_does_not_use_the_update_asset_for_a_portable_exe(self):
+        payload = {"tag_name": "v9.9.9", "body": "", "assets": [
+            {"name": "Instant2.exe",
+             "browser_download_url": "https://x/Instant2.exe", "size": 5},
+            {"name": "Instant2-Update.exe",
+             "browser_download_url": "https://x/Instant2-Update.exe",
+             "size": 204_000_000},
+        ]}
+        with tempfile.TemporaryDirectory() as directory:
+            exe = os.path.join(directory, "Instant2.exe")
+            open(exe, "wb").close()
+            with patch.object(update_module.sys, "frozen", True, create=True), \
+                    patch.object(update_module.sys, "executable", exe), \
+                    patch.object(update_module.sys, "platform", "win32"), \
+                    patch.object(update_module, "fetch_json", return_value=payload), \
+                    patch.object(update_module, "current_version",
+                                 return_value="0.1.0"):
+                info = update_module.check()
+        self.assertEqual(info["asset"], "Instant2.exe")
+
     def test_installed_update_lists_all_setup_volumes_in_order(self):
         payload = {"tag_name": "v9.9.9", "body": "", "assets": [
             {"name": "Instant2-Setup-2.bin",

@@ -2,10 +2,12 @@
 
 Ciclo: check (API) -> download (asset + sidecar .sha256) -> verify -> aplicar.
 El asset depende de cómo esté instalada la app: una instalación con
-desinstalador (Windows) se actualiza con `Instant2-Setup.exe`; el exe portable
-se cambia con `instant2-update.bat` (frena todo, respalda y reemplaza); en
-Linux/macOS el binario se reemplaza en caliente (POSIX permite unlink+rename
-con el proceso vivo, que sigue usando el inodo viejo).
+desinstalador (Windows) se actualiza con `Instant2-Update.exe` (la app sola,
+~204 MB) y, si el release no lo trae, con `Instant2-Setup.exe` (el instalador
+completo con los modelos de voz, ~1,1 GB); el exe portable se cambia con
+`instant2-update.bat` (frena todo, respalda y reemplaza); en Linux/macOS el
+binario se reemplaza en caliente (POSIX permite unlink+rename con el proceso
+vivo, que sigue usando el inodo viejo).
 La actualización POSIX conserva el binario previo en `<destino>.bak` y lo
 restaura solo si el nuevo no pasa el health-check (existe+ejecutable).
 """
@@ -28,8 +30,13 @@ CHUNK = 65536
 
 # Plataforma local -> asset portable del release.
 ASSETS = {"win32": "Instant2.exe", "linux": "instant2-linux", "darwin": "instant2-macos"}
-# Asset de la instalación con desinstalador (Windows, Inno Setup).
+# Asset de la instalación con desinstalador (Windows, Inno Setup). Es el
+# instalador completo: app + runtime + los modelos de voz, en un solo archivo.
 INSTALLER_ASSET = "Instant2-Setup.exe"
+# Instalador solo app, sin modelos. Es el que usa el actualizador in-app: los
+# pesos ya viven en %LOCALAPPDATA%\instant2\models y la actualización no los
+# toca, así que bajar 204 MB alcanza (en vez de 1,1 GB).
+UPDATE_ASSET = "Instant2-Update.exe"
 UNINSTALLER = "unins000.exe"
 _INSTALLER_PART = re.compile(r"^Instant2-Setup-(\d+)\.bin$")
 
@@ -133,8 +140,9 @@ def platform_asset(mode=None):
 def apply_hint():
     """Cómo se aplica la descarga en este sistema (texto de CLI)."""
     if install_mode() == "installed":
-        return ("Corré el instalador descargado (Instant2-Setup.exe): actualiza "
-                "en el lugar, sin desinstalar ni pedir admin.")
+        return ("Corré el instalador descargado (Instant2-Update.exe): "
+                "actualiza en el lugar, sin desinstalar ni pedir admin. "
+                "Los modelos de voz que ya tenés no se vuelven a bajar.")
     if sys.platform == "win32":
         return ("Aplicá con: instant2-update.bat <archivo> <sha256> "
                 "(frena todo, respalda el exe anterior y lo cambia).")
@@ -260,6 +268,11 @@ def check():
             f"el tag {release['tag']!r} no es semver X.Y.Z "
             f"(vino {release['version']!r}): sin versión clara no se actualiza.")
     name = platform_asset()
+    if name == INSTALLER_ASSET and UPDATE_ASSET in release["assets"]:
+        # Instalación existente: los modelos de voz ya están en el directorio
+        # de datos y el instalador solo app no los toca. Se baja la cuarta
+        # parte en vez del instalador completo.
+        name = UPDATE_ASSET
     url = release["assets"].get(name, "")
     asset_files = []
     if name == INSTALLER_ASSET:
