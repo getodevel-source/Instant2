@@ -8,7 +8,7 @@ Las dos primeras entradas documentan versiones de Instant2. El historial que
 sigue corresponde al Instant heredado y sus versiones no son releases de
 Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z`.
 
-## [Sin publicar]
+## [0.1.7] - 2026-10-21
 
 ### Instalador de Windows
 - El instalador de Windows es chico: instala la app y el runtime de llama.cpp
@@ -41,19 +41,6 @@ Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z
   destino es una descarga a medias, la copia anterior se conserva con otro
   nombre (`<nombre>.legacy`) y se avisa en el log. Perder un GGUF que no se
   puede volver a bajar no tiene arreglo.
-
-### Marca
-- Nueva identidad visual: el símbolo son tres barras verticales («la señal»)
-  y reemplaza al micrófono en el icono de la app, el instalador y el chip del
-  panel. El micrófono sigue siendo solo un icono de la interfaz.
-- Los logos están en curvas (Manrope 700, −0,035 em), así que el logotipo y
-  los lockups se ven igual sin la fuente instalada. Hay variante para fondo
-  oscuro y claro: en claro el símbolo va en tinta, porque el verde agua sobre
-  blanco queda en 1,6:1.
-- `design.md` es la guía de marca y `brand/` guarda los maestros SVG con sus
-  derivados PNG, ICO y la imagen social. `python brand/tools/build_brand.py`
-  los regenera desde los vectores; el `.ico` del build lo sigue haciendo
-  `dictado/build_icon.py` con la misma geometría.
 
 ### Correcciones
 - La descarga del modelo de lenguaje local ya no era un final de camino: el
