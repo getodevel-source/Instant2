@@ -36,7 +36,7 @@ flowchart LR
 - Si el servicio est? apagado, no responde o falla la validaci?n de la propuesta, el texto corregido localmente sigue disponible.
 - El servidor no es requisito para iniciar una sesi?n de dictado.
 - El texto dictado no se guarda en registros ni historial por defecto.
-- El instalador no incluye ni descarga modelos de lenguaje: los componentes de voz (ASR, TTS y el LLM local opcional) los descarga la app al directorio de datos del usuario. El modelo ASR existente se administra por separado.
+- El instalador de Windows incluye los componentes de voz (ASR y TTS) y el runtime de llama.cpp, pero no el modelo de lenguaje: el LLM local (3 GB) lo descarga la app a pedido desde Ajustes al directorio de datos del usuario. En el resto de las plataformas los componentes de voz también los descarga la app. El modelo ASR existente se administra por separado.
 - El reconocimiento (~670 MB) se baja solo la primera vez que se abre el panel sin los modelos; una vez por instalación, para no competir con el botón «Reintentar descarga». El modelo de lenguaje local (3 GB) es una descarga explícita desde Ajustes.
 
 ## Preparación de los modelos

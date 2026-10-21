@@ -498,3 +498,36 @@ Pendiente de verificar en el proximo release real: el flujo completo del
 actualizador in-app (descargar, instalar y verificar la version) con el
 instalador chico, porque hasta ahora no hay una release mas nueva que la
 instalada.
+
+### Octava tanda (la 0.1.7 no se podia instalar: pedia "el disco")
+
+Reporte del maintainer: al bajar la 0.1.7 e instalarla, el instalador pide un
+disco. Diagnostico: `DiskSpanning=yes` en el `.iss`. Con esa directiva Inno
+siempre parte el setup en `Instant2-Setup.exe` (2,2 MB, solo el programa) +
+`Instant2-Setup-1.bin` (201,7 MB, los datos). Quien baja el `.exe`, que es el
+enlace que ofrece la pagina del release, ejecuta un instalador sin payload: no
+falla al compilar ni en CI, falla en la cara del usuario pidiendo "el disco"
+con el `.bin`.
+
+- **Un solo archivo, siempre**: `DiskSpanning=no`. La compilacion real del
+  instalador completo da 957 MB en un unico `.exe` (verificado con ISCC
+  6.7.3), sin `.bin` y sin ninguna pregunta.
+- **La voz vuelve al instalador**: el dueno del producto corrio la decision
+  anterior (instalador chico, todo online) al ver el costo real: sin los
+  modelos, una instalacion nueva espera ~670 MB (6 a 9 minutos) y sin
+  internet no dicta. La 0.1.8 vuelve a llevar Parakeet + Silero + Kokoro
+  (951 MB) para que la app funcione desde el primer minuto, y deja afuera
+  solo el LLM de 3 GB, que era el 76% del viejo bundle de 4 GB.
+- **La actualizacion sigue siendo barata**: se compilan dos instaladores con
+  el mismo `.iss` (`#ifdef ModelDir` y `{#OutputBase}`): `Instant2-Setup.exe`
+  completo y `Instant2-Update.exe` solo app (204 MB). El actualizador in-app
+  prefiere el segundo cuando los modelos ya estan en el directorio de datos.
+- **El instalador no borra ni mueve nada del directorio legacy**: el `Check`
+  saltea el archivo que ya esta en el directorio actual o en el viejo, y la
+  migracion verificada la sigue haciendo la app al arrancar.
+- Verificado en la maquina: el instalador completo compilado localmente
+  instala en 40 s, sin pedir disco, relanza la app y no recopia ni un byte de
+  los 951 MB que ya estaban (los timestamps de los modelos no cambiaron).
+
+Pendiente: publicar la 0.1.8 y confirmar en el proximo release real que el
+actualizador in-app baja `Instant2-Update.exe` (204 MB) y no el completo.

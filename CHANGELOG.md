@@ -8,6 +8,28 @@ Las dos primeras entradas documentan versiones de Instant2. El historial que
 sigue corresponde al Instant heredado y sus versiones no son releases de
 Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z`.
 
+## [0.1.8] - 2026-10-21
+
+### Instalador de Windows
+- **El instalador vuelve a ser un solo archivo.** Con `DiskSpanning=yes` Inno
+  partía el setup en `Instant2-Setup.exe` (2,2 MB) + `Instant2-Setup-1.bin`
+  (201,7 MB): quien bajaba solo el `.exe`, que es lo que ofrece la página del
+  release, se quedaba con un instalador que pedía "el disco" con el `.bin` y
+  no instalaba nada. Ahora se compila sin volúmenes: un único archivo y
+  ninguna pregunta.
+- **El instalador completo vuelve a llevar los modelos de voz** (Parakeet +
+  Silero + Kokoro con Dora, unos 951 MB): una instalación nueva dicta y lee en
+  voz alta sin internet desde el primer minuto, como antes de la 0.1.7. El
+  modelo de lenguaje local (3 GB) sigue afuera y se baja a pedido desde
+  Ajustes: era el 76% del viejo bundle de 4 GB.
+- **Actualizar sigue siendo barato.** El release publica además
+  `Instant2-Update.exe` (la app sola, unos 204 MB) y el actualizador in-app
+  baja ese cuando los modelos ya están en el directorio de datos. Instalar de
+  cero cuesta unos 1,1 GB; actualizar, unos 204 MB.
+- El instalador no borra ni mueve los modelos del directorio anterior: saltea
+  los archivos que ya están (en el directorio de datos o en el legacy) y deja
+  la migración verificada a la app, que corre al arrancar.
+
 ## [0.1.7] - 2026-10-21
 
 ### Instalador de Windows

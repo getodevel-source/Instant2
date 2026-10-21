@@ -18,7 +18,7 @@ instalar la aplicación en un escritorio real.
 
 | Plataforma | Artefacto | Cobertura automatizada actual | Validación de escritorio pendiente |
 |---|---|---|---|
-| Windows | `Instant2-Setup.exe` y `Instant2.exe` | Suite Windows; smoke del portable congelado. El instalador se construye en CI y no lleva los pesos: la app baja el reconocimiento sola en el primer uso y el modelo de lenguaje local (3 GB) a pedido desde Ajustes. | Instalación limpia, actualización, rollback, firma si está activa y desinstalación. |
+| Windows | `Instant2-Setup.exe` (completo) y `Instant2-Update.exe` (solo app), más `Instant2.exe` portable | Suite Windows; smoke del portable congelado. El instalador se compila en CI en un solo archivo y lleva los modelos de voz (951 MB), así que una instalación limpia dicta sin internet; el LLM local (3 GB) se baja a pedido desde Ajustes. El actualizador in-app baja `Instant2-Update.exe` (204 MB) y no toca los modelos. | Instalación limpia, actualización, rollback, firma si está activa y desinstalación. |
 | macOS | `instant2-macos`; `Instant2-macos.dmg` si la firma está activa | Suite macOS; smoke del binario congelado. | Permiso de micrófono, Accesibilidad, Gatekeeper/notarización si está activa, actualización y desinstalación. |
 | Linux X11 | `instant2-linux` | Suite Ubuntu; smoke del panel congelado en runner. | Instalación limpia, dependencias, X11, autostart, actualización y desinstalación. |
 | Arch/Omarchy Wayland | `instant2-linux` | Pruebas unitarias de selección de backend, dependencias y pegado. | Portal de atajos de Hyprland, aplicaciones nativas Wayland, XWayland y pegado real. |

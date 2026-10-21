@@ -30,9 +30,13 @@
 3. Enfocá un campo de texto, mantené la tecla mientras hablás y soltala al terminar.
 4. Para escuchar texto, abrí **Leer texto** o seleccioná texto y presioná la tecla de lectura configurada en **Ajustes**.
 
-En todas las plataformas, Instant2 descarga los componentes de voz durante el primer uso. Necesitás internet y cerca de 1 GB libre. El instalador de Windows no lleva los pesos: instala la app y el runtime de llama.cpp, así que pesa mucho menos y una actualización ya no descarga 3,78 GB. La descarga de los modelos la hace la app, con su barra de progreso y su verificación por hash.
+En Windows, el instalador de una sola descarga (`Instant2-Setup.exe`, un solo archivo) ya trae los componentes de voz: al terminar de instalar podés dictar y leer en voz alta sin internet. El instalador incluye la app, el runtime de llama.cpp y Parakeet, Silero y Kokoro con Dora (unos 951 MB); el instalador completo pesa cerca de 1,1 GB. El modelo de lenguaje local (3 GB) no viene con la app y se descarga a pedido.
 
-La primera vez, el panel arranca solo esa descarga (unos 670 MB) cuando detecta que faltan los modelos. Si la cancelás o se corta la red, el botón «Reintentar descarga» queda disponible; la app no vuelve a insistirte sola.
+En el resto de las plataformas (portable de Windows, Linux y macOS), Instant2 descarga los componentes de voz durante el primer uso: necesitás internet y cerca de 1 GB libre. La descarga la hace la app, con su barra de progreso y su verificación por hash.
+
+Actualizar desde la app no vuelve a bajar los modelos: el release publica además `Instant2-Update.exe` (unos 204 MB), que reemplaza la app y el runtime y deja intactos los pesos que ya están en `%LOCALAPPDATA%\instant2\models`.
+
+En esas plataformas, la primera vez el panel arranca solo la descarga del reconocimiento (unos 670 MB) cuando detecta que faltan los modelos. Si la cancelás o se corta la red, el botón «Reintentar descarga» queda disponible; la app no vuelve a insistirte sola.
 
 El modelo de lenguaje local (3 GB) es una descarga aparte y explícita: son demasiados gigabytes para bajarlos sin que los pidas. En **Ajustes → Revisión del dictado y privacidad → Archivos del servicio local** tenés «Descargar modelo (3 GB)», con su progreso y su botón de cancelar.
 
