@@ -31,7 +31,7 @@ class ConfigPersistenceTests(unittest.TestCase):
         self.assertTrue(cfg["llm_managed_enabled"])
         self.assertEqual(cfg["resource_mode"], "balanced")
 
-    def test_offline_bundle_sets_local_llm_defaults_once(self):
+    def test_the_local_llm_is_configured_when_the_runtime_and_the_model_are_there(self):
         with tempfile.TemporaryDirectory() as directory:
             app_dir = os.path.join(directory, "Instant2")
             runtime = os.path.join(app_dir, "llm-runtime")
@@ -44,13 +44,10 @@ class ConfigPersistenceTests(unittest.TestCase):
             open(server, "wb").close()
             open(model, "wb").close()
             config_path = os.path.join(directory, "config.json")
-            executable = os.path.join(app_dir, "Instant2.exe")
 
             with (patch("instant2_app.config.config_path", return_value=config_path),
                   patch("instant2_app.paths.resolve_data_dir", return_value=data_dir),
-                  patch.object(config.sys, "platform", "win32"),
-                  patch.object(config.sys, "executable", executable),
-                  patch.object(config.sys, "frozen", True, create=True)):
+                  patch("instant2_app.llm_defaults.app_dir", return_value=app_dir)):
                 cfg = config.load()
                 self.assertEqual(cfg["llm_url"], "http://127.0.0.1:8080/v1")
                 self.assertEqual(cfg["llm_model"], "qwen3.5:4b-q4_K_M")
@@ -68,7 +65,7 @@ class ConfigPersistenceTests(unittest.TestCase):
                 cfg = config.load()
                 self.assertEqual(cfg["llm_url"], "")
 
-    def test_offline_bundle_does_not_replace_user_llm_settings(self):
+    def test_a_remote_service_is_not_replaced(self):
         with tempfile.TemporaryDirectory() as directory:
             app_dir = os.path.join(directory, "Instant2")
             runtime = os.path.join(app_dir, "llm-runtime")
@@ -82,20 +79,19 @@ class ConfigPersistenceTests(unittest.TestCase):
             with open(path, "w", encoding="utf-8") as handle:
                 json.dump({"llm_url": "https://llm.example/v1",
                            "llm_model": "my-remote-model"}, handle)
-            executable = os.path.join(app_dir, "Instant2.exe")
 
             with (patch("instant2_app.config.config_path", return_value=path),
                   patch("instant2_app.paths.resolve_data_dir", return_value=data_dir),
-                  patch.object(config.sys, "platform", "win32"),
-                  patch.object(config.sys, "executable", executable),
-                  patch.object(config.sys, "frozen", True, create=True)):
+                  patch("instant2_app.llm_defaults.app_dir", return_value=app_dir)):
                 cfg = config.load()
 
             self.assertEqual(cfg["llm_url"], "https://llm.example/v1")
             self.assertEqual(cfg["llm_model"], "my-remote-model")
-            self.assertTrue(cfg["llm_bundle_initialized"])
+            # No se configuró nada local: la marca lo dice, para que el
+            # servicio remoto del usuario no se mezcle con el local.
+            self.assertFalse(cfg["llm_bundle_initialized"])
 
-    def test_offline_bundle_migrates_the_previous_managed_runtime(self):
+    def test_the_previous_managed_runtime_is_migrated(self):
         with tempfile.TemporaryDirectory() as directory:
             app_dir = os.path.join(directory, "Instant2")
             data_dir = os.path.join(directory, "models")
@@ -118,13 +114,10 @@ class ConfigPersistenceTests(unittest.TestCase):
                            "llm_model": "qwen3.5:4b-q4_K_M",
                            "llm_server_path": old_server,
                            "llm_model_path": old_model}, handle)
-            executable = os.path.join(app_dir, "Instant2.exe")
 
             with (patch("instant2_app.config.config_path", return_value=config_path),
                   patch("instant2_app.paths.resolve_data_dir", return_value=data_dir),
-                  patch.object(config.sys, "platform", "win32"),
-                  patch.object(config.sys, "executable", executable),
-                  patch.object(config.sys, "frozen", True, create=True)):
+                  patch("instant2_app.llm_defaults.app_dir", return_value=app_dir)):
                 cfg = config.load()
 
             self.assertEqual(cfg["llm_server_path"], server)

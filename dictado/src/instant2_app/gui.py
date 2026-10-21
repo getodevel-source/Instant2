@@ -2640,20 +2640,31 @@ class PanelLogic(PanelReadingActions):
         self.push_state()
 
     def _use_downloaded_llm_model(self):
-        """Apunta la config al modelo descargado si el usuario no eligió otro.
+        """Conecta el modelo descargado con el servicio local.
 
-        Si la persona ya había elegido un GGUF (o el que había en la config
-        sigue existiendo), no se toca nada: su elección manda.
+        Si la persona ya eligió un GGUF (o el que había en la config sigue
+        siendo el mismo), su elección manda: no se toca. Si no, se completan
+        el runtime, la dirección y el alias, para que el servicio local quede
+        listo de verdad y no solo apuntando a un archivo.
+
+        Se guardan solo las claves que cambian: el resto de la config de la
+        interfaz (ediciones sin confirmar, arranque con el sistema) no se
+        persiste.
         """
-        from instant2_app import llm_model
+        from instant2_app import llm_defaults, llm_model
 
         path = llm_model.model_path(self.data_dir)
         configured = str(self.cfg.get("llm_model_path") or "").strip()
-        if configured and os.path.isfile(configured):
+        if configured and not llm_defaults.same_model_name(configured, path):
+            # Un GGUF elegido a mano (aunque no esté ahora mismo en su disco)
+            # no se reemplaza.
             return
-        self.cfg["llm_model_path"] = path
+        changes = llm_defaults.local_changes(self.cfg, data_dir=self.data_dir)
+        if not changes:
+            return
+        self.cfg.update(changes)
         try:
-            self.save_config(False)
+            config.update(changes)
         except Exception:  # noqa: BLE001  (un fallo al guardar no rompe el panel)
             log.warning("no pude guardar la ruta del modelo de lenguaje",
                         exc_info=True)

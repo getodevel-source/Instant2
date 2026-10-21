@@ -6,6 +6,7 @@ verificada, cancelable) y el estado que ve el panel.
 """
 import hashlib
 import http.server
+import json
 import os
 import shutil
 import sys
@@ -19,7 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _isolation  # noqa: F401  (aisla el estado real del usuario)
 
-from instant2_app import gui, llm_model, models
+from instant2_app import config, gui, llm_model, models
 
 BODY = b"gguf-de-prueba-" * 100  # ~1.6 KB
 # Los valores reales del módulo, antes de que los tests los reemplacen.
@@ -205,21 +206,37 @@ class PendingTasks:
         self.submitted = []
 
 
-def make_logic(data_dir):
+def make_logic(case, data_dir):
+    """Panel de prueba: sin red, sin Qt y con las tareas en suspenso.
+
+    Los parches viven hasta el final del test (no solo durante la
+    construcción del panel) y la config se escribe en un archivo temporal:
+    la suite nunca toca la config real de la maquina.
+    """
     emitted = []
-    with patch("instant2_app.gui.config.load", return_value={}), \
-            patch("instant2_app.gui.models.check", return_value={
-                "parakeet": True, "vad": True}), \
-            patch("instant2_app.gui.resolve_data_dir", return_value=data_dir), \
-            patch("instant2_app.gui.daemon_is_running", return_value=False), \
-            patch("instant2_app.gui.audio.input_choices", return_value=[]), \
-            patch("instant2_app.gui.autostart.is_enabled", return_value=False), \
-            patch.dict(sys.modules, {"sounddevice": SimpleNamespace(
-                default=SimpleNamespace(device=(-1, -1)))}):
-        logic = gui.PanelLogic(
-            emit=lambda kind, payload: emitted.append((kind, payload)),
-            tasks=PendingTasks(), schedule=lambda ms, fn: None)
-    return logic, emitted
+    cfg = dict(config.DEFAULTS)
+    config_path = os.path.join(data_dir, "config.json")
+    case._hold("instant2_app.gui.config.load", return_value=cfg)
+    case._hold("instant2_app.config.config_path", return_value=config_path)
+    case._hold("instant2_app.gui.models.check",
+               return_value={"parakeet": True, "vad": True})
+    case._hold("instant2_app.gui.resolve_data_dir", return_value=data_dir)
+    case._hold("instant2_app.gui.daemon_is_running", return_value=False)
+    case._hold("instant2_app.gui.audio.input_choices", return_value=[])
+    case._hold("instant2_app.gui.autostart.is_enabled", return_value=False)
+    modules = patch.dict(sys.modules, {"sounddevice": SimpleNamespace(
+        default=SimpleNamespace(device=(-1, -1)))})
+    modules.start()
+    case.addCleanup(modules.stop)
+    logic = gui.PanelLogic(
+        emit=lambda kind, payload: emitted.append((kind, payload)),
+        tasks=PendingTasks(), schedule=lambda ms, fn: None)
+    return logic, emitted, config_path
+
+
+def _disk_config(path):
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 class PanelLLMModelStateTests(unittest.TestCase):
@@ -227,8 +244,15 @@ class PanelLLMModelStateTests(unittest.TestCase):
         self.data_dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.data_dir, ignore_errors=True)
 
+    def _hold(self, target, **kwargs):
+        """Parche que vive hasta el final del test."""
+        patcher = patch(target, **kwargs)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return patcher
+
     def test_the_panel_starts_with_the_model_missing(self):
-        logic, _emitted = make_logic(self.data_dir)
+        logic, _emitted, _path = make_logic(self, self.data_dir)
         state = logic.state_payload()["llm_model"]
         self.assertEqual(state["status"], "missing")
         self.assertFalse(state["ready"])
@@ -236,12 +260,14 @@ class PanelLLMModelStateTests(unittest.TestCase):
         self.assertIn("No descargado", state["message"])
 
     def test_the_download_does_not_start_by_itself(self):
-        logic, _emitted = make_logic(self.data_dir)
-        self.assertEqual(logic.tasks.submitted, [])
-        self.assertEqual(logic.state_payload()["llm_model"]["status"], "missing")
+        logic, _emitted, _path = make_logic(self, self.data_dir)
+        state = logic.state_payload()["llm_model"]
+        self.assertEqual(state["status"], "missing")
+        self.assertFalse(state["downloading"])
+        self.assertFalse(state["ready"])
 
     def test_the_explicit_action_starts_the_download(self):
-        logic, _emitted = make_logic(self.data_dir)
+        logic, _emitted, _path = make_logic(self, self.data_dir)
         logic.handle({"op": "download_llm_model"})
         state = logic.state_payload()["llm_model"]
         self.assertEqual(state["status"], "downloading")
@@ -249,7 +275,7 @@ class PanelLLMModelStateTests(unittest.TestCase):
         self.assertEqual(len(logic.tasks.submitted), 1)
 
     def test_the_progress_reaches_the_state(self):
-        logic, _emitted = make_logic(self.data_dir)
+        logic, _emitted, _path = make_logic(self, self.data_dir)
         logic.handle({"op": "download_llm_model"})
         _fn, _on_result, _on_error, on_progress = logic.tasks.submitted[0]
         on_progress((512 * 1024 * 1024, 3_013_027_808))
@@ -258,7 +284,7 @@ class PanelLLMModelStateTests(unittest.TestCase):
         self.assertIn("Descargando", state["message"])
 
     def test_the_state_is_ready_when_the_download_finishes(self):
-        logic, _emitted = make_logic(self.data_dir)
+        logic, _emitted, _path = make_logic(self, self.data_dir)
         logic.handle({"op": "download_llm_model"})
         _fn, on_result, _on_error, _on_progress = logic.tasks.submitted[0]
         with patch("instant2_app.llm_model.model_ready", return_value=True):
@@ -269,7 +295,7 @@ class PanelLLMModelStateTests(unittest.TestCase):
         self.assertEqual(state["percent"], 100)
 
     def test_a_cancelled_download_keeps_the_partial_file(self):
-        logic, _emitted = make_logic(self.data_dir)
+        logic, _emitted, _path = make_logic(self, self.data_dir)
         logic.handle({"op": "download_llm_model"})
         _fn, _on_result, on_error, _on_progress = logic.tasks.submitted[0]
         on_error(models.DownloadCancelled("cancelada"))
@@ -279,7 +305,7 @@ class PanelLLMModelStateTests(unittest.TestCase):
         self.assertIn("Descarga cancelada", state["message"])
 
     def test_a_failed_download_is_reported(self):
-        logic, _emitted = make_logic(self.data_dir)
+        logic, _emitted, _path = make_logic(self, self.data_dir)
         logic.handle({"op": "download_llm_model"})
         _fn, _on_result, on_error, _on_progress = logic.tasks.submitted[0]
         on_error(models.ModelIntegrityError("sin red"))
@@ -288,7 +314,7 @@ class PanelLLMModelStateTests(unittest.TestCase):
         self.assertFalse(state["downloading"])
 
     def test_the_cancel_button_stops_the_download(self):
-        logic, _emitted = make_logic(self.data_dir)
+        logic, _emitted, _path = make_logic(self, self.data_dir)
         logic.handle({"op": "download_llm_model"})
         logic.handle({"op": "cancel_llm_model"})
         state = logic.state_payload()["llm_model"]
@@ -296,25 +322,27 @@ class PanelLLMModelStateTests(unittest.TestCase):
         self.assertTrue(logic._llm_model_cancel_event.is_set())
 
     def test_the_downloaded_model_is_wired_when_the_user_chosen_none(self):
-        logic, _emitted = make_logic(self.data_dir)
-        with patch("instant2_app.gui.config.save") as saved:
-            logic._use_downloaded_llm_model()
-        self.assertEqual(
-            logic.cfg["llm_model_path"],
-            os.path.join(self.data_dir, "llm", "Qwen_Qwen3.5-4B-Q4_K_M.gguf"))
-        self.assertTrue(saved.called)
+        logic, _emitted, config_path = make_logic(self, self.data_dir)
+        model = os.path.join(self.data_dir, "llm",
+                             "Qwen_Qwen3.5-4B-Q4_K_M.gguf")
+        os.makedirs(os.path.dirname(model), exist_ok=True)
+        with open(model, "wb") as handle:
+            handle.write(b"gguf")
+        logic._use_downloaded_llm_model()
+        disk = _disk_config(config_path)
+        self.assertEqual(disk["llm_model_path"], model)
+        self.assertEqual(logic.cfg["llm_model_path"], model)
 
     def test_a_model_chosen_by_hand_is_not_replaced(self):
-        logic, _emitted = make_logic(self.data_dir)
+        logic, _emitted, config_path = make_logic(self, self.data_dir)
         chosen = os.path.join(self.data_dir, "otro.gguf")
         with open(chosen, "wb") as handle:
             handle.write(b"x")
         logic.cfg["llm_model_path"] = chosen
-        with patch("instant2_app.gui.config.save") as saved:
-            logic._use_downloaded_llm_model()
+        logic._use_downloaded_llm_model()
         self.assertEqual(logic.cfg["llm_model_path"], chosen)
-        self.assertFalse(saved.called)
-
+        # El archivo de la config tampoco se toco.
+        self.assertFalse(os.path.exists(config_path))
 
 if __name__ == "__main__":
     unittest.main()

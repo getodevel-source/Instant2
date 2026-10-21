@@ -2,7 +2,6 @@
 import json
 import logging
 import os
-import sys
 import tempfile
 
 from instant2_app.paths import config_dir
@@ -279,6 +278,35 @@ def save(cfg):
     return path
 
 
+def update(values):
+    """Guarda solo las claves indicadas y deja el resto de la config intacta.
+
+    Es lo que usan los cambios puntuales (por ejemplo, la ruta del modelo que
+    se acaba de descargar): no se persiste la config entera de la interfaz,
+    con ediciones sin confirmar ni cambios de arranque con el sistema.
+    """
+    path = config_path()
+    try:
+        current = _read_json(path)
+    except FileNotFoundError:
+        current = {}
+    except Exception:
+        log.exception("config ilegible; guardo solo los cambios indicados")
+        current = {}
+    if not isinstance(current, dict):
+        current = {}
+    changed = {}
+    for key, value in values.items():
+        if key not in DEFAULTS:
+            continue
+        if current.get(key) != value:
+            changed[key] = value
+    if changed:
+        current.update(changed)
+        save(current)
+    return changed
+
+
 def _normalize_hotkeys(cfg):
     """Keep the dictation and reading shortcuts valid and physically distinct."""
     from instant2_app import hotkey
@@ -309,42 +337,21 @@ def _initialize_local_llm(cfg):
 
     The model is not shipped with the installer anymore: it is downloaded on
     demand from Settings, so this only takes effect once the download is
-    done.
+    done. Until then nothing is configured and nothing is marked: the next
+    launch tries again.
     """
     if cfg.get("llm_bundle_initialized") is True:
         return False
-    if sys.platform != "win32" or not getattr(sys, "frozen", False):
-        return False
 
-    from instant2_app.paths import resolve_data_dir
+    from instant2_app import llm_defaults
 
-    app_dir = os.path.dirname(os.path.abspath(sys.executable))
-    server = os.path.join(app_dir, "llm-runtime", "llama-server.exe")
-    model = os.path.join(resolve_data_dir(), "llm",
-                         "Qwen_Qwen3.5-4B-Q4_K_M.gguf")
-    if not (os.path.isfile(server) and os.path.isfile(model)):
-        return False
-
-    configured = any(str(cfg.get(key) or "").strip() for key in (
-        "llm_url", "llm_token", "llm_model", "llm_server_path",
-        "llm_model_path"))
-    if not configured:
-        cfg["llm_url"] = "http://127.0.0.1:8080/v1"
-        cfg["llm_model"] = "qwen3.5:4b-q4_K_M"
-        cfg["llm_server_path"] = server
-        cfg["llm_model_path"] = model
-    else:
-        old_server = str(cfg.get("llm_server_path") or "").strip()
-        normalized_server = os.path.normcase(old_server.replace("/", "\\"))
-        if normalized_server.endswith(
-                os.path.normcase("\\llm-runtime\\llama\\llama-server.exe")):
-            cfg["llm_server_path"] = server
-            if not str(cfg.get("llm_url") or "").strip():
-                cfg["llm_url"] = "http://127.0.0.1:8080/v1"
-            if not str(cfg.get("llm_model") or "").strip():
-                cfg["llm_model"] = "qwen3.5:4b-q4_K_M"
-        old_model = str(cfg.get("llm_model_path") or "").strip()
-        if os.path.basename(old_model).casefold() == os.path.basename(model).casefold():
-            cfg["llm_model_path"] = model
-    cfg["llm_bundle_initialized"] = True
-    return True
+    outcome = llm_defaults.apply_local_defaults(cfg)
+    changed = outcome["changed"]
+    if outcome["managed"]:
+        # La marca se pone cuando el servicio local quedó completo (runtime,
+        # modelo, dirección y alias): así el usuario puede vaciar la
+        # dirección y que no le vuelva sola en el próximo arranque.
+        if not cfg.get("llm_bundle_initialized"):
+            cfg["llm_bundle_initialized"] = True
+            changed = True
+    return changed
