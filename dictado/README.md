@@ -14,7 +14,7 @@ anglicismos se transcriben por fonética. Un perfil de vocabulario permite
 corregir variantes reconocidas explícitamente; el pulido LLM por sí solo
 ayuda con tildes y puntuación, pero no reemplaza el reconocimiento de audio.
 
-En Windows, la vía recomendada es el instalador completo de la [última release](https://github.com/getodevel-source/Instant2/releases/latest) (`Instant2-Setup.exe`): por usuario, sin admin, con desinstalador y actualización in-place. Incluye Parakeet, Qwen 4B, Kokoro con Dora y llama.cpp. En una instalación nueva, deja activadas por defecto la apertura al terminar y el inicio con Windows; puedes desactivar ambas casillas. Para instalar sin conexión, descargá todos los archivos `Instant2-Setup*` y mantenelos juntos. El `Instant2.exe` portable y los binarios de Linux/macOS no incluyen los pesos.
+En Windows, la vía recomendada es el instalador de la [última release](https://github.com/getodevel-source/Instant2/releases/latest) (`Instant2-Setup.exe`): por usuario, sin admin, con desinstalador y actualización in-place. El instalador lleva la app y el runtime de llama.cpp; Parakeet, Kokoro con Dora y el modelo Qwen 4B los descarga la app en el primer uso, igual que el portable y los binarios de Linux/macOS. En una instalación nueva, deja activadas por defecto la apertura al terminar y el inicio con Windows; puedes desactivar ambas casillas. Como el instalador ya no lleva los pesos, `Instant2-Setup.exe` se baja solo: no hay partes `.bin` que mantener juntas.
 
 > Los binarios están **sin firmar** por ahora: Windows SmartScreen muestra «Windows protegió su PC» la primera vez (elegí «Más información» → «Ejecutar de todas formas» solo si el instalador salió del enlace oficial); Gatekeeper en macOS puede pedirte que confirmes la apertura en Ajustes → Privacidad y seguridad. Esto no es un error de Instant2.
 
@@ -195,7 +195,7 @@ inyección de la paleta. La ventana del overlay se centra con
 El asistente de terminal (`instant2 setup --tui`, o con cualquier flag de CLI)
 hace, en orden:
 
-1. **Modelos**: verifica Parakeet TDT v3 int8 (~670 MB) y VAD (~1 MB). El instalador completo de Windows los trae; en otros paquetes se descargan si faltan.
+1. **Modelos**: verifica Parakeet TDT v3 int8 (~670 MB) y VAD (~1 MB). Si faltan, la app los descarga con verificación por hash: pasa en todas las plataformas, también con el instalador de Windows.
 2. **Micrófono**: muestra nombre, backend y canales; permite medir nivel. Guarda nombre e índice como fallback si cambia el orden de dispositivos.
 3. **Idioma**: español fijo.
 4. **Tecla**: captura una tecla individual (Enter conserva la actual).
@@ -409,12 +409,13 @@ reconocimiento es baja, y nunca toca texto seguro ni palabras corrientes.
 
 ## Revisión LLM en Dictado mejorado
 
-El instalador completo de Windows configura Qwen 4B y llama.cpp localmente. Si
-usás el portable, Linux/macOS o querés otro servicio, podés conectar Ollama,
-`llama-server` u otro endpoint compatible con Chat Completions de OpenAI desde
-Ajustes. Indicá el nombre exacto del modelo que espera el servidor y dejá
-activa la casilla «Pedir al LLM que revise cada dictado mejorado». Si el
-servicio no está configurado o falla, el dictado conserva el resultado local.
+El instalador de Windows incluye llama.cpp; el modelo Qwen 4B lo descarga la app
+en el primer uso. Si usás el portable, Linux/macOS o querés otro servicio,
+podés conectar Ollama, `llama-server` u otro endpoint compatible con Chat
+Completions de OpenAI desde Ajustes. Indicá el nombre exacto del modelo que
+espera el servidor y dejá activa la casilla «Pedir al LLM que revise cada
+dictado mejorado». Si el servicio no está configurado o falla, el dictado
+conserva el resultado local.
 
 En cada dictado mejorado con revisión activa, el LLM recibe la transcripción
 y el vocabulario activo, nunca el audio. Instant2 usa su respuesta para corregir
@@ -439,12 +440,13 @@ ausencia).
 
 ## Mantener un LLM local disponible
 
-El instalador completo de Windows incluye y configura llama.cpp con Qwen 4B
-Q4_K_M. Instant2 inicia el servidor local cuando corresponde, usa
-automáticamente un dispositivo que el runtime detecte y prueba CPU si no hay
-aceleración compatible. En **Ajustes → Voz, rendimiento y privacidad avanzada**
-podés cambiar el modelo o el runtime. El portable y los paquetes de otros
-sistemas requieren configurar los archivos locales o un servicio compatible.
+El instalador de Windows incluye llama.cpp; el modelo Qwen 4B Q4_K_M lo
+descarga la app en el primer uso. Instant2 inicia el servidor local cuando
+corresponde, usa automáticamente un dispositivo que el runtime detecte y
+prueba CPU si no hay aceleración compatible. En **Ajustes → Voz, rendimiento
+y privacidad avanzada** podés cambiar el modelo o el runtime. El portable y
+los paquetes de otros sistemas requieren configurar los archivos locales o un
+servicio compatible.
 
 Dejá **Automático** para que Instant2 elija un dispositivo que llama-server confirme disponible y pruebe CPU si falla el arranque acelerado. También podés elegir **Solo CPU**. El servidor administrado escucha en 127.0.0.1. Cerrar el panel no detiene el daemon ni su servidor; al detener el dictado, Instant2 cierra solo el proceso hijo que inició.
 
@@ -455,10 +457,11 @@ Ollama y otros endpoints compatibles siguen disponibles. Configurá su URL y el 
 ## Binarios por SO
 
 Las [releases de GitHub](https://github.com/getodevel-source/Instant2/releases/latest)
-publican `Instant2-Setup.exe` junto a una o más partes `Instant2-Setup-N.bin` y
-sus sidecars `.sha256`. El actualizador descarga y verifica todas las partes
-del instalador juntas. También se publican `Instant2.exe` (portable de Windows),
-`instant2-linux` y `instant2-macos`; estos paquetes no incluyen los pesos.
+publican `Instant2-Setup.exe` con su sidecar `.sha256` y, si el payload lo
+pidiera, partes `Instant2-Setup-N.bin` con sus sidecars. El actualizador
+descarga y verifica todas las partes del instalador juntas. También se
+publican `Instant2.exe` (portable de Windows), `instant2-linux` y
+`instant2-macos`; estos paquetes no incluyen los pesos.
 Actualmente salen **sin firma de sistema operativo** (ver la nota en
 [Instalación](#instalación)); la ruta optativa de firma está en la
 [guía de firma](../docs/firma-releases.md).

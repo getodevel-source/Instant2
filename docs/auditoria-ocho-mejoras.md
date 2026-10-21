@@ -16,7 +16,7 @@ producto ni opciones nuevas. El rediseño previo se conserva.
 | 5. Lectura | Primera ventana anticipada, estado oportuno y aborto de salida; reproducción larga real correcta | F10 físico sobre selección externa |
 | 6. Mensajes | Acentos, nombre del motor, instalador y residencia corregidos | Sin pendiente identificado en los cambios revisados |
 | 7. Mantenimiento | Responsabilidades separadas y paleta web centralizada | Sin pendiente identificado en los cambios revisados |
-| 8. Distribución | Build congelado, apertura real y modelos offline verificados; ciclo Inno aislado aprobado | Instalación personal exacta, cierre de sus procesos y otras plataformas |
+| 8. Distribución | Build congelado, apertura real y runtime de llama.cpp verificado; ciclo Inno aislado aprobado | Instalación personal exacta, cierre de sus procesos y otras plataformas |
 
 La auditoría no está cerrada globalmente. Una prueba de lógica o una captura
 controlada no demuestra la entrega de teclas del sistema operativo.
@@ -150,8 +150,8 @@ evaluación perceptual por oyentes de prosodia y empalmes.
 ## 6. Mensajes
 
 Se repararon acentos dañados en avisos de dictado y configuración. Los mensajes
-de terminal y registros nombran Parakeet. El panel explica los modelos y runtime
-del instalador completo y la descarga de Kokoro según el modo de recursos.
+de terminal y registros nombran Parakeet. El panel explica los modelos y el
+runtime incluidos, y la descarga de Kokoro según el modo de recursos.
 El ajuste de hilos describe reconocimiento y lectura.
 
 ## 7. Estructura, diseño y revisión
@@ -185,9 +185,16 @@ PyInstaller produjo un onedir final en 41,7 s. El ejecutable real abrió el pane
 con configuración de auditoría, proceso vivo, paleta resuelta y fuente local.
 Es una comprobación offscreen, sin selección o teclas de escritorio.
 
-`prepare_offline_bundle.py` verificó ocho archivos, 3,73 GiB de modelos/voz, y
-preparó llama.cpp b11573 CPU/Vulkan. Rechazó reutilizar un payload no vacío;
-los recursos ya verificados se copiaron al build final con el mismo manifiesto.
+En la auditoría, `prepare_offline_bundle.py` verificó ocho archivos, 3,73 GiB
+de modelos/voz, y preparó llama.cpp b11573 CPU/Vulkan. Rechazó reutilizar un
+payload no vacío; los recursos ya verificados se copiaron al build final con
+el mismo manifiesto.
+
+El estado actual es otro: el instalador de Windows ya no lleva pesos de
+modelo. El script que prepara los recursos del instalador se llama ahora
+`scripts/prepare_windows_assets.py` y solo deja el runtime de llama.cpp (más
+los avisos de terceros y las licencias); los componentes de voz los descarga
+la app en el primer uso.
 
 Se compila `installer/instant2.iss` de producción sin cambios. El ciclo Inno
 aprobado usa un fixture con AppId/nombre distintos, modelos junto al destino de

@@ -36,7 +36,7 @@ flowchart LR
 - Si el servicio est? apagado, no responde o falla la validaci?n de la propuesta, el texto corregido localmente sigue disponible.
 - El servidor no es requisito para iniciar una sesi?n de dictado.
 - El texto dictado no se guarda en registros ni historial por defecto.
-- El instalador no incluye ni descarga modelos de lenguaje. El modelo ASR existente se administra por separado.
+- El instalador no incluye ni descarga modelos de lenguaje: los componentes de voz (ASR, TTS y el LLM local opcional) los descarga la app al directorio de datos del usuario. El modelo ASR existente se administra por separado.
 
 ## Entrega y foco
 
@@ -44,7 +44,7 @@ El overlay no toma el foco durante la grabaci?n. Instant2 conserva la ventana do
 
 ## LLM local y rendimiento
 
-Instant2 reutiliza la configuraci?n OpenAI compatible. Puede administrar un `llama-server` local ya instalado y mantener el modelo residente mientras la aplicaci?n est? abierta. El instalador completo de Windows preconfigura Qwen 4B local y un `llama-server` Vulkan con respaldo a CPU; el portable y los paquetes de otros sistemas permiten conectar un servidor ya instalado. Si falla la aceleraci?n disponible, el supervisor puede intentar CPU de acuerdo con los recursos detectados y comunicar el estado real.
+Instant2 reutiliza la configuraci?n OpenAI compatible. Puede administrar un `llama-server` local ya instalado y mantener el modelo residente mientras la aplicaci?n est? abierta. El instalador de Windows incluye un `llama-server` Vulkan con respaldo a CPU y deja que la app descargue el modelo Qwen 4B local en el primer uso; el portable y los paquetes de otros sistemas permiten conectar un servidor ya instalado. Si falla la aceleraci?n disponible, el supervisor puede intentar CPU de acuerdo con los recursos detectados y comunicar el estado real.
 
 La evaluaci?n del modelo debe separar errores del ASR, cambios del LLM, tiempo de carga en fr?o, latencia caliente y consumo de memoria. Los resultados sint?ticos disponibles son orientativos y provienen de una sola m?quina.
 

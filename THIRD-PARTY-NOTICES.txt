@@ -1,4 +1,4 @@
-Instant2 includes these model and runtime assets in the Windows offline installer.
+Instant2 uses these model and runtime assets. The Windows installer ships the app and the llama.cpp runtime; the model weights are not part of the installer: the app downloads them into the per-user data directory the first time they are needed, and the licenses below cover those downloads as well.
 
 Speech recognition
 NVIDIA Parakeet TDT 0.6B v3, converted to int8 ONNX for sherpa-onnx.
@@ -18,7 +18,7 @@ Text to speech
 Kokoro 82M ONNX model, Apache License 2.0:
 https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX
 Spanish voice: ef_dora (Dora), from the Spanish voice set in that repository.
-Only the Dora voice is included.
+Only the Dora voice is used.
 
 Local LLM runtime
 llama.cpp Windows x64 Vulkan release b11573, including its CPU backend.

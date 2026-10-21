@@ -15,7 +15,7 @@ Toda afirmación de rendimiento o de fidelidad del texto es una **observación d
 ## Resumen
 
 - El runtime administrado arranca `llama-server` con **contexto de 4096 tokens**, **una sola ranura** y los hilos calculados desde la CPU (`llm_runtime.py:284-304`).
-- El modelo del instalador completo es **Qwen3.5 4B Q4_K_M en GGUF** (`config.py:315-320`, `THIRD-PARTY-NOTICES.txt:12-15`).
+- El modelo local por defecto es **Qwen3.5 4B Q4_K_M en GGUF** (`config.py:315-320`, `THIRD-PARTY-NOTICES.txt:12-15`).
 - La conversación que se envía tiene **siempre dos mensajes**: `system` + `user`. No hay turnos previos, ni historial, ni streaming (`llm.py:187-188`, `llm.py:246-251`).
 - El modo directo se pide con `chat_template_kwargs: {"enable_thinking": false}` (`llm.py:190`, `llm.py:253`). Es el **único** mecanismo real: este modelo **no** tiene `/think` ni `/nothink`.
 - El diccionario técnico `bias.correct_biased()` **no tiene llamador en producción**: solo lo usan benches y pruebas. Lo único que llega al LLM es su glosario de grafías (`bias.py:329`, `bias.py:366`, `llm.py:348-352`).
@@ -36,7 +36,7 @@ Toda afirmación de rendimiento o de fidelidad del texto es una **observación d
 | Nombre de modelo para la API | `qwen3.5:4b-q4_K_M` (alias que recibe el servidor) | `config.py:327`, `llm_runtime.py:292-294` |
 | Licencia declarada | Apache-2.0 | `THIRD-PARTY-NOTICES.txt:14` |
 
-La autoconfiguración del instalador completo rellena endpoint, modelo, ejecutable y ruta del GGUF solo si los dos archivos existen (`config.py:315-342`).
+La autoconfiguración de la app instalada rellena endpoint, modelo, ejecutable y ruta del GGUF solo si los dos archivos existen (`config.py:315-342`).
 
 ### 1.2 Runtime y parámetros del servidor
 
@@ -195,7 +195,7 @@ Matiz importante: un servidor local con el GGUF estaba en ejecución, pero **no*
 | El diccionario técnico corrige términos después del reconocimiento (`CHANGELOG.md:243-252`, `docs/precision.md`) | `bias.correct_biased()` no tiene llamador en producción (`bias.py:329`); solo se usa su glosario (`llm.py:348-352`) |
 | "Dictado usa como texto final la corrección de Qwen" (`CHANGELOG.md:93-97`) | Cierto, y el candidato se usa sin validar orden de palabras (`llm.py:167-175`); la protección es la comprobación de significado (`llm.py:223-272`) |
 | El pulido LLM está "apagado por defecto" (`CHANGELOG.md:778`) | El interruptor existe (`config.py:33`) pero sin endpoint configurado la función queda inactiva aunque el interruptor esté activo (`dictation.py:16`) |
-| La cuantización del instalador es Q4_K_M | Cierto (`config.py:317-318`, `THIRD-PARTY-NOTICES.txt:14-15`) |
+| La cuantización del modelo local por defecto es Q4_K_M | Cierto (`config.py:317-318`, `THIRD-PARTY-NOTICES.txt:14-15`) |
 
 ---
 

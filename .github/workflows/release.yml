@@ -140,13 +140,11 @@ jobs:
             --copy-metadata kokoro-onnx \
             --hidden-import misaki.espeak \
             dictado/src/instant2_app/__main__.py
-          # Reuse only verified local assets; CI fetches the same pinned models.
-          python scripts/prepare_offline_bundle.py \
-            --app-dir dist/Instant2 \
-            --payload-dir dist/Instant2-Models
+          # El instalador lleva la app y el runtime de llama.cpp; los modelos
+          # los descarga la app, asi que el release ya no arrastra 4 GB.
+          python scripts/prepare_windows_assets.py --app-dir dist/Instant2
           VERSION="$(python -c 'import sys; sys.path.insert(0, "dictado/src"); from instant2_app import __version__; print(__version__)')"
           SOURCE="$(python -c 'import os; print(os.path.abspath("dist/Instant2"))')"
-          MODELS="$(python -c 'import os; print(os.path.abspath("dist/Instant2-Models"))')"
           # Inno Setup viene preinstalado en las imágenes de los runners.
           ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
           if [ ! -f "$ISCC" ]; then ISCC="/c/Program Files/Inno Setup 6/ISCC.exe"; fi
@@ -157,7 +155,7 @@ jobs:
           # "You may not specify more than one script filename").
           MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
             "$ISCC" "/DAppVersion=$VERSION" "/DSourceDir=$SOURCE" \
-            "/DModelDir=$MODELS" "/DIconFile=$ICON_PATH" installer/instant2.iss
+            "/DIconFile=$ICON_PATH" installer/instant2.iss
           python - <<'PY'
           from pathlib import Path
           files = sorted(Path("dist").glob("Instant2-Setup*"))
@@ -168,7 +166,7 @@ jobs:
           for path in binaries:
               if path.stat().st_size >= 2_000_000_000:
                   raise SystemExit(f"El asset excede 2 GB: {path.name}")
-          print("Instalador offline listo:", ", ".join(path.name for path in binaries))
+          print("Instalador de Windows listo:", ", ".join(path.name for path in binaries))
           PY
 
       - name: Prepare macOS signing identity (optional)

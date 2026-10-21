@@ -13,7 +13,7 @@
 | | |
 |---|---|
 | 🔒 **Privacidad** | El audio se reconoce en tu equipo. Si conectás un servicio remoto para revisar el texto, solo recibe el texto reconocido. |
-| ⚡ **Listo para usar** | El instalador completo de Windows prepara la voz y la revisión de texto para usar sin una descarga inicial. |
+| ⚡ **Listo para usar** | El instalador de Windows trae la app y el runtime de llama.cpp; la app descarga los componentes de voz en el primer uso. |
 | 🎯 **Dictado flexible** | Correcciones de términos, teclas configurables y revisión opcional del texto. |
 | 🔊 **Lectura en voz alta** | Escribí o seleccioná texto para escucharlo en español. |
 
@@ -24,7 +24,7 @@
 3. Enfocá un campo de texto, mantené la tecla mientras hablás y soltala al terminar.
 4. Para escuchar texto, abrí **Leer texto** o seleccioná texto y presioná la tecla de lectura configurada en **Ajustes**.
 
-En el portable y en Linux/macOS, Instant2 descarga los componentes de voz durante el primer uso. Necesitás internet y cerca de 1 GB libre. El instalador completo de Windows los incluye y puede instalarse sin conexión si mantenés juntos el ejecutable y todos sus archivos `.bin`.
+En todas las plataformas, Instant2 descarga los componentes de voz durante el primer uso. Necesitás internet y cerca de 1 GB libre. El instalador de Windows no lleva los pesos: instala la app y el runtime de llama.cpp, así que pesa mucho menos y una actualización ya no descarga 3,78 GB. La descarga de los modelos la hace la app, con su barra de progreso y su verificación por hash.
 
 En una instalación nueva, el instalador deja seleccionados **Iniciar Instant2 con Windows** y **Abrir Instant2 y activar el dictado en segundo plano**. Puedes desmarcar cualquiera de esas opciones. Al abrirse, Instant2 inicia el servicio si detecta un micrófono disponible; cerrar el panel deja el servicio en la bandeja.
 

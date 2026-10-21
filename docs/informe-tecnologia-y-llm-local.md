@@ -5,7 +5,7 @@
 
 ## Resumen
 
-Instant2 usa Parakeet TDT v3 int8 para reconocer voz y puede usar un LLM de texto configurado para revisar la transcripci?n. El LLM no recibe audio y no reemplaza al ASR. El audio permanece en el equipo; Ajustes identifica si el servicio de lenguaje configurado es local o remoto. El instalador completo de Windows incluye Qwen 4B Q4_K_M y llama.cpp Vulkan con respaldo a CPU; los paquetes portable, Linux y macOS mantienen la descarga o configuracion manual.
+Instant2 usa Parakeet TDT v3 int8 para reconocer voz y puede usar un LLM de texto configurado para revisar la transcripción. El LLM no recibe audio y no reemplaza al ASR. El audio permanece en el equipo; Ajustes identifica si el servicio de lenguaje configurado es local o remoto. El instalador de Windows incluye llama.cpp Vulkan con respaldo a CPU; Qwen 4B Q4_K_M lo descarga la app en el primer uso, como los paquetes portable, Linux y macOS.
 
 En el conjunto sint?tico medido, Qwen3.5 4B Q4_K_M dio el mejor equilibrio entre correcci?n y tiempo de respuesta de las variantes comparadas. Es un resultado de esta computadora, no una recomendaci?n universal. El modelo local puede permanecer en RAM o VRAM a cargo del runtime durante el uso de Instant2; el comportamiento depende de la configuraci?n del servidor y del hardware.
 

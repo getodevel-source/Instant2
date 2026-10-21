@@ -8,7 +8,9 @@ dos capas:
    corren). Cubren los errores que rompieron la compilacion una vez:
    la firma del Check, la semantica de su resultado y el uso de ";" como
    comentario dentro del [Code] (en Pascal ";" es separador de sentencia, no
-   un comentario, y rompe el parseo con "'BEGIN' expected").
+   un comentario, y rompe el parseo con "'BEGIN' expected"). Y cubren el
+   contrato nuevo: el instalador NO lleva pesos de modelo (los descarga la
+   app), pero SI sigue parando el daemon y el runtime de llama.cpp.
 2. Una compilacion real del script cuando ISCC esta disponible. Se saltea
    si no lo hay (en CI solo lo instala el job de release).
 """
@@ -52,64 +54,60 @@ def _section(name):
     return match.group(1) if match else ""
 
 
-class InstallerModelsTests(unittest.TestCase):
-    """T7: los modelos que el usuario ya tiene no se vuelven a copiar."""
+class InstallerPayloadTests(unittest.TestCase):
+    """El instalador no lleva pesos de modelo: los descarga la app."""
 
-    def test_the_models_entry_skips_the_files_that_are_already_there(self):
+    def test_the_files_section_has_no_models_entry(self):
         entry = _section("Files")
         models = [line for line in entry.splitlines()
                   if line.startswith("Source:") and "ModelDir" in line]
-        self.assertEqual(len(models), 1)
-        self.assertIn("Check: ShouldInstallModel", models[0])
+        self.assertEqual(models, [],
+                         "el instalador ya no copia pesos de modelo: %r"
+                         % models)
 
-    def test_the_check_looks_for_the_file_in_the_models_directory(self):
+    def test_the_script_never_mentions_the_model_directory(self):
+        # Ni la define ni la interpola: con la entrada presente y el
+        # directorio vacio, ISCC aborta con "No files found matching".
+        text = _script()
+        self.assertNotIn("{#ModelDir}", text)
+        self.assertNotIn("ModelDir", text)
+
+    def test_no_source_line_ships_a_model_payload(self):
+        for line in _section("Files").splitlines():
+            if line.startswith("Source:"):
+                self.assertNotIn("model", line.lower(),
+                                 "el instalador no debe copiar pesos: %r" % line)
+
+    def test_the_code_section_has_no_model_helpers(self):
         code = _section("Code")
-        self.assertIn("function ShouldInstallModel(", code)
-        # La funcion tiene que mirar el archivo que Setup esta procesando
-        # (CurrentFileName) y buscarlo en el directorio de modelos.
-        self.assertIn("CurrentFileName", code)
-        self.assertIn("ExtractFileName", code)
-        self.assertIn("FindModelFile(ExpandConstant(ModelsDir)", code)
+        for name in ("ReuseLegacyModels", "ShouldInstallModel", "FindModelFile"):
+            self.assertNotIn(name, code)
 
-    def test_the_check_returns_true_to_install(self):
-        # En Inno Setup, Check devuelve True para INSTALAR el archivo. Como
-        # aca el nombre dice "deberia instalarse", tiene que devolver la
-        # negacion de "ya esta en el destino". Sin el "not" el instalador
-        # saltea justo los modelos que faltan y copia los que ya estan.
+    def test_the_installer_still_stops_the_daemon(self):
         code = _section("Code")
-        self.assertIn("Result := not FindModelFile(", code)
+        prepare = re.search(
+            r"function PrepareToInstall\(.*?\nend;", code, re.S)
+        self.assertIsNotNone(prepare)
+        self.assertIn("'stop'", prepare.group(0))
 
-    def test_the_check_signature_has_no_parameters(self):
+    def test_the_installer_still_stops_the_llama_runtime(self):
+        code = _section("Code")
+        prepare = re.search(
+            r"function PrepareToInstall\(.*?\nend;", code, re.S)
+        self.assertIsNotNone(prepare)
+        body = prepare.group(0)
+        self.assertIn("stop-bundled-runtime.ps1", body)
+        self.assertIn("llm-runtime", body)
+
+    def test_no_function_signature_uses_a_type_that_does_not_exist(self):
         # La firma (Installer: TInstaller; WizardForm: TWizardForm; Param:
         # String) no compila: TInstaller no existe en el dialecto de Inno
-        # Setup 6 y el error es "Unknown type 'TInstaller'". Se mira solo la
-        # firma, porque el comentario explica justamente ese error.
+        # Setup 6 y el error es "Unknown type 'TInstaller'".
         code = _section("Code")
         signatures = re.findall(r"function\s+\w+\s*\(([^)]*)\)", code)
         self.assertTrue(signatures)
         for arguments in signatures:
             self.assertNotIn("TInstaller", arguments)
-        signature = re.search(r"function ShouldInstallModel\(([^)]*)\)",
-                               code)
-        self.assertIsNotNone(signature)
-        self.assertEqual(signature.group(1).strip(), "")
-
-    def test_the_legacy_models_are_moved_not_copied(self):
-        code = _section("Code")
-        self.assertIn("LegacyModelsDir = '{localappdata}\\instant\\models'",
-                      code)
-        self.assertIn("ModelsDir = '{localappdata}\\instant2\\models'", code)
-        # Mover (rename) es lo que evita copiar los 650 MB otra vez.
-        self.assertIn("RenameFile(Legacy, Current)", code)
-        # Y lo que ya esta en el destino no puede quedar huerfano.
-        self.assertIn("DelTree(LegacyItem, True, True, True)", code)
-
-    def test_the_reuse_runs_before_the_files_are_installed(self):
-        code = _section("Code")
-        prepare = re.search(
-            r"function PrepareToInstall\(.*?\nend;", code, re.S)
-        self.assertIsNotNone(prepare)
-        self.assertIn("ReuseLegacyModels();", prepare.group(0))
 
     def test_the_code_section_has_no_semicolon_comments(self):
         # En el [Code] el ";" no es un comentario: en Pascal es separador de
@@ -153,21 +151,17 @@ class InstallerCompilesTests(unittest.TestCase):
             self.skipTest("falta el icono %s" % ICON)
         with tempfile.TemporaryDirectory() as work:
             app_dir = os.path.join(work, "app")
-            model_dir = os.path.join(work, "models")
             out_dir = os.path.join(work, "out")
-            for path in (app_dir, model_dir, out_dir):
+            for path in (app_dir, out_dir):
                 os.makedirs(path)
             with open(os.path.join(app_dir, "Instant2.exe"), "w") as handle:
                 handle.write("stub")
-            for sub in ("parakeet-v3-int8", "silero-vad", "kokoro-onnx", "llm"):
-                os.makedirs(os.path.join(model_dir, sub))
-                with open(os.path.join(model_dir, sub, "model.bin"), "w") as h:
-                    h.write("stub")
+            # Sin directorio de modelos: el instalador no lleva pesos y el
+            # script no puede referenciar uno que no existe.
             result = subprocess.run(
                 [iscc,
                  "/DAppVersion=0.1.5",
                  "/DSourceDir=%s" % app_dir,
-                 "/DModelDir=%s" % model_dir,
                  "/DIconFile=%s" % ICON,
                  "/O%s" % out_dir,
                  ISS],

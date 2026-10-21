@@ -18,7 +18,7 @@ instalar la aplicación en un escritorio real.
 
 | Plataforma | Artefacto | Cobertura automatizada actual | Validación de escritorio pendiente |
 |---|---|---|---|
-| Windows | `Instant2-Setup.exe` y `Instant2.exe` | Suite Windows; smoke del portable congelado. El instalador se construye en CI. | Instalación limpia, actualización, rollback, firma si está activa y desinstalación. |
+| Windows | `Instant2-Setup.exe` y `Instant2.exe` | Suite Windows; smoke del portable congelado. El instalador se construye en CI y no lleva los pesos: la app los descarga en el primer uso. | Instalación limpia, actualización, rollback, firma si está activa y desinstalación. |
 | macOS | `instant2-macos`; `Instant2-macos.dmg` si la firma está activa | Suite macOS; smoke del binario congelado. | Permiso de micrófono, Accesibilidad, Gatekeeper/notarización si está activa, actualización y desinstalación. |
 | Linux X11 | `instant2-linux` | Suite Ubuntu; smoke del panel congelado en runner. | Instalación limpia, dependencias, X11, autostart, actualización y desinstalación. |
 | Arch/Omarchy Wayland | `instant2-linux` | Pruebas unitarias de selección de backend, dependencias y pegado. | Portal de atajos de Hyprland, aplicaciones nativas Wayland, XWayland y pegado real. |

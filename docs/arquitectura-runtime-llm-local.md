@@ -12,7 +12,7 @@ En **Ajustes > Más opciones > Voz y rendimiento > Uso de memoria** elegí:
 | Equilibrado (predeterminado) | Libera los modelos de voz y duerme el servicio de lenguaje tras 5 minutos sin actividad. | Uso general. |
 | Ahorrar memoria | Libera los modelos tras 90 segundos. | Equipos con poca memoria o muchas aplicaciones abiertas. |
 
-El próximo inicio del proceso de dictado aplica los cambios del perfil. El instalador completo de Windows incluye el modelo GGUF y el servicio local; el portable y los entornos de desarrollo pueden configurarlos por separado.
+El próximo inicio del proceso de dictado aplica los cambios del perfil. El instalador de Windows incluye el runtime de llama.cpp; el modelo GGUF y los demás componentes de voz los descarga la app en el primer uso. El portable y los entornos de desarrollo pueden configurarlos por separado.
 
 ## Quién administra cada modelo
 
