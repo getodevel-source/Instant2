@@ -69,18 +69,28 @@ Un actualizador que no verifica nada no puede fallar de forma honesta: el usuari
 
 ### Bloque 2 - Instalador sin recargar 4 GB
 
-- [ ] **T7** `installer/instant2.iss`: si existen modelos en el directorio legacy (`%LOCALAPPDATA%\instant\models`), se reutilizan en vez de volver a copiar los 4 GB; el bundle queda en `ignoreversion` solo para lo que no existe.
+- [x] **T7** `installer/instant2.iss`: si existen modelos en el directorio legacy (`%LOCALAPPDATA%\instant\models`), se reutilizan en vez de volver a copiar los 4 GB; el bundle queda en `ignoreversion` solo para lo que no existe.
 
 ### Bloque 3 - Python
 
-- [ ] **T8** `dictado/pyproject.toml`: techo en `requires-python` mientras la GUI dependa de `ctypes.wintypes.WINFUNCTYPE`; documentar el venv de desarrollo en 3.12.
+- [x] **T8** `dictado/pyproject.toml`: la GUI tiene que andar en 3.14 (no se topa `requires-python`: el tipo de callback de Windows se resuelve desde `ctypes`, que es donde vive); documentar el venv de desarrollo en 3.12.
 
 ### Bloque 4 - Higiene del repo
 
-- [ ] **T9** `.gitignore`: reglas para `*.gguf` y `dictado/bench/results/` (con las claves ciegas).
-- [ ] **T10** Tests: reescribir `dictado/tests/test_bench_llm_runtime.py` contra los 2 candidatos vigentes y recuperar el test del passthrough de `sampling_params` en `llm.py` (`min_p`, `repetition_penalty`).
-- [ ] **T11** `CHANGELOG.md`: `[Sin publicar]` describe los ~13 cambios pendientes; `AUDITORIA-LLM.md`, `BENCHMARK-MODELOS.md` y `VOICE-TO-PROMPT.md` a `docs/`.
-- [ ] **T12** Commits por unidad de trabajo para todo el trabajo de benchmark pendiente.
+- [x] **T9** `.gitignore`: reglas para `*.gguf` y `dictado/bench/results/` (con las claves ciegas).
+- [x] **T10** Tests: reescribir `dictado/tests/test_bench_llm_runtime.py` contra los 2 candidatos vigentes y recuperar el test del passthrough de `sampling_params` en `llm.py` (`min_p`, `repetition_penalty`).
+- [x] **T11** `CHANGELOG.md`: `[Sin publicar]` describe los ~13 cambios pendientes; `AUDITORIA-LLM.md`, `BENCHMARK-MODELOS.md` y `VOICE-TO-PROMPT.md` a `docs/`.
+- [x] **T12** Commits por unidad de trabajo para todo el trabajo de benchmark pendiente.
+
+### Bloque 5 - El CI verde en las tres plataformas
+
+- [x] **T13** `.gitattributes`: los finales de linea del arbol de trabajo quedan
+  fijados (LF para el texto, CRLF para `.bat`/`.cmd`/`.ps1`/`.iss`) y los
+  manifiestos congelados se recalculan contra los bytes canonicos.
+- [x] **T14** `_portable_path`: la ruta del repo gana al perfil del usuario y
+  el enmascarado se conserva para los archivos externos.
+- [x] **T15** `test_windows_callbacks`: lo que es de Windows se salta en
+  POSIX; la guarda que no se use `ctypes.wintypes` corre en los tres sistemas.
 
 ## Criterios de aceptacion
 
@@ -152,3 +162,208 @@ Desviaciones y limites de esta tanda:
 - T1-T6, T7, T8, T10 tocan 2 o mas archivos no triviales -> **writer delegado** (un writer por bloque).
 - T9, T11 (edicion de `.gitignore` y CHANGELOG) son mecanicas -> **inline**.
 - La verificacion de los writers corre en la suite completa mas el pyflakes, con lectura de vuelta del diff en el padre.
+
+### Tercera tanda (los cinco pendientes que quedaban)
+
+Cinco defectos verificados por el orquestador, en un writer delegado. Todos
+tienen commit propio y evidencia.
+
+- **El resultado de la actualizacion se reportaba para siempre** `987839a` `fix(update): expire a stale update result`: las notas (`pending-update.json`, `installer-result.json`, `helper-result.json`) se leian en cada arranque mientras existieran; si nunca se consumian, el toast rojo "Actualizacion sin aplicar" se repetia dias despues de una actualizacion que el usuario nunca pidio. Ahora cada nota lleva su fecha (campo `ts`, que el `.bat` tambien escribe) y **vence a las 24 horas**: una nota vieja se descarta en silencio y se borra; el caso legitimo (reabrir la app del dia siguiente) se sigue reportando con el log al lado. Una nota sin fecha usa la mtime del archivo. Evidencia: `python -m unittest tests.test_update_safety` -> Ran 60 tests, OK.
+- **El helper no reabria el panel en sus caminos de fallo** `3214646` `fix(update): reopen the panel when the helper fails`: `:hashfail`, `:locked` y `:copyfail` salian con `exit /b 1` y la app se quedaba cerrada (la cierro el padre a proposito: hay que reemplazar el binario). Ahora **todos** los caminos de salida reabren el panel y siguen saliendo con codigo 1 (el de exito, con 0 y con el "Listo" solo en ese caso). De paso, `start` con un ejecutable que no existe se queda esperando en esta maquina: ahora solo se reabre si el archivo esta, y si no queda dicho en el log. Evidencia: `python -m unittest tests.test_update_safety` -> Ran 60 tests, OK (los tests lanzan el `.bat` de verdad y comprueban que el panel falso se abrio).
+- **El instalador volvia a copiar los 4 GB del bundle** `74c5811` `fix(installer): reuse the models the user already has`: `PrepareToInstall` mueve (rename, sin copiar) los modelos del directorio legacy `%LOCALAPPDATA%\instant\models` al de Instant2 y borra el duplicado para que la copia vieja no quede huerfana; la entrada de modelos lleva `Check: ModelAlreadyInstalled`, que Setup llama una vez por archivo y saltea los que ya estan en el destino (una copia incompleta se completa sin recopiarla). No se tocan el AppId, el mecanismo de AppVersion, `CloseApplications`, `RestartApplications`, `PrivilegesRequired`, `OutputBaseFilename` ni la entrada de `[Files]` de la app. Inno Setup no tiene cobertura automatica en este repo: lo unico verificable sin compilar el instalador es el texto del script (guarda estatica en `dictado/tests/test_installer_script.py`). Evidencia: `python -m unittest tests.test_installer_script` -> Ran 4 tests, OK.
+- **La instalacion silenciosa no volvia a abrir la app** `bbd628a` `fix(installer): relaunch Instant2 after a silent install`: la entrada de `[Run]` tenia `skipifsilent`, asi que la actualizacion desde la app (que instala en silencio) dejaba al usuario con la app cerrada y sin ver el resultado. Ahora la instalacion silenciosa tambien abre la app; la instalacion interactiva no cambia (la casilla de la pagina final sigue mandando). Evidencia: `python -m unittest tests.test_installer_script` -> Ran 6 tests, OK.
+- **La GUI no arrancaba con Python 3.14** `2b750c6` `fix(gui): start the panel on Python 3.14`: el tipo de callback de Windows se tomaba de `ctypes.wintypes`, donde ese nombre no existe (ni en 3.12 ni en 3.14) - el log de la app instalada 0.1.0 lo prueba: `AttributeError: module 'ctypes.wintypes' has no attribute 'WINFUNCTYPE'`. El tipo vive en `ctypes`: ahora se resuelve en un solo lugar (`gui_lifecycle.winfunctype`), con un error claro si el interprete no lo trae, y lo usan el panel y el atajo de lectura. `requires-python` sigue sin techo: 3.14 anda. Evidencia: `python -m unittest tests.test_windows_callbacks` -> Ran 4 tests, OK (con el codigo anterior fallan: 1 fallo + 1 error) y smoke del panel con `QT_QPA_PLATFORM=offscreen`: "panel abierto (setup)" en 3.14.2 y en 3.12.12.
+- **Venv de desarrollo documentado** `d80cafe` `docs(dev): document the 3.12 development environment`: el README de `dictado/` explica que el interprete de desarrollo es CPython 3.12 (el de CI), deja la ruta del 3.12.12 de la maquina y del venv equivalente al de CI, con los comandos de la suite y del pyflakes; el README de la raiz enlaza a esa seccion.
+
+Checks de la tercera tanda: `cd dictado && python -m unittest discover -s tests` -> Ran 575 tests, OK (skipped=6) en 3.14.2 (sistema) y en 3.12.12 (venv de CI); `python -m pyflakes dictado/src/instant2_app/*.py` -> 38 archivos, 0 hallazgos (exit 0 en los dos interpretes); `python -m instant2_app --help` -> exit 0 en los dos interpretes.
+
+Desviaciones y limites de esta tanda:
+
+- **Inno Setup no se pudo compilar ni correr en esta tanda**: el `[Code]` nuevo (el rename del directorio legacy, el borrado del duplicado y el `Check` por archivo) quedo verificado por lectura del script y por la guarda estatica. Esto lo corrigio la quinta tanda: habia Inno Setup 6.7.3 instalado en la maquina (en `%LOCALAPPDATA%\Programs\Inno Setup 6`, no en `Program Files`) y el script no compilaba.
+- **El `Check` de los modelos decide por nombre de archivo**: Setup llama a la funcion una vez por archivo del bundle y pasa el nombre con `CurrentFilename`; el archivo se busca por nombre en todo el directorio de modelos. Si un archivo con el mismo nombre estuviera en otro subdirectorio, se lo daria por instalado (la app verifica los pesos por hash y los vuelve a bajar si no verifican).
+- **El duplicado del directorio legacy se borra**: cuando `%LOCALAPPDATA%\instant2\models` ya tiene el modelo, la copia del legacy es redundante (la app solo acepta los pesos fijados por hash) y se elimina para que no quede huerfana. Queda escrito en el log de Inno (`/LOG=`).
+- **La nota vencida se descarta a las 24 horas**: una ventana mas corta (una hora) reportaria menos, pero reabrir la app a la manana siguiente tiene que seguir mostrando el fallo de la actualizacion de la noche.
+- **El `.bat` tiene que quedar con finales de linea CRLF en el arbol de trabajo**: con LF, `cmd` deja de encontrar la etiqueta `:say` y los mensajes no se escriben (passo en esta tanda y quedo anotado para el que edite el archivo).
+
+### Cuarta tanda (la higiene del repo: T9-T12)
+
+El trabajo de benchmark que estaba pendiente en el arbol de trabajo se landeo
+por unidades de trabajo revisables. Nada del trabajo de actualizacion ni del
+instalador se toco en esta tanda.
+
+- **Los artefactos generados dejan de ser versionables** `55b621c` `chore(repo): ignore the gguf weights and the generated benchmark results`: el `.gitignore` gana `*.gguf` y `dictado/bench/results/`. Motivo: el `.gguf` de la raiz son 1.212.103.520 bytes (1,13 GiB) y esta obsoleto (`bench_llm_runtime.py` apunta a `Ternary-Bonsai-2-9B-Q2_0.gguf`, no al 4B); y `dictado/bench/results/` son 680 archivos / 87.471.302 bytes de salida generada que ademas contiene las claves ciegas (`blind-package-final/blinded_key_v2p.json`, `blinded_key.ALL.json`, `blinded_review.ALL.jsonl`). El `.gguf` **no** se borro del disco: decidir que hacer con la descarga del usuario es del maintainer. Evidencia: `git check-ignore -v` marca las dos rutas y `git ls-files` no muestra ningun `.gguf` ni nada bajo `dictado/bench/results/`.
+- **El passthrough de sampling del LLM acepta los seis parametros** `8c90a70` `fix(llm): forward min_p and repetition_penalty to the benchmark sampling`: `min_p` y `repetition_penalty` se ignoraban en silencio, asi que el body de la request no coincidia con los flags del servidor (`--min-p`, `--repeat-penalty`) y la comparacion pareada no tenia base. La produccion no cambia (llama sin `sampling_params` y sigue mandando solo el cuerpo determinista). Evidencia: `python -m unittest tests.test_llm_sampling_params` -> Ran 3 tests, OK.
+- **Los corpus congelados se versionan con sus hashes** `ea6eeff` `feat(bench): freeze the correction and V2P corpora with their hashes`: `v2p_cases.json` (72 casos), `v2p_rubric.json`, `v2p_references.sha256`, `llm_cases_expanded_2026-10-16.json` (+ `.sha256`) y `correction-eval-prereg-2026-10-16.json`. Los hashes del manifiesto coinciden con los archivos: `llm_cases_expanded` `6533d230...`, `v2p_cases.json` `7d81ef20...`, `v2p_rubric.json` `6fda4286...`.
+- **El harness V2P, el empaquetado ciego y el analisis pareado** `4d7bcfd` `feat(bench): add the V2P harness, the blind packaging and the paired analysis`: `bench_v2p.py`, `prepare_blind_v2p.py`, `aggregate_v2p.py`, `analyze_correction_runs.py` y sus tres pruebas. Evidencia: `python -m unittest tests.test_bench_v2p tests.test_aggregate_v2p tests.test_prepare_blind_v2p` -> OK.
+- **El benchmark de correccion gana metricas y baja a dos candidatos** `9a5c249` `feat(bench): extend the correction benchmark with WER, invariants and two models`: WER normalizado, invariantes criticos, ediciones lexicas dañinas, corpus y subconjunto de casos explicitos, y `CANDIDATES` reducido a `qwen3.5-4b-q4` y `bonsai2-9b-q2`. La prueba vieja de runtime fijaba los cinco candidatos que este commit elimina, asi que se retira en este commit y su reemplazo llega en el siguiente.
+- **La cobertura del runtime vuelve** `9791c4e` `test(bench): cover the two runtime candidates and the sampling profiles`: `dictado/tests/test_bench_llm_runtime.py` reescrito contra los dos candidatos y el comportamiento actual (flags de GPU/CPU, los dos perfiles de sampling, `_sha256_file`, `_process_memory`, `_wait_for_server` y `run_candidate`, con su reporte de runtime). Evidencia: `python -m unittest tests.test_bench_llm_runtime` -> Ran 14 tests, OK.
+- **El CHANGELOG describe el trabajo pendiente** `896f736` `docs(changelog): describe the pending benchmark work`: la seccion `[Sin publicar]` pasa de una linea a las cuatro subsections (herramientas, validacion, correccion y documentacion).
+- **Los tres documentos largos pasan a `docs/`** `5824891` `docs: move the LLM audit, the model benchmark and the V2P notes to docs/`: `AUDITORIA-LLM.md`, `BENCHMARK-MODELOS.md` y `VOICE-TO-PROMPT.md` salen de la raiz (donde ya vivian 14 documentos largos) y las referencias cruzadas pasan a la forma `docs/<archivo>.md`. `README.md` y `dictado/README.md` no los mencionaban, asi que no habia enlaces que corregir.
+
+Checks de la cuarta tanda: `cd dictado && python -m unittest discover -s tests` -> Ran 597 tests, OK (skipped=6) en 3.14.2 (sistema) y en 3.12.12 (venv de CI); `python -m pyflakes dictado/src/instant2_app/*.py` -> 38 archivos, 0 hallazgos (exit 0 en los dos interpretes); `python -m instant2_app --help` -> exit 0. Los 597 tests son los 580 de la tanda anterior mas 14 de la prueba de runtime reescrita y 3 de la del passthrough de sampling; ningun test nuevo queda saltado.
+
+Cada commit se verifico por separado (worktree temporal en `C:\PROYECTOS\_wt-verify`, checkout commit por commit): los 8 commits dan `Ran N tests, OK (skipped=7)`. El `skipped=7` de esa corrida es el test del icono (`falta el icono ...\dictado\build\instant2.ico`), que en el worktree no existe porque `dictado/build/` no esta versionado; en el checkout real son 6, los mismos de antes.
+
+Desviaciones y limites de esta tanda:
+
+- **La prueba del passthrough de sampling va en un archivo nuevo**: `dictado/tests/test_llm_sampling_params.py` y no dentro de `test_bench_llm.py`. Motivo: `test_bench_llm.py` (reescrito por el maintainer) depende del corpus congelado y de `analyze_correction_runs`, asi que el cambio de produccion en `llm.py` no se puede revisar en un commit separado sin partir ese archivo.
+- **El harness de V2P no se toco**: no se cambio ni una linea de `bench_v2p.py`, `prepare_blind_v2p.py`, `aggregate_v2p.py` ni `analyze_correction_runs.py`. Solo se versionaron.
+- **El destino del `.gguf` de 1,13 GiB queda para el maintainer**: el archivo sigue en la raiz del checkout (`TempInstant2-benchmarkrevD-modelsTernary-Bonsai-2-4B-Q2_0.gguf`, 1.212.103.520 bytes) y ahora esta ignorado. Borrarlo, moverlo a una carpeta de modelos o dejar de descargarlo son decisiones de producto.
+
+### Hallazgos de la cuarta tanda (no se cambiaron)
+
+- **`_portable_path` de `bench_v2p.py` da prioridad al perfil de usuario sobre la ruta del repo**: el chequeo de `%LOCALAPPDATA%`/`%TEMP%`/`%USERPROFILE%` va **antes** del `os.path.relpath` al repo (`dictado/bench/bench_v2p.py:1638-1650`). Si el repo esta dentro del perfil de usuario (por ejemplo un worktree en `C:\Users\...\AppData\Local\Temp\...`), una ruta interna del repo se reporta como `%LOCALAPPDATA%\...` en vez de `dictado/bench/v2p_cases.json`, y la prueba `test_portable_path_hides_the_user_profile` de `tests/test_bench_v2p.py` falla. En el checkout real (`C:\PROYECTOS\Instant2`) la prueba pasa. No se cambio el comportamiento del harness: la precedencia es una decision de diseno (un artefacto compartido no debe filtrar la ruta del usuario), pero la prueba asume que el repo no vive bajo el perfil. Se deja anotado para quien lo mantenga. **Resuelto en la sexta tanda (T14)**: la precedencia se invirtió porque una ruta dentro del repo no es una fuga del perfil, y el enmascarado se conserva para lo que es de verdad un archivo del usuario.
+- **El bundle offline lleva 3 GB de pesos del LLM**: `installer/instant2.iss` copia 4.010.135.264 bytes, de los que ~3 GB son el LLM opcional. Sacarlo del bundle cambia el producto (el instalador deja de ser offline para el LLM) y por lo tanto el release: estaba declarado fuera de alcance en este documento y sigue pendiente de una propuesta aparte.
+- **La lista `CANDIDATES` del runtime ya no cubre el 4B de Bonsai**: `bench_llm_runtime.py` apunta a `Ternary-Bonsai-2-9B-Q2_0.gguf`, pero el `.gguf` descargado en la maquina es el 4B (`Ternary-Bonsai-2-4B-Q2_0.gguf`). El 4B se midio en las corridas V2P (`bonsai2-4b-q2-0-revC`) con otro arnes, no con el runtime de correccion.
+
+
+### Quinta tanda (el script de Inno Setup no compilaba)
+
+El `.iss` que la tercera tanda dejo escrito **no compilaba**. Nadie lo noto
+porque el repo no tiene cobertura de Inno Setup y la maquina del maintainer
+tenia Inno Setup 6.7.3 instalado en `%LOCALAPPDATA%\Programs\Inno Setup 6`
+(ruta por usuario, no `Program Files`, que es donde se lo busca).
+
+- **El script de Inno Setup no compilaba** `fc2f600` `fix(installer): make the Inno Setup script compiles and install the models`: tres fallos en el `[Code]`.
+  1. La firma del `Check` era `(Installer: TInstaller; WizardForm: TWizardForm; Param: String)`. `TInstaller` **no existe** en el dialecto de Inno Setup 6 y el compilador para con `Unknown type 'TInstaller'`. La firma valida es la de sin parametros, como en los ejemplos oficiales de Inno 6.
+  2. Los comentarios de la seccion usaban `;`. En Pascal `;` es separador de sentencia, **no** un comentario, y el parser aborta con `'BEGIN' expected`. Ahora van con `//`.
+  3. El `Check` devolvia "ya esta instalado" **sin invertir**. En Inno Setup, `Check` devuelve `True` para **instalar** el archivo: el instalador saltaba justo los modelos que faltaban y volvia a copiar los que ya estaban. Con 4 GB de bundle, una maquina nueva se quedaba sin modelos y una maquina con los modelos pagaba la copia entera otra vez.
+  La prueba del instalador ahora **compila el script de verdad** cuando hay ISCC, y fija las tres guardas que habrian atrapado esto: la firma sin parametros, la semantica invertida y la prohibicion de comentarios `;` dentro del `[Code]`.
+
+Verificacion (Inno Setup 6.7.3, en la maquina del maintainer):
+
+- `ISCC.exe` sobre `installer/instant2.iss` con `AppVersion`, `SourceDir`, `ModelDir` e `IconFile` de prueba: **compila**, exit 0.
+- Instalacion real de prueba con un `.iss` derivado (los paths de modelos apuntando a un temporal, con un guard que aborta si queda alguna ruta real) y los **cuatro escenarios**:
+
+| escenario | resultado |
+|---|---|
+| sin modelos en ningun lado | se copia el bundle completo |
+| solo los del slug legacy | los legacy se **mueven** (0 bytes copiados) y solo se copia lo que faltaba (kokoro y LLM) |
+| solo los del slug nuevo | no se copia nada |
+| los dos | se borra el duplicado legacy, no se copia nada, no queda huerfano |
+
+- El orden es el correcto: `PrepareToInstall` mueve los modelos **antes** de que Setup evalue el `Check` por archivo, asi que el `Check` ya ve el destino y saltea lo que se acabo de mover.
+
+Limites y accidents de esta tanda:
+
+- **La primera ronda de instalaciones de prueba escribio en la maquina real**: el `DestDir` del `[Files]` de modelos es fijo (`{localappdata}\instant2\models`) y el probe solo aislaba las constantes de Pascal. Se crearon 7 archivos dummy en `%LOCALAPPDATA%\instant2\models` (que antes no existia) y **se borraron a mano**; el estado original quedo restaurado (`%LOCALAPPDATA%\instant\models` intacto, 640 MB, y `%LOCALAPPDATA%\instant2\models` otra vez inexistente). Los probes siguientes llevan un guard que aborta si el `.iss` derivado menciona una ruta real.
+- **El bundle offline sigue llevando 3 GB de pesos del LLM**: con el fix, una actualizacion sobre una maquina con los modelos del slug legacy copia 0 bytes de ASR, pero sigue copiando los ~3,3 GB de `kokoro-onnx` y del `.gguf` del LLM. Sacarlos cambia el producto y el release: sigue declarado fuera de alcance.
+
+### Sexta tanda (el CI verde en las tres plataformas)
+
+El CI de GitHub (`python -m unittest discover -s tests` sobre windows, ubuntu
+y macos) estaba **rojo en Linux y macOS**: 4 fallos y 31 errores. En Windows
+todo estaba verde. La causa no era el codigo: era que **el arbol de trabajo
+tenia finales de linea distintos en cada sistema**.
+
+#### T13 `.gitattributes`: los finales de linea del repositorio quedan fijados
+
+- **Causa**: `core.autocrlf=true` en Windows deja el arbol de trabajo con CRLF
+  y en Linux y macOS con LF. Los hashes congelados se calcularon contra los
+  bytes del archivo **como estaba en el arbol de trabajo de Windows** (CRLF),
+  asi que en Linux y macOS el SHA256 del corpus daba otro: los 31
+  `test_prepare_blind_v2p` reventaban con `RuntimeError: el manifiesto
+  congelado no coincide: corpus_file_sha256 ...` y
+  `test_bench_v2p.FrozenWiringTests.test_frozen_manifest_matches_the_corpus_and_rubric`
+  fallaba con `Lists differ: ['corpus_file_sha256 cambio (7d81ef20...)']`.
+- **Fix**: `.gitattributes` nuevo con `* text=auto eol=lf` y las excepciones
+  que hacen falta (`*.bat`, `*.cmd`, `*.ps1` y `*.iss` con `eol=crlf`;
+  `*.sh` con `eol=lf`; `*.png`, `*.ttf` y `*.gguf` como `binary`). Con
+  `git add --renormalize .` el indice y el arbol de trabajo quedan de acuerdo
+  con las reglas.
+- **Por que `*.bat` y `*.iss` se quedan con CRLF**: con LF, `cmd` deja de
+  encontrar la etiqueta `:say` de `scripts/instant2-update.bat` y los mensajes
+  del helper dejan de escribirse **sin que nada lo avise**. Inno Setup
+  tambien. Los `.sh` al reves: `bash` no tolera CRLF.
+- **Los binarios no se tocan**: el SHA256 de `Manrope.ttf` y de las nueve
+  capturas de `docs/screenshots/` es el mismo antes y despues de la
+  renormalizacion (comparado byte a byte).
+
+Hashes que cambiaron (los unicos): el manifiesto se recalculo con
+`python bench/bench_v2p.py --freeze` **sobre el arbol de trabajo ya en LF**,
+que es el canonico del repositorio:
+
+| clave | antes (CRLF del arbol de trabajo de Windows) | despues (LF canonico) |
+|---|---|---|
+| `corpus_file_sha256` | `7d81ef200386766e55a8e43882d319c71dd56eb2c03ce0ff51ab1a64cddf4d99` | `b1e3a5fa6984e3fe887a5d9d8c2d695440e0a7653bdbeeeaec5442b7329c4781` |
+| `rubric_sha256` | `6fda42869c6cddfd32330bb3e46a058aa207de5ac6d0f36559c08564f00cf750` | `c35147c6c39d16fedffbe3ee0c34259ff0d17bf7dfd440d1f6ec4695f3f172cc` |
+| `references_sha256` | `352a1931c46db4bf134a42487fb977065b112ae2698e5c35fa675c6d0ec194db` | sin cambio (se calcula sobre el JSON parseado) |
+| `prescoring_sha256` | `43f7dd03ac206b92db922e7825a3f900cf9574a0d58a52ce1a7711126ed12bcc` | sin cambio (idem) |
+| `case_count` | `72` | sin cambio |
+
+`dictado/bench/llm_cases_expanded_2026-10-16.sha256` y el `corpus_sha256` de
+`dictado/bench/correction-eval-prereg-2026-10-16.json` **no cambiaron**: los
+dos ya traian el hash canonico (`6533d23077eb9ae18f3548660fc95502bfc04c368cde14af67f3e46ea9ebfc69`),
+porque ese corpus se congelo en una maquina con LF. Ahora una prueba nueva
+comprueba que los dos coinciden con los bytes canonicos del corpus.
+
+- **La prueba nueva compara los bytes canonicos, no los del disco**:
+  `test_bench_v2p.FrozenWiringTests.test_the_frozen_manifest_matches_the_canonical_bytes`
+  normaliza CRLF a LF antes de hashear, asi que el manifiesto se puede
+  verificar aunque el archivo llegue al disco con otra representacion. El
+  hash que usa el harness (`corpus_digests`/`rubric_digest`) sigue siendo el
+  de los bytes tal cual: no se toco.
+
+#### T14 `_portable_path`: el repo gana al perfil de usuario
+
+- **Causa**: `_portable_path` (`dictado/bench/bench_v2p.py:1628`) chequeaba
+  `%LOCALAPPDATA%`, `%TEMP%` y `%USERPROFILE%` **antes** del
+  `os.path.relpath` al repo. El CI hace checkout en `/home/runner/work/...`,
+  o sea dentro del home del runner: una ruta interna del repo se reportaba
+  como `%HOME%/work/Instant2/Instant2/dictado/bench/v2p_cases.json` en vez de
+  `dictado/bench/v2p_cases.json`.
+- **Por que la precedencia estaba al reves**: la intencion del chequeo es que
+  un artefacto compartido no filtre la ruta del usuario, pero una ruta
+  **dentro** del repositorio no es una fuga del perfil: es el repositorio. Se
+  invirtio la precedencia (repo primero, perfil despues) y se le exigio a la
+  ruta ser **absoluta** para entrar en la rama del repo: una ruta relativa se
+  resuelve contra el directorio actual y pareceria interna por accidente (en
+  POSIX, `C:\Users\...` no es absoluta y `relpath` la metia dentro del repo).
+- **El enmascarado del perfil se conserva** para lo que de verdad es del
+  usuario: un archivo externo bajo el home sigue saliendo como
+  `%HOME%/...`/`%USERPROFILE%/...` y uno fuera del home como su ultimo
+  componente.
+- Pruebas nuevas: `test_the_repository_wins_over_the_user_profile` (checkout
+  **dentro** del home) y `test_a_file_outside_the_repository_keeps_its_home_masked`
+  (checkout **fuera** del home).
+
+#### T15 `test_windows_callbacks`: lo que es de Windows, se salta en POSIX
+
+`test_the_callback_type_comes_from_ctypes` afirmaba que `ctypes.WINFUNCTYPE`
+existe: en Linux y macOS no existe (vive en `ctypes` solo en Windows), asi que
+la prueba fallaba ahi. Ahora lleva `@unittest.skipUnless(os.name == "nt", ...)`,
+igual que `test_user32_resolves_the_callback_type_on_this_interpreter`. Lo que
+**no** es de Windows se sigue ejecutando en los tres sistemas: que ningun
+modulo del paquete tome el tipo de callback de `ctypes.wintypes`, y que el
+helper diga con un mensaje claro cuando el interprete no trae el tipo.
+
+Checks de la sexta tanda: `cd dictado && python -m unittest discover -s tests`
+-> Ran 610 tests, OK (skipped=6) en 3.14.2 (sistema) y en 3.12.12 (venv de
+CI); `python -m pyflakes dictado/src/instant2_app/*.py` -> 38 archivos, 0
+hallazgos (exit 0 en los dos interpretes); `python -m instant2_app --help` ->
+exit 0.
+
+Limites de esta tanda:
+
+- **Linux y macOS no se pudieron correr en esta maquina**: no hay WSL con
+  distribucion instalada ni Docker. El comportamiento POSIX de
+  `_portable_path` se simulo swapping `os.path` por `posixpath` y `os.sep` por
+  `"/"` (con el layout `/home/runner/work/Instant2/Instant2` del CI): el
+  archivo del repo sale `dictado/bench/v2p_cases.json`, el archivo externo
+  bajo el home `%USERPROFILE%/models/qwen.gguf` y el de fuera del home
+  `qwen.gguf`. Lo que va a comprobar el CI es lo mismo, sobre el checkout
+  real de cada runner.
+- **El hash crudo del harness sigue dependiendo de como esta el archivo**:
+  `corpus_digests()` y `rubric_digest()` hashean los bytes tal cual. Con
+  `.gitattributes` el archivo llega siempre con LF, asi que coinciden; si
+  alguien materialize el archivo a mano con CRLF, la comparacion cruda
+  (`verify_manifest`) falla y la canonica pasa. No se cambio el harness
+  porque el contrato del manifiesto es "los bytes del archivo".
+- **`--freeze` escribe el manifiesto con los finales de linea de la
+  plataforma**: `write_manifest` abre el archivo con el modo texto de Python,
+  asi que en Windows deja CRLF. Git lo normaliza a LF al commitear (por
+  `.gitattributes`), asi que el blob commiteado es siempre el mismo; el
+  archivo en disco queda con CRLF hasta el proximo checkout.
+- **El `.bat` y el `.iss` no se tocaron**: solo cambia como se materializan
+  (CRLF en el arbol de trabajo, que es como estaban antes).
+

@@ -79,4 +79,4 @@ En **Ajustes → Actualizaciones**, podés recibir un aviso antes de descargar, 
 
 ## Más información
 
-[Instalación y uso detallados](dictado/README.md) · [Precisión y motores](docs/precision.md) · [Historial de versiones](CHANGELOG.md) · [Licencia MIT](LICENSE)
+[Instalación y uso detallados](dictado/README.md) · [Precisión y motores](docs/precision.md) · [Entorno de desarrollo](dictado/README.md#desarrollo) · [Historial de versiones](CHANGELOG.md) · [Licencia MIT](LICENSE)

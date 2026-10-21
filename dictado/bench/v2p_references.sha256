@@ -1,0 +1,7 @@
+# Referencias congeladas de Voice-to-Prompt: NO editar despues de correr
+# el modelo. Regenerar solo si el corpus cambia a proposito (--freeze).
+references_sha256 352a1931c46db4bf134a42487fb977065b112ae2698e5c35fa675c6d0ec194db
+corpus_file_sha256 b1e3a5fa6984e3fe887a5d9d8c2d695440e0a7653bdbeeeaec5442b7329c4781
+rubric_sha256 c35147c6c39d16fedffbe3ee0c34259ff0d17bf7dfd440d1f6ec4695f3f172cc
+prescoring_sha256 43f7dd03ac206b92db922e7825a3f900cf9574a0d58a52ce1a7711126ed12bcc
+case_count 72

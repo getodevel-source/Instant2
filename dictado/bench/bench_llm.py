@@ -7,6 +7,7 @@ Example:
     python bench/bench_llm.py --url http://127.0.0.1:11434 --model qwen3.5:2b-q4_K_M
 """
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -39,6 +40,20 @@ def _char_error_rate(reference, hypothesis):
         previous = current
     return previous[-1] / len(ref)
 
+def _word_error_rate(reference, hypothesis):
+    """Levenshtein WER over accent-insensitive, punctuation-free word tokens."""
+    ref, hyp = llm._words(reference), llm._words(hypothesis)
+    if not ref:
+        return 0.0 if not hyp else 1.0
+    previous = list(range(len(hyp) + 1))
+    for i, token in enumerate(ref, start=1):
+        current = [i]
+        for j, other in enumerate(hyp, start=1):
+            current.append(min(previous[j] + 1, current[j - 1] + 1,
+                               previous[j - 1] + (0 if token == other else 1)))
+        previous = current
+    return previous[-1] / len(ref)
+
 
 def _contains_anchor(text, anchor):
     # Keep accents: "prioriza" and "priorizá" encode different persons.
@@ -48,9 +63,65 @@ def _contains_anchor(text, anchor):
     return phrase in words
 
 
-def load_cases():
-    with open(CASES, encoding="utf-8") as handle:
+def load_cases(path=CASES):
+    with open(path, encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def _mean(values):
+    values = list(values)
+    return statistics.mean(values) if values else 0.0
+
+
+def _aggregate_metrics(cases):
+    baseline_cer = _mean(item["baseline_cer"] for item in cases)
+    mean_cer = _mean(item["cer"] for item in cases)
+    baseline_wer = _mean(item["baseline_wer"] for item in cases)
+    mean_wer = _mean(item["wer"] for item in cases)
+    no_change_cases = [item for item in cases if item.get("no_change")]
+    content_cases = [item for item in cases if item["baseline_content_error"]]
+    baseline_content_wer = _mean(
+        item["baseline_wer"] for item in content_cases)
+    accepted_content_wer = _mean(item["wer"] for item in content_cases)
+    return {
+        "case_count": len(cases),
+        "exact_match_rate": _mean(item["exact_match"] for item in cases),
+        "baseline_exact_match_rate": _mean(
+            item["baseline_exact_match"] for item in cases),
+        "content_exact_match_rate": _mean(
+            item["content_exact_match"] for item in cases),
+        "baseline_content_exact_match_rate": _mean(
+            item["baseline_content_exact_match"] for item in cases),
+        "word_sequence_changed_rate": _mean(
+            item["word_sequence_changed"] for item in cases),
+        "verifier_rejections": sum(
+            not item["meaning_check_passed"] for item in cases),
+        "verifier_rejection_rate": _mean(
+            not item["meaning_check_passed"] for item in cases),
+        "critical_invariant_violations": sum(
+            len(item["missing"]) for item in cases),
+        "cases_with_critical_invariant_violations": sum(
+            bool(item["missing"]) for item in cases),
+        "harmful_lexical_edits": sum(item["harmful_lexical_edit"] for item in cases),
+        "no_change_lexical_edits": sum(
+            item["no_change_lexical_edit"] for item in no_change_cases),
+        "no_change_case_count": len(no_change_cases),
+        "baseline_character_error_rate": baseline_cer,
+        "mean_character_error_rate": mean_cer,
+        "character_error_rate_reduction": baseline_cer - mean_cer,
+        "baseline_word_error_rate": baseline_wer,
+        "mean_word_error_rate": mean_wer,
+        "word_error_rate_reduction": baseline_wer - mean_wer,
+        "baseline_content_error_case_count": len(content_cases),
+        "baseline_content_mean_wer": baseline_content_wer,
+        "accepted_content_mean_wer": accepted_content_wer,
+        "baseline_content_wer_reduction": (
+            baseline_content_wer - accepted_content_wer),
+        "baseline_content_token_exact_match_rate": _mean(
+            item["baseline_content_exact_match"] for item in content_cases),
+        "accepted_content_token_exact_match_rate": _mean(
+            item["content_exact_match"] for item in content_cases),
+    }
 
 
 def run_normal(cases, cfg, timeout, sampling=None):
@@ -65,31 +136,46 @@ def run_normal(cases, cfg, timeout, sampling=None):
         meaning_check = llm.candidate_preserves_meaning(
             local, candidate, cfg["llm_url"], timeout=2.0, cfg=cfg)
         elapsed = time.perf_counter() - started
-        # Simula la ruta de producción sin cargar perfiles/glosarios personales:
-        # el LLM puede corregir palabras, pero cambios léxicos o de tildes
-        # requieren una confirmación conservadora del mismo modelo.
         accepted = candidate if meaning_check else local
         must_keep = case.get("must_keep", [])
         preserved = [anchor for anchor in must_keep
                      if _contains_anchor(accepted, anchor)]
+        baseline_cer = _char_error_rate(case["expected"], case["input"])
+        cer = _char_error_rate(case["expected"], accepted)
+        baseline_wer = _word_error_rate(case["expected"], case["input"])
+        wer = _word_error_rate(case["expected"], accepted)
+        expected_words = llm._words(case["expected"])
+        input_words = llm._words(case["input"])
+        accepted_words = llm._words(accepted)
+        accepted_word_sequence_changed = accepted_words != input_words
         latencies.append(elapsed)
         results.append({
             "id": case["id"],
             "candidate": candidate,
             "accepted": accepted,
             "meaning_check_passed": meaning_check,
-            "word_sequence_changed": (
-                llm._words(accepted) != llm._words(local)),
+            "word_sequence_changed": accepted_words != llm._words(local),
             "candidate_word_sequence_changed": (
                 llm._words(candidate) != llm._words(local)),
+            "accepted_word_sequence_changed_from_input": accepted_word_sequence_changed,
             "must_keep": must_keep,
             "preserved": preserved,
             "missing": [anchor for anchor in must_keep
                         if anchor not in preserved],
+            "no_change": bool(case.get("no_change")),
+            "no_change_lexical_edit": (
+                bool(case.get("no_change")) and accepted_word_sequence_changed),
+            "harmful_lexical_edit": (
+                accepted_word_sequence_changed and cer > baseline_cer),
             "exact_match": _canonical(accepted) == _canonical(case["expected"]),
             "baseline_exact_match": _canonical(case["input"]) == _canonical(case["expected"]),
-            "baseline_cer": _char_error_rate(case["expected"], case["input"]),
-            "cer": _char_error_rate(case["expected"], accepted),
+            "content_exact_match": accepted_words == expected_words,
+            "baseline_content_exact_match": input_words == expected_words,
+            "baseline_content_error": baseline_wer > 0,
+            "baseline_cer": baseline_cer,
+            "cer": cer,
+            "baseline_wer": baseline_wer,
+            "wer": wer,
             "latency_seconds": elapsed,
         })
     return results, latencies
@@ -115,61 +201,97 @@ def main():
     parser.add_argument("--url", required=True, help="OpenAI-compatible base URL")
     parser.add_argument("--model", required=True, help="Exact model name on the server")
     parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--corpus", default=CASES,
+                        help="Explicit JSON corpus path (default: built-in 20-case corpus)")
     parser.add_argument(
-        "--sampling-profile", choices=("production", "qwen-instruct"),
+        "--sampling-profile",
+        choices=("production", "matched-deterministic", "qwen-instruct",
+                 "bonsai-nonthinking"),
         default="production",
-        help=("production usa temperatura 0; qwen-instruct prueba las "
-              "recomendaciones generales de Qwen3.5 sin cambiar la app"))
+        help=("matched-deterministic: temp=0, top_p=1, top_k=0, min_p=0, "
+              "presence_penalty=0, repetition_penalty=1; bonsai-nonthinking: "
+              "official non-thinking values, with thinking disabled"))
+    parser.add_argument("--case-ids", help="Comma-separated case IDs to run (optional subset)")
     parser.add_argument("--report", help="Optional local JSON report with synthetic case outputs")
     args = parser.parse_args()
     cfg = {"llm_url": args.url, "llm_model": args.model}
-    cases = load_cases()
-    sampling = ({"temperature": 0.7, "top_p": 0.8, "top_k": 20,
-                 "presence_penalty": 1.5}
-                if args.sampling_profile == "qwen-instruct" else None)
+    cases = load_cases(args.corpus)
+    all_case_ids = {case["id"] for case in cases["normal"]}
+    if args.case_ids:
+        requested_ids = {value.strip() for value in args.case_ids.split(",") if value.strip()}
+        unknown_ids = requested_ids - all_case_ids
+        if unknown_ids:
+            parser.error("unknown case IDs: " + ", ".join(sorted(unknown_ids)))
+        cases["normal"] = [
+            case for case in cases["normal"] if case["id"] in requested_ids]
+    sampling_profiles = {
+        "production": {"temperature": 0.0, "min_p": 0.0,
+                       "repetition_penalty": 1.0},
+        "matched-deterministic": {
+            "temperature": 0.0, "top_p": 1.0, "top_k": 0, "min_p": 0.0,
+            "presence_penalty": 0.0, "repetition_penalty": 1.0},
+        "qwen-instruct": {"temperature": 0.7, "top_p": 0.8, "top_k": 20,
+                          "presence_penalty": 1.5, "min_p": 0.0,
+                          "repetition_penalty": 1.0},
+        "bonsai-nonthinking": {"temperature": 0.7, "top_p": 0.80,
+                               "top_k": 20, "min_p": 0.0,
+                               "presence_penalty": 1.5,
+                               "repetition_penalty": 1.0},
+    }
+    sampling = sampling_profiles[args.sampling_profile]
+    with open(args.corpus, "rb") as handle:
+        corpus_sha256 = hashlib.sha256(handle.read()).hexdigest()
     report = {
         "model": args.model,
         "endpoint_kind": llm.service_info(cfg)["kind"],
         "sampling_profile": args.sampling_profile,
+        "sampling_params": sampling,
+        "candidate_request": {
+            "sampling_params": sampling,
+            "chat_template_kwargs": {"enable_thinking": False},
+        },
+        "verifier_request": {
+            "sampling_overrides": {"temperature": 0.0},
+            "chat_template_kwargs": {"enable_thinking": False},
+            "max_tokens": 8,
+            "other_sampler_values": "inherited from identical server flags below; verifier does not send top_p/top_k/min_p/penalties",
+        },
+        "server_sampling_params": sampling,
+        "system_prompt_sha256": hashlib.sha256(
+            llm.DEFAULT_SYSTEM.encode("utf-8")).hexdigest(),
+        "verify_prompt_sha256": hashlib.sha256(
+            llm.VERIFY_SYSTEM.encode("utf-8")).hexdigest(),
+        "corpus_path": os.path.abspath(args.corpus),
+        "corpus_sha256": corpus_sha256,
+        "case_ids": [case["id"] for case in cases["normal"]],
     }
 
     normal, latencies = run_normal(
         cases["normal"], cfg, args.timeout, sampling=sampling)
-    normal_anchor_total = sum(len(item["must_keep"]) for item in normal)
-    normal_anchor_kept = sum(len(item["preserved"]) for item in normal)
-    report["normal"] = {
-        "metrics": {
-            "exact_match_rate": sum(item["exact_match"] for item in normal) / len(normal),
-            "baseline_exact_match_rate": sum(
-                item["baseline_exact_match"] for item in normal) / len(normal),
-            "word_sequence_changed_rate": sum(
-                item["word_sequence_changed"] for item in normal) / len(normal),
-            "candidate_rejection_rate": sum(
-                not item["meaning_check_passed"] for item in normal) / len(normal),
-            "required_anchor_preservation_rate": (
-                normal_anchor_kept / normal_anchor_total
-                if normal_anchor_total else 1.0),
-            "baseline_character_error_rate": statistics.mean(
-                item["baseline_cer"] for item in normal),
-            "mean_character_error_rate": statistics.mean(item["cer"] for item in normal),
-            "character_error_rate_reduction": statistics.mean(
-                item["baseline_cer"] - item["cer"] for item in normal),
-            "latency": _latency_summary(latencies),
-        },
-        "cases": normal,
-    }
-    m = report["normal"]["metrics"]
+    metrics = _aggregate_metrics(normal)
+    anchor_total = sum(len(item["must_keep"]) for item in normal)
+    anchor_kept = sum(len(item["preserved"]) for item in normal)
+    metrics["required_anchor_preservation_rate"] = (
+        anchor_kept / anchor_total if anchor_total else 1.0)
+    metrics["latency"] = _latency_summary(latencies)
+    report["normal"] = {"metrics": metrics, "cases": normal}
+    m = metrics
     print("Dictado mejorado: "
           f"exactitud={m['exact_match_rate']:.0%} "
           f"(baseline {m['baseline_exact_match_rate']:.0%}), "
           f"propuestas que cambian palabras="
           f"{m['word_sequence_changed_rate']:.0%}, "
-          f"propuestas rechazadas="
-          f"{m['candidate_rejection_rate']:.0%}, "
-          f"anclas conservadas={m['required_anchor_preservation_rate']:.0%}, "
+          f"rechazos={m['verifier_rejections']}, "
+          f"invariantes críticos violados={m['critical_invariant_violations']}, "
           f"CER={m['baseline_character_error_rate']:.3f} -> "
           f"{m['mean_character_error_rate']:.3f} "
           f"(cambio {m['character_error_rate_reduction']:+.3f}), "
+          f"WER={m['baseline_word_error_rate']:.3f} -> "
+          f"{m['mean_word_error_rate']:.3f} "
+          f"(contenido baseline={m['baseline_content_error_case_count']}, "
+          f"reducción WER={m['baseline_content_wer_reduction']:+.3f}), "
+          f"no-change lexical edits={m['no_change_lexical_edits']}, "
+          f"harmful lexical edits={m['harmful_lexical_edits']}, "
           f"primera={m['latency']['first_request_seconds']:.3f}s, "
           f"caliente p50={m['latency']['warm_p50_seconds']:.3f}s, "
           f"p95={m['latency']['warm_p95_seconds']:.3f}s")

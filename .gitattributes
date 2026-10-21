@@ -1,0 +1,28 @@
+# Fin de linea del arbol de trabajo: LF en todas las plataformas.
+#
+# Sin esta regla, git deja el arbol de trabajo con CRLF en Windows (por
+# `core.autocrlf`) y con LF en Linux y macOS: el mismo archivo tiene bytes
+# distintos en cada sistema, asi que los hashes congelados del benchmark
+# dejan de coincidir con el archivo. Con `text=auto eol=lf` el indice
+# guarda LF y el arbol de trabajo se materializa igual en los tres
+# sistemas operativos.
+* text=auto eol=lf
+
+# Excepciones: los archivos que necesitan CRLF en Windows.
+#
+# `cmd` deja de encontrar la etiqueta `:say` de `scripts/instant2-update.bat`
+# si el archivo tiene LF, y los mensajes del helper dejan de escribirse sin
+# que nada lo avise. PowerShell tolera LF, pero se deja CRLF por
+# uniformidad con el resto de los scripts de Windows. Inno Setup tambien.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.iss text eol=crlf
+
+# Los scripts de shell se quedan con LF: `bash` no tolera CRLF.
+*.sh text eol=lf
+
+# Los binarios no se tocan: no hay conversion de fin de linea.
+*.png binary
+*.ttf binary
+*.gguf binary
