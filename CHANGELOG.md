@@ -8,6 +8,18 @@ Las dos primeras entradas documentan versiones de Instant2. El historial que
 sigue corresponde al Instant heredado y sus versiones no son releases de
 Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z`.
 
+## [Sin publicar]
+
+### Correcciones
+- El repositorio fija sus finales de línea (`.gitattributes`): el texto sale
+  con LF en las tres plataformas y el helper de actualización y el script de
+  Inno Setup siguen con CRLF, que es lo que necesitan. Antes, los hashes
+  congelados del benchmark dependían de la máquina que hacía el checkout y el
+  CI fallaba en Linux y macOS.
+- Las rutas internas del repositorio ya no se reportan como rutas del perfil
+  del usuario en los artefactos del benchmark: una ruta dentro del checkout es
+  el checkout, no una fuga.
+
 ## [0.1.6] - 2026-10-20
 
 ### Actualizaciones
