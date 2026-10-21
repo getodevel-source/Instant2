@@ -1631,11 +1631,26 @@ def _portable_path(value):
     Repository-internal paths become repo-relative; paths under the user profile
     become environment placeholders; anything else keeps only its last
     component. Never applied to URLs.
+
+    The repository wins over the user profile: a path inside the checkout is the
+    repository itself, not a leak of the user's home, even when the checkout
+    lives under it (CI checks out in `/home/runner/work/...`). A genuinely
+    external file still gets its home directory masked. Only absolute paths can
+    be inside the repository: a relative one is resolved against the current
+    directory and would look internal by accident.
     """
     text = str(value or "")
     if not text:
         return text
     root = os.path.dirname(os.path.dirname(HERE))
+    if os.path.isabs(text):
+        try:
+            relative = os.path.relpath(text, root)
+            if (relative != os.pardir
+                    and not relative.startswith(os.pardir + os.sep)):
+                return relative.replace(os.sep, "/")
+        except ValueError:
+            pass
     for variable, placeholder in (("LOCALAPPDATA", "%LOCALAPPDATA%"),
                                   ("APPDATA", "%APPDATA%"),
                                   ("TEMP", "%TEMP%"), ("TMP", "%TMP%"),
@@ -1644,12 +1659,6 @@ def _portable_path(value):
         base = os.environ.get(variable)
         if base and text.lower().startswith(base.lower()):
             return placeholder + text[len(base):]
-    try:
-        relative = os.path.relpath(text, root)
-        if not relative.startswith(".."):
-            return relative.replace(os.sep, "/")
-    except ValueError:
-        pass
     return _basename(text)
 
 

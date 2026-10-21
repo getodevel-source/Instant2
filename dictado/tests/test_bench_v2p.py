@@ -26,6 +26,19 @@ def _canonical_bytes(path):
         return handle.read().replace(b"\r\n", b"\n")
 
 
+def _only_home(home):
+    """Un entorno donde el unico perfil es `home`.
+
+    `_portable_path` enmascara por `%LOCALAPPDATA%`, `%APPDATA%`, `%TEMP%`,
+    `%TMP%`, `%USERPROFILE%` y `%HOME%`, en ese orden. Si el checkout vive
+    dentro de un temporal real de Windows, el `%TEMP%` real ganaria y la
+    prueba no mediria lo que dice medir: aqui se vacian todos menos el
+    perfil que la prueba quiere.
+    """
+    return {"LOCALAPPDATA": "", "APPDATA": "", "TEMP": "", "TMP": "",
+            "HOME": home, "USERPROFILE": home}
+
+
 def _runner_source():
     with open(bench_v2p.__file__, encoding="utf-8") as handle:
         return handle.read()
@@ -157,6 +170,33 @@ class RuntimeSnapshotTests(unittest.TestCase):
         repo_file = os.path.join(bench_v2p.HERE, "v2p_cases.json")
         self.assertEqual(bench_v2p._portable_path(repo_file),
                          "dictado/bench/v2p_cases.json")
+
+    def test_the_repository_wins_over_the_user_profile(self):
+        """El checkout puede vivir bajo el perfil: la ruta del repo es del repo.
+
+        El CI de Linux y macOS hace checkout en `/home/runner/work/...`: una
+        ruta interna del repo no es una fuga del perfil del usuario.
+        """
+        root = os.path.dirname(os.path.dirname(bench_v2p.HERE))
+        home = os.path.dirname(root)
+        repo_file = os.path.join(bench_v2p.HERE, "v2p_cases.json")
+        with mock.patch.dict(os.environ, _only_home(home)):
+            self.assertEqual(bench_v2p._portable_path(repo_file),
+                             "dictado/bench/v2p_cases.json")
+
+    def test_a_file_outside_the_repository_keeps_its_home_masked(self):
+        """Un archivo de verdad del usuario sigue sin filtrar su ruta."""
+        root = os.path.dirname(os.path.dirname(bench_v2p.HERE))
+        home = os.path.join(os.path.dirname(root), "home-del-usuario")
+        external = os.path.join(home, "models", "qwen.gguf")
+        repo_file = os.path.join(bench_v2p.HERE, "v2p_cases.json")
+        with mock.patch.dict(os.environ, _only_home(home)):
+            portable = bench_v2p._portable_path(external)
+            self.assertEqual(bench_v2p._portable_path(repo_file),
+                             "dictado/bench/v2p_cases.json")
+        self.assertNotIn("home-del-usuario", portable)
+        self.assertTrue(portable.startswith("%HOME%")
+                        or portable.startswith("%USERPROFILE%"))
 
 
 class GoldLeakAuditTests(unittest.TestCase):
