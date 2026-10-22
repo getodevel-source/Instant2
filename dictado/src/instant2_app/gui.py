@@ -2634,16 +2634,16 @@ class PanelLogic(PanelReadingActions):
                 if self._use_downloaded_llm_model(force=True):
                     self._activate_local_llm()
                     if self.cfg.get("llm_normal_enabled", True) is False:
-                        self.toast("Qwen listo",
-                                   "Qwen quedó configurado, pero la revisión "
-                                   "con LLM está apagada: activala cuando "
-                                   "quieras.",
+                        self.toast("Revisión con LLM",
+                                   "El servicio de lenguaje quedó configurado, "
+                                   "pero la revisión está apagada: activala "
+                                   "cuando quieras.",
                                    level="warn", ms=7000)
                     else:
-                        self.toast("Qwen listo",
-                                   "Qwen quedó configurado y la revisión con "
-                                   "LLM quedó encendida: cada dictado se "
-                                   "revisa solo desde ahora.",
+                        self.toast("Revisión con LLM activada",
+                                   "El servicio de lenguaje quedó configurado "
+                                   "y la revisión quedó encendida: cada "
+                                   "dictado se revisa solo desde ahora.",
                                    level="info", ms=7000)
             self.push_state()
 
@@ -2766,8 +2766,8 @@ class PanelLogic(PanelReadingActions):
         managed = llm_defaults.is_managed(self.cfg)
         if managed:
             self._llm_model_state["message"] = (
-                "Qwen está listo y la revisión con LLM quedó activada: "
-                "cada dictado se revisa solo.")
+                "El servicio de lenguaje quedó configurado y la revisión con "
+                "LLM quedó activada: cada dictado se revisa solo.")
         return managed
 
     def _activate_local_llm(self):
