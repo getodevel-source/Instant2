@@ -2773,18 +2773,12 @@ class PanelLogic(PanelReadingActions):
     def _activate_local_llm(self):
         """Deja la revisión con LLM funcionando ahora, sin reiniciar a mano.
 
-        El daemon lee la configuración al arrancar: si ya está corriendo con
-        la configuración vieja (sin LLM), hay que volverlo a levantar para que
-        levante el servicio local. Si todavía no arrancó, va a leer la
-        configuración nueva por su cuenta.
+        El daemon lee la configuración al arrancar, pero la relee solo: cuando
+        el panel guarda la configuración del servicio local, el daemon que ya
+        está corriendo se entera y levanta `llama-server` sin que nadie lo
+        reinicie. Acá solo se avisa si la revisión quedó apagada a propósito.
         """
-        if self.cfg.get("llm_normal_enabled", True) is False:
-            return False
-        if not self._last_daemon_running:
-            # Todavía no hay daemon: cuando arranque, leerá esta configuración.
-            return True
-        self.stop_daemon_flow(restart=True)
-        return True
+        return self.cfg.get("llm_normal_enabled", True) is not False
 
     # ----------------------------------------------------------- diagnóstico
 

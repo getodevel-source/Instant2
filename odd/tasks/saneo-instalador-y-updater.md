@@ -558,10 +558,18 @@ Que se implemento:
   se respeta: el modelo se conecta pero el servicio no se enciende solo. Un
   GGUF elegido a mano sigue sin tocarse.
 - `gui._use_downloaded_llm_model()` ahora usa esos cambios y devuelve si el
-  servicio quedo completo; `gui._activate_local_llm()` **vuelve a levantar el
-  proceso de dictado** (el daemon lee la configuracion al arrancar) para que
-  `llama-server` levante en el momento, sin reinicio manual. Se llama al
-  terminar la descarga y al verificar por hash un GGUF que ya estaba en disco.
+  servicio quedo completo; se llama al terminar la descarga y al verificar por
+  hash un GGUF que ya estaba en disco. La descarga reconecta el servicio
+  aunque la direccion estuviera vacia (bajar 3 GB es quererlo); la
+  verificacion respeta la decision de vaciarla.
+- **El daemon relee la configuracion mientras corre** (`daemon._reload_config_if_changed`
+  y `daemon._sync_llm_runtime`). El daemon vive en segundo plano y la config
+  puede cambiar en cualquier momento: el panel conecta el servicio local al
+  terminar la descarga, o al arrancar si el modelo ya estaba en el disco. Sin
+  esto, el daemon se quedaba en "No hay un servicio de lenguaje configurado"
+  hasta que alguien reiniciaba el dictado a mano (que es lo que paso en la
+  maquina: el modelo estaba en el disco, la config se completo al arrancar y
+  el daemon, que ya corria, nunca la vio).
 - `llm_normal_enabled` ya venia en `True` por defecto; la garantia nueva es
   que el servicio queda completo y arranca, y que la decision de apagarlo se
   respeta.
@@ -569,10 +577,11 @@ Que se implemento:
 Evidencia: `cd dictated && python -m unittest discover -s tests` -> Ran 694
 tests, OK (skipped=6) en 3.12.12 (venv de CI) y en 3.14.2 (sistema);
 `python -m pyflakes dictado/src` y `python -m pyflakes scripts` -> 0 hallazgos.
-Los cinco tests nuevos (`test_llm_local_service.py`) fijan: la descarga deja la
+Los tests nuevos (`test_llm_local_service.py`) fijan: la descarga deja la
 revision encendida y el servicio administrable; una revision apagada a mano no
-se enciende sola; el daemon corriendo se reinicia para levantar el servicio; y
-un daemon que no corre no se reinicia.
+se enciende sola; la descarga reconecta una direccion vaciada a proposito; el
+daemon relee la config cuando el archivo cambia; y el servicio local arranca
+(o se frena) segun lo que diga la config.
 
 Pendiente: publicar la 0.1.9 y verificar en la maquina que, con la app
 instalada, la descarga de Qwen desde Ajustes deja `llama-server` corriendo y

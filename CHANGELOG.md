@@ -15,10 +15,13 @@ Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z
   lenguaje local (3 GB) desde Ajustes, la app lo deja configurado y
   funcionando solo: conecta el runtime de llama.cpp, la dirección local
   (`http://127.0.0.1:8080/v1`), el alias del modelo y la ruta del GGUF, marca
-  el servicio local como configurado y **vuelve a levantar el proceso de
-  dictado** para que levante `llama-server` en el momento. No hay que tocar
-  ningún campo ni reiniciar a mano: a partir de ese momento cada dictado se
-  revisa con Qwen.
+  el servicio local como configurado y enciende la revisión con LLM. No hay
+  que tocar ningún campo: a partir de ese momento cada dictado se revisa con
+  Qwen.
+- **El proceso de dictado se entera solo.** El daemon relee la configuración
+  mientras corre: si el panel conecta el servicio local (al terminar la
+  descarga, o al arrancar con el modelo ya en el disco), `llama-server` levanta
+  sin que nadie reinicie el dictado a mano. Antes había que reiniciarlo.
 - **Qwen queda encendido por defecto y así se queda.** La revisión con LLM
   sigue siendo el interruptor: si la persona lo apaga a propósito, la app no
   lo vuelve a encender sola (el modelo se conecta igual, pero el servicio no

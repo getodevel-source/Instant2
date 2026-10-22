@@ -16,6 +16,22 @@ from instant2_app.tray import TrayIcon
 log = logging.getLogger("instant2")
 
 
+def _config_stamp():
+    """Huella del archivo de configuración (None si no existe).
+
+    El daemon la usa para saber si la config cambió mientras corre: el panel
+    puede conectar el servicio local en cualquier momento (por ejemplo, al
+    terminar de descargar el modelo de lenguaje) y el daemon que ya está
+    vivo tiene que enterarse sin que nadie lo reinicie.
+    """
+    from instant2_app import config as config_module
+
+    try:
+        return os.stat(config_module.config_path()).st_mtime_ns
+    except OSError:
+        return None
+
+
 def pid_path():
     """Ruta del PID file: %APPDATA%/instant2/instant2.pid (config_dir).
 
@@ -446,6 +462,7 @@ class Daemon:
 
     def __init__(self, cfg, data_dir=None):
         self.cfg = cfg
+        self._config_stamp = _config_stamp()
         from instant2_app.llm_runtime import LocalLLMRuntime
         from instant2_app.resource_policy import idle_unload_seconds
         self._llm_runtime = LocalLLMRuntime()
@@ -456,6 +473,7 @@ class Daemon:
         self._llm_runtime_start_lock = threading.Lock()
         self._llm_runtime_thread = None
         self._llm_runtime_config = None
+        self._llm_static_state = None
         self._llm_recoveries = 0
         self.engine = Engine(data_dir,
                              threads=cfg.get("threads", 4),
@@ -601,45 +619,93 @@ class Daemon:
             log.warning("no pude publicar el estado local del LLM (%s)",
                         type(exc).__name__)
 
+    def _start_managed_runtime(self, runtime_cfg):
+        """Levanta el servicio local con la configuración dada.
+
+        Nunca lanza: un fallo acá es un estado de error, no una excepción que
+        mate el hilo del runtime.
+        """
+        try:
+            with self._llm_runtime_start_lock:
+                if self._shutdown.is_set():
+                    return {"status": "stopped",
+                            "detail": "El proceso de dictado se detuvo.",
+                            "device": "", "owned": False}
+                state = self._llm_runtime.start(runtime_cfg)
+                if self._shutdown.is_set():
+                    self._llm_runtime.stop()
+                    return {"status": "stopped",
+                            "detail": "El proceso de dictado se detuvo.",
+                            "device": "", "owned": False}
+        except Exception as exc:
+            state = {"status": "error",
+                     "detail": "Falló el inicio del servicio local; podés reintentar.",
+                     "device": "", "owned": False}
+            log.warning("falló inicio de LLM local (%s)", type(exc).__name__)
+        return state
+
+    def _reload_config_if_changed(self):
+        """Relee la configuración si el archivo cambió. True si se relió.
+
+        El daemon vive en segundo plano y la configuración puede cambiar en
+        cualquier momento: el panel conecta el servicio local cuando termina
+        de descargar el modelo de lenguaje, o la persona toca Ajustes. El
+        daemon tiene que enterarse solo, sin que nadie lo reinicie.
+        """
+        from instant2_app import config as config_module
+
+        stamp = _config_stamp()
+        if stamp is not None and stamp == self._config_stamp:
+            return False
+        self._config_stamp = stamp
+        try:
+            self.cfg = config_module.load()
+        except Exception:  # noqa: BLE001  (una config ilegible no mata el daemon)
+            log.warning("no pude releer la configuración", exc_info=True)
+            return False
+        return True
+
+    def _sync_llm_runtime(self):
+        """Ajusta el servicio local a la configuración actual.
+
+        Recalcula la configuración del runtime y, según lo que haya, levanta
+        el servicio local o lo frena. Devuelve el estado publicado.
+        """
+        runtime_cfg, static_state = self._configured_llm_runtime()
+        self._llm_runtime_config = runtime_cfg
+        if static_state is not None:
+            # Dejó de ser administrable: se frena el servicio que Instantiate
+            # haya iniciado (uno ajeno no se toca).
+            if self._llm_runtime.process is not None:
+                try:
+                    self._llm_runtime.stop()
+                except Exception:  # noqa: BLE001  (un fallo no mata el daemon)
+                    log.warning("no pude detener el LLM local")
+            self._llm_static_state = static_state
+            self._publish_llm_state(static_state)
+            return static_state
+        self._llm_static_state = None
+        self._llm_initial_ready.clear()
+        self._publish_llm_state({
+            "status": "starting",
+            "detail": "Iniciando el servicio local configurado.",
+            "device": "", "owned": False})
+        state = self._start_managed_runtime(runtime_cfg)
+        self._publish_llm_state(state)
+        self._llm_initial_ready.set()
+        return state
+
     def _llm_runtime_loop(self):
         """Own the local LLM for the daemon lifetime and publish text-free state."""
         from instant2_app.llm_runtime_status import consume_retry_request
 
         if self._shutdown.is_set():
             return
-        runtime_cfg, static_state = self._configured_llm_runtime()
-        self._llm_runtime_config = runtime_cfg
-        if static_state is not None:
-            self._publish_llm_state(static_state)
-            self._llm_initial_ready.set()
-            while not self._shutdown.wait(30.0):
-                # Keep the handoff fresh while a background daemon is alive.
-                self._publish_llm_state(static_state)
-            return
-
-        self._publish_llm_state({"status": "starting",
-                                 "detail": "Iniciando el servicio local configurado.",
-                                 "device": "", "owned": False})
         retry_delays = (2.0, 5.0, 12.0)
         next_retry = 0.0
-        try:
-            with self._llm_runtime_start_lock:
-                if self._shutdown.is_set():
-                    self._llm_initial_ready.set()
-                    return
-                state = self._llm_runtime.start(runtime_cfg)
-                if self._shutdown.is_set():
-                    self._llm_runtime.stop()
-                    self._llm_initial_ready.set()
-                    return
-        except Exception as exc:
-            state = {"status": "error",
-                     "detail": "Falló el inicio del servicio local; podés reintentar.",
-                     "device": "", "owned": False}
-            log.warning("falló inicio de LLM local (%s)", type(exc).__name__)
-        self._publish_llm_state(state)
+        self._llm_static_state = None
+        state = self._sync_llm_runtime()
         last_status_write = time.monotonic()
-        self._llm_initial_ready.set()
         if state.get("status") in ("ready", "sleeping"):
             self._llm_recoveries = 0
         elif state.get("status") == "error":
@@ -648,6 +714,29 @@ class Daemon:
 
         while not self._shutdown.wait(5.0):
             manual_retry = consume_retry_request()
+            if self._reload_config_if_changed():
+                # La configuración cambió (el panel conectó el servicio local
+                # al terminar la descarga, o la persona tocó Ajustes): el
+                # daemon se ajusta solo, sin que nadie lo reinicie.
+                state = self._sync_llm_runtime()
+                if state.get("status") in ("ready", "sleeping"):
+                    self._llm_recoveries = 0
+                    next_retry = 0.0
+                elif state.get("status") == "error":
+                    next_retry = time.monotonic() + retry_delays[0]
+                    self._llm_recoveries = 1
+                else:
+                    self._llm_recoveries = 0
+                    next_retry = 0.0
+                last_status_write = time.monotonic()
+                continue
+            if self._llm_static_state is not None:
+                # No hay servicio local que administrar: solo se mantiene el
+                # estado publicado fresco.
+                if time.monotonic() - last_status_write >= 30.0:
+                    self._publish_llm_state(self._llm_static_state)
+                    last_status_write = time.monotonic()
+                continue
             if manual_retry:
                 self._llm_recoveries = 0
                 next_retry = 0.0
@@ -666,7 +755,7 @@ class Daemon:
                     with self._llm_runtime_start_lock:
                         if self._shutdown.is_set():
                             return
-                        state = self._llm_runtime.start(runtime_cfg)
+                        state = self._llm_runtime.start(self._llm_runtime_config)
                         if self._shutdown.is_set():
                             self._llm_runtime.stop()
                             return

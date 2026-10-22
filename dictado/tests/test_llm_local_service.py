@@ -271,7 +271,7 @@ class LocalLLMWiringTests(unittest.TestCase):
             self.data_dir, "llm", "Qwen_Qwen3.5-4B-Q4_K_M.gguf"))
 
     def test_the_running_daemon_is_restarted_to_pick_the_service_up(self):
-        """El daemon lee la config al arrancar: hay que volverlo a levantar."""
+        """El daemon que ya corre relee la config: alcanza con guardarla."""
         logic, _emitted = _make_logic(self, self.data_dir, self.app_dir,
                                       self.config_path)
         restarts = []
@@ -281,7 +281,13 @@ class LocalLLMWiringTests(unittest.TestCase):
         logic.handle({"op": "download_llm_model"})
         logic.tasks.submitted[0][0](lambda payload: None)
         logic.tasks.submitted[0][1](None)
-        self.assertEqual(restarts, [True])
+        # El daemon mira el archivo de configuración: lo que importa es que
+        # quede escrito, no que el panel reinicie el proceso de dictado.
+        self.assertEqual(restarts, [])
+        disk = _disk_config(self.config_path)
+        self.assertEqual(disk["llm_url"], "http://127.0.0.1:8080/v1")
+        self.assertEqual(disk["llm_model_path"], os.path.join(
+            self.data_dir, "llm", "Qwen_Qwen3.5-4B-Q4_K_M.gguf"))
 
     def test_a_daemon_that_is_not_running_is_not_restarted(self):
         """Si el dictado no está corriendo, arrancará con la config nueva."""
@@ -291,19 +297,6 @@ class LocalLLMWiringTests(unittest.TestCase):
         logic.stop_daemon_flow = lambda restart=False, on_restart=None: (
             restarts.append(restart) or True)
         logic._last_daemon_running = False
-        logic.handle({"op": "download_llm_model"})
-        logic.tasks.submitted[0][0](lambda payload: None)
-        logic.tasks.submitted[0][1](None)
-        self.assertEqual(restarts, [])
-
-    def test_a_review_that_was_turned_off_does_not_restart_the_daemon(self):
-        logic, _emitted = _make_logic(self, self.data_dir, self.app_dir,
-                                      self.config_path)
-        restarts = []
-        logic.stop_daemon_flow = lambda restart=False, on_restart=None: (
-            restarts.append(restart) or True)
-        logic._last_daemon_running = True
-        logic.cfg["llm_normal_enabled"] = False
         logic.handle({"op": "download_llm_model"})
         logic.tasks.submitted[0][0](lambda payload: None)
         logic.tasks.submitted[0][1](None)
@@ -363,6 +356,115 @@ class LocalLLMVerificationTests(unittest.TestCase):
             handle.write(BODY)
         self.assertTrue(llm_model.model_ready(self.data_dir, verify=True))
         self.assertFalse(llm_model.needs_verification(self.data_dir))
+
+
+class DaemonConfigReloadTests(unittest.TestCase):
+    """El daemon que ya corre tiene que enterarse solo de la config nueva.
+
+    El panel conecta el servicio local al terminar la descarga (o al
+    arrancar, si el modelo ya estaba en el disco) y el daemon sigue vivo en
+    segundo plano: si no relee la configuración, se queda en "sin servicio
+    configurado" hasta que alguien reinicia el dictado a mano.
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.config_path = os.path.join(self.root, "config.json")
+        self.data_dir = os.path.join(self.root, "models")
+        os.makedirs(self.data_dir)
+        self.app_dir, self.server_path = _frozen_app(self.root)
+
+    def _daemon(self, cfg):
+        runner = daemon.Daemon.__new__(daemon.Daemon)
+        runner.cfg = dict(cfg)
+        runner._shutdown = threading.Event()
+        runner._llm_static_state = None
+        runner._llm_initial_ready = threading.Event()
+        runner._llm_runtime_start_lock = threading.Lock()
+        runner._llm_runtime = _FakeRuntime()
+        runner._llm_runtime_state = {"status": "needs_setup", "detail": "",
+                                     "device": "", "owned": False}
+        runner._published = []
+        runner._publish_llm_state = lambda state: runner._published.append(state)
+        return runner
+
+    def test_the_config_is_reloaded_when_the_file_changes(self):
+        with open(self.config_path, "w", encoding="utf-8") as handle:
+            json.dump({"llm_url": ""}, handle)
+        runner = self._daemon({"llm_url": ""})
+        with patch("instant2_app.config.config_path", return_value=self.config_path):
+            stamp = daemon._config_stamp()
+            runner._config_stamp = stamp
+            self.assertFalse(runner._reload_config_if_changed())
+            # El panel conecta el servicio local y guarda la config. El reloj
+            # del sistema tiene granularidad gruesa: se fuerza una huella
+            # distinta para no depender de ella.
+            with open(self.config_path, "w", encoding="utf-8") as handle:
+                json.dump({"llm_url": "http://127.0.0.1:8080/v1"}, handle)
+            os.utime(self.config_path, ns=(stamp + 2_000_000_000,
+                                           stamp + 2_000_000_000))
+            self.assertTrue(runner._reload_config_if_changed())
+        self.assertEqual(runner.cfg["llm_url"], "http://127.0.0.1:8080/v1")
+
+    def test_the_local_service_starts_when_the_config_becomes_managed(self):
+        model = os.path.join(self.data_dir, "llm",
+                             "Qwen_Qwen3.5-4B-Q4_K_M.gguf")
+        os.makedirs(os.path.dirname(model), exist_ok=True)
+        with open(model, "wb") as handle:
+            handle.write(BODY)
+        cfg = {
+            "llm_normal_enabled": True,
+            "llm_managed_enabled": True,
+            "llm_url": "http://127.0.0.1:8080/v1",
+            "llm_model": "qwen3.5:4b-q4_K_M",
+            "llm_server_path": self.server_path,
+            "llm_model_path": model,
+        }
+        runner = self._daemon(cfg)
+        state = runner._sync_llm_runtime()
+        self.assertEqual(state["status"], "ready")
+        self.assertEqual(runner._llm_runtime.started, [cfg["llm_model_path"]])
+        self.assertIsNone(runner._llm_static_state)
+
+    def test_the_service_is_stopped_when_the_config_stops_being_managed(self):
+        runner = self._daemon({"llm_normal_enabled": False,
+                               "llm_url": "http://127.0.0.1:8080/v1"})
+        runner._llm_runtime.process = object()
+        state = runner._sync_llm_runtime()
+        self.assertEqual(state["status"], "disabled")
+        self.assertTrue(runner._llm_runtime.stopped)
+        self.assertIsNotNone(runner._llm_static_state)
+
+    def test_a_config_that_is_not_managed_leaves_the_service_alone(self):
+        runner = self._daemon({"llm_url": ""})
+        state = runner._sync_llm_runtime()
+        self.assertEqual(state["status"], "needs_setup")
+        self.assertEqual(runner._llm_runtime.started, [])
+        self.assertFalse(runner._llm_runtime.stopped)
+
+
+class _FakeRuntime:
+    """Runtime local de mentira: solo se ve qué le pasó al daemon."""
+
+    def __init__(self):
+        self.started = []
+        self.stopped = False
+        self.process = None
+
+    def start(self, config):
+        self.started.append(config.get("llm_model_path"))
+        return {"status": "ready", "detail": "LLM local listo.",
+                "device": "CPU", "owned": True}
+
+    def stop(self):
+        self.stopped = True
+        self.process = None
+        return True
+
+    def check(self):
+        return {"status": "ready", "detail": "LLM local listo.",
+                "device": "CPU", "owned": True}
 
 
 if __name__ == "__main__":
