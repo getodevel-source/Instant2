@@ -2631,7 +2631,7 @@ class PanelLogic(PanelReadingActions):
             if ready:
                 # El modelo ya está en el disco: se configura solo y queda
                 # encendida la revisión con LLM, sin pasos extra.
-                if self._use_downloaded_llm_model():
+                if self._use_downloaded_llm_model(force=True):
                     self._activate_local_llm()
                     if self.cfg.get("llm_normal_enabled", True) is False:
                         self.toast("Qwen listo",
@@ -2719,7 +2719,7 @@ class PanelLogic(PanelReadingActions):
         self.tasks.submit(work, done, failed)
         return True
 
-    def _use_downloaded_llm_model(self):
+    def _use_downloaded_llm_model(self, force=False):
         """Conecta el modelo descargado con el servicio local y lo deja activo.
 
         Si la persona ya eligió un GGUF (o el que había en la config sigue
@@ -2729,6 +2729,12 @@ class PanelLogic(PanelReadingActions):
         está en el disco, la revisión con LLM queda encendida: no hay nada que
         esperar ni que configurar a mano.
 
+        `force` es para el momento de la descarga: ahí la intención de tener
+        Qwen es explícita y el servicio se conecta aunque la dirección
+        estuviera vacía. En los demás momentos (por ejemplo, al verificar un
+        modelo que ya estaba en el disco) no se toca una configuración que la
+        persona vació a propósito.
+
         Se guardan solo las claves que cambian: el resto de la config de la
         interfaz (ediciones sin confirmar, arranque con el sistema) no se
         persiste.
@@ -2737,6 +2743,10 @@ class PanelLogic(PanelReadingActions):
         """
         from instant2_app import llm_defaults, llm_model
 
+        if (not force and self.cfg.get("llm_bundle_initialized") is True):
+            # Ya estaba configurado: la persona puede haber vaciado la
+            # dirección a propósito y eso no se revierte solo.
+            return False
         path = llm_model.model_path(self.data_dir)
         configured = str(self.cfg.get("llm_model_path") or "").strip()
         if configured and not llm_defaults.same_model_name(configured, path):

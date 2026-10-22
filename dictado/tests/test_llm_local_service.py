@@ -309,6 +309,33 @@ class LocalLLMWiringTests(unittest.TestCase):
         logic.tasks.submitted[0][1](None)
         self.assertEqual(restarts, [])
 
+    def test_a_cleared_address_is_not_reconnected_on_its_own(self):
+        """Vaciar la dirección a propósito no se revierte en el arranque."""
+        logic, _emitted = _make_logic(self, self.data_dir, self.app_dir,
+                                      self.config_path)
+        model = os.path.join(self.data_dir, "llm",
+                             "Qwen_Qwen3.5-4B-Q4_K_M.gguf")
+        os.makedirs(os.path.dirname(model), exist_ok=True)
+        with open(model, "wb") as handle:
+            handle.write(BODY)
+        logic.cfg["llm_bundle_initialized"] = True
+        logic.cfg["llm_url"] = ""
+        self.assertFalse(logic._use_downloaded_llm_model())
+        self.assertEqual(logic.cfg["llm_url"], "")
+
+    def test_the_download_reconnects_a_cleared_address(self):
+        """Bajar Qwen es quererlo: esa intencion manda sobre la direccion."""
+        logic, _emitted = _make_logic(self, self.data_dir, self.app_dir,
+                                      self.config_path)
+        logic.cfg["llm_bundle_initialized"] = True
+        logic.cfg["llm_url"] = ""
+        logic.handle({"op": "download_llm_model"})
+        logic.tasks.submitted[0][0](lambda payload: None)
+        logic.tasks.submitted[0][1](None)
+        self.assertEqual(logic.cfg["llm_url"], "http://127.0.0.1:8080/v1")
+        self.assertEqual(_disk_config(self.config_path)["llm_url"],
+                         "http://127.0.0.1:8080/v1")
+
 
 class LocalLLMVerificationTests(unittest.TestCase):
     """Un GGUF de 3 GB con el tamaño justo puede estar corrupto."""
