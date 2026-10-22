@@ -531,3 +531,49 @@ con el `.bin`.
 
 Pendiente: publicar la 0.1.8 y confirmar en el proximo release real que el
 actualizador in-app baja `Instant2-Update.exe` (204 MB) y no el completo.
+
+### Novena tanda (Qwen queda activo solo, sin pasos extra)
+
+Reporte del maintainer: "siempre tiene que funcionar, Qwen es el chiste,
+Parakeet es mierda al transcribir, Qwen la mejora. Quiero que apenas se
+seleccione descargar Qwen en Instant2, apenas se instale se configure sola y
+ya funcione a partir de siempre, a menos que se especifique lo contrario".
+
+Lo que faltaba de verdad, con la 0.1.8 instalada:
+
+- La descarga del GGUF si dejaba escrita la ruta del modelo, pero el resto
+  (runtime, direccion, alias, marca de "configurado") lo completaba `config.load()`
+  **en el arranque siguiente**. Con la app abierta, el daemon ya habia leido
+  una configuracion sin servicio local y se quedaba en `needs_setup`: 3 GB
+  descargados y el servicio sin arrancar hasta que alguien reiniciaba.
+- La revision con LLM (`llm_normal_enabled`) era el interruptor correcto, pero
+  ningun camino la encendia sola.
+
+Que se implemento:
+
+- `llm_defaults.auto_wire_changes()`: calcula el cambio de configuracion que
+  deja el LLM local **completo y administrable** (runtime, `llm_url`,
+  `llm_model`, `llm_model_path`, `llm_bundle_initialized`) y encendida la
+  revision con LLM. Si la persona apago la revision a proposito, esa decision
+  se respeta: el modelo se conecta pero el servicio no se enciende solo. Un
+  GGUF elegido a mano sigue sin tocarse.
+- `gui._use_downloaded_llm_model()` ahora usa esos cambios y devuelve si el
+  servicio quedo completo; `gui._activate_local_llm()` **vuelve a levantar el
+  proceso de dictado** (el daemon lee la configuracion al arrancar) para que
+  `llama-server` levante en el momento, sin reinicio manual. Se llama al
+  terminar la descarga y al verificar por hash un GGUF que ya estaba en disco.
+- `llm_normal_enabled` ya venia en `True` por defecto; la garantia nueva es
+  que el servicio queda completo y arranca, y que la decision de apagarlo se
+  respeta.
+
+Evidencia: `cd dictated && python -m unittest discover -s tests` -> Ran 694
+tests, OK (skipped=6) en 3.12.12 (venv de CI) y en 3.14.2 (sistema);
+`python -m pyflakes dictado/src` y `python -m pyflakes scripts` -> 0 hallazgos.
+Los cinco tests nuevos (`test_llm_local_service.py`) fijan: la descarga deja la
+revision encendida y el servicio administrable; una revision apagada a mano no
+se enciende sola; el daemon corriendo se reinicia para levantar el servicio; y
+un daemon que no corre no se reinicia.
+
+Pendiente: publicar la 0.1.9 y verificar en la maquina que, con la app
+instalada, la descarga de Qwen desde Ajustes deja `llama-server` corriendo y
+que el dictado sale revisado por el LLM.

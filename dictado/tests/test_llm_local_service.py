@@ -233,6 +233,82 @@ class LocalLLMWiringTests(unittest.TestCase):
             self.data_dir, "llm", "Qwen_Qwen3.5-4B-Q4_K_M.gguf"))
         self.assertEqual(disk["llm_url"], "http://127.0.0.1:8080/v1")
 
+    def test_the_download_leaves_the_review_turned_on_by_itself(self):
+        """Qwen se activa solo: descargar el modelo es activarlo."""
+        logic, _emitted = _make_logic(self, self.data_dir, self.app_dir,
+                                      self.config_path)
+        logic.handle({"op": "download_llm_model"})
+        logic.tasks.submitted[0][0](lambda payload: None)
+        logic.tasks.submitted[0][1](None)
+
+        disk = _disk_config(self.config_path)
+        self.assertIs(disk["llm_normal_enabled"], True)
+        self.assertIs(disk["llm_bundle_initialized"], True)
+        self.assertIs(logic.cfg["llm_normal_enabled"], True)
+
+        # Y el daemon lo usa de verdad: servicio local administrable.
+        runtime_cfg, static_state = _daemon_gate(logic.cfg)
+        self.assertIsNone(static_state)
+        self.assertIsNotNone(runtime_cfg)
+
+    def test_a_review_that_was_turned_off_is_not_turned_on_by_the_download(self):
+        """La decisión explícita de la persona manda: no se enciende sola."""
+        logic, _emitted = _make_logic(self, self.data_dir, self.app_dir,
+                                      self.config_path)
+        with open(self.config_path, "w", encoding="utf-8") as handle:
+            json.dump({**config.DEFAULTS, "llm_normal_enabled": False}, handle)
+        logic.cfg["llm_normal_enabled"] = False
+        logic.handle({"op": "download_llm_model"})
+        logic.tasks.submitted[0][0](lambda payload: None)
+        logic.tasks.submitted[0][1](None)
+
+        disk = _disk_config(self.config_path)
+        self.assertIs(disk["llm_normal_enabled"], False)
+        self.assertIs(logic.cfg["llm_normal_enabled"], False)
+        # Igual queda conectado: reactivarlo es un solo interruptor.
+        self.assertEqual(disk["llm_url"], "http://127.0.0.1:8080/v1")
+        self.assertEqual(disk["llm_model_path"], os.path.join(
+            self.data_dir, "llm", "Qwen_Qwen3.5-4B-Q4_K_M.gguf"))
+
+    def test_the_running_daemon_is_restarted_to_pick_the_service_up(self):
+        """El daemon lee la config al arrancar: hay que volverlo a levantar."""
+        logic, _emitted = _make_logic(self, self.data_dir, self.app_dir,
+                                      self.config_path)
+        restarts = []
+        logic.stop_daemon_flow = lambda restart=False, on_restart=None: (
+            restarts.append(restart) or True)
+        logic._last_daemon_running = True
+        logic.handle({"op": "download_llm_model"})
+        logic.tasks.submitted[0][0](lambda payload: None)
+        logic.tasks.submitted[0][1](None)
+        self.assertEqual(restarts, [True])
+
+    def test_a_daemon_that_is_not_running_is_not_restarted(self):
+        """Si el dictado no está corriendo, arrancará con la config nueva."""
+        logic, _emitted = _make_logic(self, self.data_dir, self.app_dir,
+                                      self.config_path)
+        restarts = []
+        logic.stop_daemon_flow = lambda restart=False, on_restart=None: (
+            restarts.append(restart) or True)
+        logic._last_daemon_running = False
+        logic.handle({"op": "download_llm_model"})
+        logic.tasks.submitted[0][0](lambda payload: None)
+        logic.tasks.submitted[0][1](None)
+        self.assertEqual(restarts, [])
+
+    def test_a_review_that_was_turned_off_does_not_restart_the_daemon(self):
+        logic, _emitted = _make_logic(self, self.data_dir, self.app_dir,
+                                      self.config_path)
+        restarts = []
+        logic.stop_daemon_flow = lambda restart=False, on_restart=None: (
+            restarts.append(restart) or True)
+        logic._last_daemon_running = True
+        logic.cfg["llm_normal_enabled"] = False
+        logic.handle({"op": "download_llm_model"})
+        logic.tasks.submitted[0][0](lambda payload: None)
+        logic.tasks.submitted[0][1](None)
+        self.assertEqual(restarts, [])
+
 
 class LocalLLMVerificationTests(unittest.TestCase):
     """Un GGUF de 3 GB con el tamaño justo puede estar corrupto."""

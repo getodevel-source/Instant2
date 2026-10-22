@@ -8,6 +8,25 @@ Las dos primeras entradas documentan versiones de Instant2. El historial que
 sigue corresponde al Instant heredado y sus versiones no son releases de
 Instant2. Para evitar colisiones con sus tags, Instant2 publica `instant2-vX.Y.Z`.
 
+## [0.1.9] - 2026-10-21
+
+### Revisión con Qwen
+- **Descargar Qwen es activarlo.** Cuando termina la descarga del modelo de
+  lenguaje local (3 GB) desde Ajustes, la app lo deja configurado y
+  funcionando solo: conecta el runtime de llama.cpp, la dirección local
+  (`http://127.0.0.1:8080/v1`), el alias del modelo y la ruta del GGUF, marca
+  el servicio local como configurado y **vuelve a levantar el proceso de
+  dictado** para que levante `llama-server` en el momento. No hay que tocar
+  ningún campo ni reiniciar a mano: a partir de ese momento cada dictado se
+  revisa con Qwen.
+- **Qwen queda encendido por defecto y así se queda.** La revisión con LLM
+  sigue siendo el interruptor: si la persona lo apaga a propósito, la app no
+  lo vuelve a encender sola (el modelo se conecta igual, pero el servicio no
+  se administra). Si en un arranque futuro falta la configuración local, la
+  app sola completa lo que falte con el modelo ya descargado.
+- Un GGUF elegido a mano por la persona sigue mandando: la app no lo
+  reemplaza ni lo borra.
+
 ## [0.1.8] - 2026-10-21
 
 ### Instalador de Windows

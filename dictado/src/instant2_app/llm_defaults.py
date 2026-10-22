@@ -117,6 +117,38 @@ def local_changes(cfg, data_dir=None, server_path=None, model_path=None):
     return changes
 
 
+def auto_wire_changes(cfg, data_dir=None, server_path=None, model_path=None):
+    """Claves que hay que cambiar para que el LLM local quede activo de una.
+
+    Se usa cuando el GGUF acaba de descargarse: el modelo ya está en el disco,
+    así que no hay nada que esperar. El servicio local se configura solo
+    (runtime, dirección, alias y ruta) y la revisión del texto queda encendida
+    para que funcione desde el primer dictado.
+
+    Reglas:
+    - si la persona eligió otro servicio o un GGUF a mano, no se toca nada;
+    - si apagó la revisión con LLM a propósito, no se vuelve a encender sola;
+    - la marca `llm_bundle_initialized` se pone solo cuando el servicio local
+      queda completo de verdad (runtime + modelo + dirección + alias).
+    """
+    changes = dict(local_changes(cfg, data_dir=data_dir, server_path=server_path,
+                                 model_path=model_path))
+    if not changes:
+        return {}
+    probe = dict(cfg)
+    probe.update(changes)
+    if not is_managed(probe):
+        # Sin runtime o sin dirección local no hay servicio que encender:
+        # solo quedan las rutas que se pudieron completar.
+        return changes
+    changes["llm_bundle_initialized"] = True
+    if cfg.get("llm_normal_enabled", True) is not False:
+        # Queda encendida la revisión con LLM. Si estaba apagada a propósito,
+        # esa decisión se respeta: el modelo se conecta pero no se usa solo.
+        changes["llm_normal_enabled"] = True
+    return changes
+
+
 def is_managed(cfg):
     """True si el servicio local queda administrable por Instant2.
 

@@ -2629,7 +2629,22 @@ class PanelLogic(PanelReadingActions):
                             "reintentá la descarga."),
             })
             if ready:
-                self._use_downloaded_llm_model()
+                # El modelo ya está en el disco: se configura solo y queda
+                # encendida la revisión con LLM, sin pasos extra.
+                if self._use_downloaded_llm_model():
+                    self._activate_local_llm()
+                    if self.cfg.get("llm_normal_enabled", True) is False:
+                        self.toast("Qwen listo",
+                                   "Qwen quedó configurado, pero la revisión "
+                                   "con LLM está apagada: activala cuando "
+                                   "quieras.",
+                                   level="warn", ms=7000)
+                    else:
+                        self.toast("Qwen listo",
+                                   "Qwen quedó configurado y la revisión con "
+                                   "LLM quedó encendida: cada dictado se "
+                                   "revisa solo desde ahora.",
+                                   level="info", ms=7000)
             self.push_state()
 
         def failed(error):
@@ -2684,6 +2699,10 @@ class PanelLogic(PanelReadingActions):
                 return
             if ok:
                 self._llm_model_state.update({"status": "ready", "ready": True})
+                # El modelo ya estaba en el disco: si faltaba conectarlo, se
+                # conecta solo y queda activo.
+                if self._use_downloaded_llm_model():
+                    self._activate_local_llm()
                 self.push_state()
                 return
             self._llm_model_state.update({
@@ -2701,16 +2720,20 @@ class PanelLogic(PanelReadingActions):
         return True
 
     def _use_downloaded_llm_model(self):
-        """Conecta el modelo descargado con el servicio local.
+        """Conecta el modelo descargado con el servicio local y lo deja activo.
 
         Si la persona ya eligió un GGUF (o el que había en la config sigue
         siendo el mismo), su elección manda: no se toca. Si no, se completan
         el runtime, la dirección y el alias, para que el servicio local quede
-        listo de verdad y no solo apuntando a un archivo.
+        listo de verdad y no solo apuntando a un archivo. Como el modelo ya
+        está en el disco, la revisión con LLM queda encendida: no hay nada que
+        esperar ni que configurar a mano.
 
         Se guardan solo las claves que cambian: el resto de la config de la
         interfaz (ediciones sin confirmar, arranque con el sistema) no se
         persiste.
+
+        Devuelve True si el servicio local quedó completo y usable.
         """
         from instant2_app import llm_defaults, llm_model
 
@@ -2719,16 +2742,39 @@ class PanelLogic(PanelReadingActions):
         if configured and not llm_defaults.same_model_name(configured, path):
             # Un GGUF elegido a mano (aunque no esté ahora mismo en su disco)
             # no se reemplaza.
-            return
-        changes = llm_defaults.local_changes(self.cfg, data_dir=self.data_dir)
+            return False
+        changes = llm_defaults.auto_wire_changes(self.cfg, data_dir=self.data_dir)
         if not changes:
-            return
+            return False
         self.cfg.update(changes)
         try:
             config.update(changes)
         except Exception:  # noqa: BLE001  (un fallo al guardar no rompe el panel)
             log.warning("no pude guardar la ruta del modelo de lenguaje",
                         exc_info=True)
+            return False
+        managed = llm_defaults.is_managed(self.cfg)
+        if managed:
+            self._llm_model_state["message"] = (
+                "Qwen está listo y la revisión con LLM quedó activada: "
+                "cada dictado se revisa solo.")
+        return managed
+
+    def _activate_local_llm(self):
+        """Deja la revisión con LLM funcionando ahora, sin reiniciar a mano.
+
+        El daemon lee la configuración al arrancar: si ya está corriendo con
+        la configuración vieja (sin LLM), hay que volverlo a levantar para que
+        levante el servicio local. Si todavía no arrancó, va a leer la
+        configuración nueva por su cuenta.
+        """
+        if self.cfg.get("llm_normal_enabled", True) is False:
+            return False
+        if not self._last_daemon_running:
+            # Todavía no hay daemon: cuando arranque, leerá esta configuración.
+            return True
+        self.stop_daemon_flow(restart=True)
+        return True
 
     # ----------------------------------------------------------- diagnóstico
 
